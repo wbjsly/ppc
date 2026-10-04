@@ -21,6 +21,10 @@ yarn-error.log*
 .codebuddy/
 .codegraph/
 
+# 需求与文档
+docs/
+openspec/
+
 
 # IDE
 .idea/
