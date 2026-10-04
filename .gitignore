@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Java / Maven
+backend/target/
+*.class
+*.jar
+*.lst
+
+# Node / 前端
+node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+
+# 本地工具配置
+.qoder/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# 嵌套的重复仓库
+ppc/
