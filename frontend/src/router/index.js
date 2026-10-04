@@ -110,6 +110,18 @@ const routes = [
         meta: { title: '询价比价', group: '采购管理' }
       },
       {
+        path: '/m/2.2.2',
+        name: 'TenderBidding',
+        component: () => import('@/views/proc/tender/index.vue'),
+        meta: { title: '招标竞价', group: '采购管理' }
+      },
+      {
+        path: '/m/2.2.3',
+        name: 'FrameworkAgreement',
+        component: () => import('@/views/proc/framework-agreement/index.vue'),
+        meta: { title: '框架协议', group: '采购管理' }
+      },
+      {
         path: '/m/2.1.4',
         name: 'RequisitionApproval',
         component: () => import('@/views/proc/requisition-approval/index.vue'),

@@ -56,6 +56,13 @@ public class RfqServiceImpl implements RfqService {
     @Value("${app.proc.min-quote-count:3}")
     private int minQuoteCount;
 
+    /**
+     * 招标门槛金额（BR-4.2-44；design D7 口径 = 本年 PR 预估累计金额）。
+     * 参数机制见 design D9（yml + @Value，无参数表）。默认 100 万。
+     */
+    @Value("${app.proc.tender-threshold-amount:1000000}")
+    private java.math.BigDecimal tenderThresholdAmount;
+
     private final RfqDao rfqDao;
     private final RfqLineDao lineDao;
     private final RfqSupplierDao rfqSupplierDao;
@@ -293,6 +300,8 @@ public class RfqServiceImpl implements RfqService {
         if (prLines.isEmpty()) {
             throw new ServiceException(422, "PR 无请购行，不可询价");
         }
+        // BR-4.2-44（L1 硬阻断，design D7：口径=本年 PR 预估累计金额）
+        assertBelowTenderThreshold(prLines);
         LocalDate earliest = prLines.stream().map(ProcPrLine::getReqDate)
                 .min(LocalDate::compareTo).orElseThrow();
         LocalDate deadline;
@@ -931,6 +940,48 @@ public class RfqServiceImpl implements RfqService {
     }
 
     // ---------- 私有 ----------
+
+    /**
+     * BR-4.2-44（L1 硬阻断）：任一品类本年累计 PR 预估金额 &gt; 招标门槛 → 阻断创建询价。
+     * <p>design D7：当前无 PO 表，"本年累计采购额"以本年 PR 预估金额 Σ(qty×estUnitPrice) 近似，
+     * 与 ProcApprovalService 的判级金额同源；PO 落地后再校准真实口径。</p>
+     */
+    private void assertBelowTenderThreshold(List<ProcPrLine> prLines) {
+        if (tenderThresholdAmount == null
+                || tenderThresholdAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        List<String> itemCodes = new ArrayList<>();
+        for (ProcPrLine pl : prLines) {
+            if (isNotBlank(pl.getItemCode()) && !itemCodes.contains(pl.getItemCode())) {
+                itemCodes.add(pl.getItemCode());
+            }
+        }
+        if (itemCodes.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> rows = prLineDao.sumYearPrAmountByItemCodes(itemCodes);
+        for (Map<String, Object> row : rows) {
+            Object cat = row.get("categoryCode");
+            Object amt = row.get("amount");
+            if (cat == null || amt == null) {
+                continue;
+            }
+            BigDecimal amount;
+            try {
+                amount = new BigDecimal(String.valueOf(amt));
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (amount.compareTo(tenderThresholdAmount) > 0) {
+                throw new ServiceException(422, "品类「" + cat + "」本年累计 PR 预估金额 "
+                        + amount.stripTrailingZeros().toPlainString() + " 元，已超招标门槛 "
+                        + tenderThresholdAmount.stripTrailingZeros().toPlainString()
+                        + " 元（BR-4.2-44，L1 硬阻断）：该品类须走招标流程，"
+                        + "请先创建招标项目，不得直接询比价下单");
+            }
+        }
+    }
 
     private BigDecimal effPrice(Quote q) {
         return q.getNegotiatedPrice() != null ? q.getNegotiatedPrice() : q.getUnitPrice();

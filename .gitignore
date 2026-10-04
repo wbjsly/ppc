@@ -16,6 +16,11 @@ yarn-error.log*
 # 本地工具配置
 .qoder/
 .workbuddy/
+.agents/
+.claude/
+.codebuddy/
+.codegraph/
+
 
 # IDE
 .idea/

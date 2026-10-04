@@ -82,6 +82,9 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/mdm/tax-policies/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/tax-policies/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/mdm/tax-policies/**").hasRole("ADMIN")
+                // 评标评分（add-tender-bidding 4.1）：放行评委，必须先于 /api/proc/** 的 ADMIN 规则，
+                // 否则顺序在前的 POST /api/proc/** 会先把评委拦成 403
+                .antMatchers(HttpMethod.POST, "/api/proc/tenders/*/scores").hasAnyRole("ADMIN", "BID_JUDGE")
                 .antMatchers(HttpMethod.POST, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/proc/**").hasRole("ADMIN")

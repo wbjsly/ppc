@@ -24,6 +24,11 @@ app:
   jwt:
     secret: ErpSecretKey2026ForJwtTokenGenerationAndValidation0123456789
     expiration: 86400000
+  proc:
+    # 招标参数（design D9：走 yml + @Value，不建参数表；与 min-quote-count 同范式）
+    tender-threshold-amount: 1000000  # 招标门槛金额（BR-4.2-44，默认 100 万）
+    publicity-days: 3            # 公示期（BR-4.2-48，默认 3 个工作日）
+    agreement-valid-months: 12   # 框架协议有效期（BR-4.2-05，默认 12 个月）
   db:
     bootstrap:
       enabled: true
