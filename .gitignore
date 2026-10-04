@@ -24,6 +24,3 @@ yarn-error.log*
 # 日志与临时文件
 *.log
 *.tmp
-
-# 嵌套的重复仓库
-ppc/

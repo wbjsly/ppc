@@ -1,0 +1,7 @@
+-- 017 物料变更审计（物料管理 1.2.2，流程二 FR-4.1-2-1/2；依赖 marker 保证单次执行，MySQL 无 ADD COLUMN IF NOT EXISTS）
+
+ALTER TABLE erp_mdm_item_version
+    ADD COLUMN CHANGE_REASON VARCHAR(255) AFTER OP_TYPE;
+
+ALTER TABLE erp_mdm_item_version
+    ADD COLUMN CHANGE_TYPE VARCHAR(16) AFTER CHANGE_REASON;

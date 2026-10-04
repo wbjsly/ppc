@@ -1,0 +1,31 @@
+server:
+  port: 8090
+
+spring:
+  profiles:
+    active: mysql
+  application:
+    name: erp-system
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.erp.entity
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: delFlag
+      logic-delete-value: '1'
+      logic-not-delete-value: '0'
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+app:
+  jwt:
+    secret: ErpSecretKey2026ForJwtTokenGenerationAndValidation0123456789
+    expiration: 86400000
+  db:
+    bootstrap:
+      enabled: true
+      location: classpath:db/mysql/
+      skip-scripts:
