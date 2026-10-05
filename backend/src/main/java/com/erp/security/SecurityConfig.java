@@ -82,9 +82,48 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/mdm/tax-policies/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/tax-policies/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/mdm/tax-policies/**").hasRole("ADMIN")
+                // 质量协同（add-quality-collaboration）：六角色写权限。必须先于下方 /api/proc/** 的 ADMIN 规则，
+                // 否则 POST /api/proc/returns/** 会把仓库/质量角色先拦成 403。
+                // 细粒度（如双签节点必须由 ROLE_REQUIRED 角色签）在 ApprovalServiceImpl 内二次校验。
+                .antMatchers(HttpMethod.POST, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
+                .antMatchers(HttpMethod.PUT, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
+                .antMatchers(HttpMethod.POST, "/api/qms/standards/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                .antMatchers(HttpMethod.PUT, "/api/qms/standards/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                .antMatchers(HttpMethod.POST, "/api/qms/exempts/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                .antMatchers(HttpMethod.POST, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.PUT, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                // 让步接收：申请/提交（ENG/MGR）+ 核销放行（质检员/仓库）；双签签署走 approvals 规则
+                .antMatchers(HttpMethod.POST, "/api/qms/concessions/quality-gate").hasAnyRole("ADMIN",
+                        "WAREHOUSE", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.POST, "/api/qms/concessions/**").hasAnyRole("ADMIN", "QUALITY_ENG",
+                        "QUALITY_MGR", "INSPECTOR", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/qms/capa/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.PUT, "/api/qms/capa/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.POST, "/api/qms/copq/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.PUT, "/api/qms/copq/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.POST, "/api/qms/scar/**").hasAnyRole("ADMIN", "SQE", "QUALITY_MGR")
+                .antMatchers(HttpMethod.PUT, "/api/qms/scar/**").hasAnyRole("ADMIN", "SQE", "QUALITY_MGR")
+                .antMatchers(HttpMethod.POST, "/api/qms/gauges/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                .antMatchers(HttpMethod.PUT, "/api/qms/gauges/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                .antMatchers(HttpMethod.POST, "/api/qms/spc/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
+                // 审批底座：待办/签署入口按角色放行，节点角色不符由服务层 403
+                .antMatchers(HttpMethod.POST, "/api/qms/approvals/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR",
+                        "TECH_OWNER", "QUALITY_DIRECTOR", "SQE", "WAREHOUSE", "PM", "RECEIVER")
+                // 2.6.1 质量退货：具体路径在前（出库过账 WAREHOUSE），兜底创建/编辑 ADMIN
+                .antMatchers(HttpMethod.POST, "/api/proc/returns/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 质量退货提交由质量侧发起（NCR 自动带出单）；创建/编辑兜底 ADMIN
+                .antMatchers(HttpMethod.POST, "/api/proc/returns/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.PUT, "/api/proc/returns/**").hasRole("ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/proc/returns/**").hasRole("ADMIN")
                 // 评标评分（add-tender-bidding 4.1）：放行评委，必须先于 /api/proc/** 的 ADMIN 规则，
                 // 否则顺序在前的 POST /api/proc/** 会先把评委拦成 403
                 .antMatchers(HttpMethod.POST, "/api/proc/tenders/*/scores").hasAnyRole("ADMIN", "BID_JUDGE")
+                // 收货管理（add-goods-receipt D7）：同样必须先于 /api/proc/** 的 ADMIN 规则。
+                // 顺序要点：具体路径在前——否则 POST /grs/** 的 RECEIVER 规则会吞掉过账/放行的 WAREHOUSE 门禁
+                .antMatchers(HttpMethod.POST, "/api/proc/grs/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/proc/grs/**").hasAnyRole("ADMIN", "RECEIVER")
+                .antMatchers(HttpMethod.POST, "/api/proc/gr-differences/**").hasRole("ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/proc/gr-adjustments/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.POST, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/proc/**").hasRole("ADMIN")

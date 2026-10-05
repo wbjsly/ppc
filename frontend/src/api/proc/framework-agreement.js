@@ -19,3 +19,20 @@ export function updateAgreementLineApi(lineId, data) {
 export function changeAgreementLineApi(agreementId, lineId, data) {
   return request.post(`/proc/framework-agreements/${agreementId}/lines/${lineId}/change`, data)
 }
+
+// ---------- 协议执行治理（change add-framework-agreement-order，design D4/D5） ----------
+
+/** 手工创建协议（创建即生效，Σ份额=100） */
+export function createAgreementApi(payload) {
+  return request.post('/proc/framework-agreements', payload)
+}
+
+/** 续签（临期/已到期，生成新协议，原协议置已到期） */
+export function renewAgreementApi(id) {
+  return request.post(`/proc/framework-agreements/${id}/renew`)
+}
+
+/** 终止（原因必填，置 4 不可逆） */
+export function stopAgreementApi(id, reason) {
+  return request.post(`/proc/framework-agreements/${id}/stop`, { reason })
+}

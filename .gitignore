@@ -34,3 +34,6 @@ openspec/
 # 日志与临时文件
 *.log
 *.tmp
+
+# Vite 运行时时间戳产物
+frontend/vite.config.js.timestamp-*

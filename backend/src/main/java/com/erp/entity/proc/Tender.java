@@ -59,7 +59,7 @@ public class Tender extends BaseEntity {
     private Integer weightQuality;
     private Integer weightCooperation;
 
-    // ---- 定标快照 ----
+    // ---- 定标快照（多中标人后为"份额最大中标人"兼容快照，权威数据在 erp_proc_tender_award 子表） ----
     private String awardSupplierId;
     private BigDecimal awardPrice;
     private BigDecimal awardScore;

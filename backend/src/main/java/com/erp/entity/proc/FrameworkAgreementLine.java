@@ -39,6 +39,20 @@ public class FrameworkAgreementLine implements Serializable {
     /** 份额分配（%） */
     private BigDecimal sharePct;
 
+    // ---- 执行列（change add-framework-agreement-order，design D3）----
+
+    /** 承诺量：招标生成时 = 招标行数量；NULL = 不限量（手工协议可空） */
+    private BigDecimal commitQty;
+
+    /** 已下单累计：PO 下达同事务回写；下单校验 ORDERED_QTY + 本次 ≤ COMMIT_QTY */
+    private BigDecimal orderedQty;
+
+    /** 价格区间下限（手工建协议场景；招标生成为 NULL，见偏差 D6） */
+    private BigDecimal priceMin;
+
+    /** 价格区间上限（手工建协议场景；招标生成为 NULL，见偏差 D6） */
+    private BigDecimal priceMax;
+
     private String createBy;
 
     private java.time.LocalDateTime createDate;

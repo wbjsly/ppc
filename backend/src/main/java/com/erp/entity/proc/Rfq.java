@@ -50,6 +50,8 @@ public class Rfq extends BaseEntity {
     // ---- 定标快照 ----
     private Integer weightPrice;
     private Integer weightDelivery;
+    /** 质量维权重（2.2.4 四维结构，占位期服务端强制 0，待 2.5 接入解锁——design D2） */
+    private Integer weightQuality;
     private String awardSupplierId;
     private BigDecimal awardPrice;
     private String analysisNo;

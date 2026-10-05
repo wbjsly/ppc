@@ -33,11 +33,25 @@ public class FrameworkAgreement extends BaseEntity {
 
     private LocalDate expireDate;
 
-    /** 0 未生效 / 1 生效中 / 2 过期 / 3 停用 */
+    /** 状态（design D4 状态机）：1 生效中 / 2 临期（到期≤EXPIRY_REMIND_DAYS）/ 3 已到期 / 4 已终止 */
     private String status;
 
     /** 份额合计（%） */
     private BigDecimal totalShare;
 
     private String changeReason;
+
+    // ---- 执行治理（change add-framework-agreement-order，design D4/D5）----
+
+    /** 来源：TENDER 招标生成 / MANUAL 手工创建 */
+    private String source;
+
+    /** 续签来源协议 ID（renew 时指向原协议） */
+    private String renewOf;
+
+    /** 终止原因（status=4 必填） */
+    private String stopReason;
+
+    /** 最近变更/续签说明 */
+    private String changeNote;
 }

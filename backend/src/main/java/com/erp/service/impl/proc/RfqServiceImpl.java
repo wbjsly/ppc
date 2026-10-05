@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.mdm.MdmSupplierDao;
 import com.erp.dao.mdm.MdmTaxCodeDao;
+import com.erp.dao.proc.AnalysisSnapshotDao;
 import com.erp.dao.proc.ProcPrLineDao;
 import com.erp.dao.proc.ProcRequisitionDao;
 import com.erp.dao.proc.QuoteDao;
@@ -13,6 +14,7 @@ import com.erp.dao.proc.RfqLineDao;
 import com.erp.dao.proc.RfqSupplierDao;
 import com.erp.entity.mdm.MdmSupplier;
 import com.erp.entity.mdm.MdmTaxCode;
+import com.erp.entity.proc.AnalysisSnapshot;
 import com.erp.entity.proc.ProcPrLine;
 import com.erp.entity.proc.ProcRequisition;
 import com.erp.entity.proc.Quote;
@@ -73,6 +75,8 @@ public class RfqServiceImpl implements RfqService {
     private final MdmTaxCodeDao taxCodeDao;
     private final RfqSupport support;
     private final EmergencyService emergencyService;
+    private final AnalysisSnapshotDao analysisSnapshotDao;
+    private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
 
     public RfqServiceImpl(RfqDao rfqDao,
                           RfqLineDao lineDao,
@@ -83,7 +87,9 @@ public class RfqServiceImpl implements RfqService {
                           MdmSupplierDao mdmSupplierDao,
                           MdmTaxCodeDao taxCodeDao,
                           RfqSupport support,
-                          EmergencyService emergencyService) {
+                          EmergencyService emergencyService,
+                          AnalysisSnapshotDao analysisSnapshotDao,
+                          com.fasterxml.jackson.databind.ObjectMapper jsonMapper) {
         this.rfqDao = rfqDao;
         this.lineDao = lineDao;
         this.rfqSupplierDao = rfqSupplierDao;
@@ -94,6 +100,8 @@ public class RfqServiceImpl implements RfqService {
         this.taxCodeDao = taxCodeDao;
         this.support = support;
         this.emergencyService = emergencyService;
+        this.analysisSnapshotDao = analysisSnapshotDao;
+        this.jsonMapper = jsonMapper;
     }
 
     // ---------- 分页（sweep 先行） ----------
@@ -716,6 +724,37 @@ public class RfqServiceImpl implements RfqService {
         result.put("taxRate", taxRate);
         result.put("anomalyOpenCount", anomalyOpen);
         result.put("stubColumns", List.of("历史准时交付率", "历史来料合格率", "质量等级", "综合评分（待接入 PO/质检数据）"));
+        // ---- 四维结构（change add-price-comparison-matrix，design D2，FR-4.2-2-2）----
+        // 有数即算、无数占位：价格/交付实算；质量维占位（服务端锁定 0）；综合=可得维度加权。
+        // 偏差 D1 —— 价格维仅单价+含税两列，阶梯价不建结构（Quote 为单报价模型）；
+        // 偏差 D2 —— 质量维与历史准时交付率占位「待接入 2.4/2.5」，权重服务端强制 0。
+        int wq = rfq.getWeightQuality() == null ? 0 : rfq.getWeightQuality();
+        Map<String, Object> dimensions = new LinkedHashMap<>();
+        Map<String, Object> dimPrice = new LinkedHashMap<>();
+        dimPrice.put("weight", wp);
+        dimPrice.put("scored", true);
+        dimPrice.put("columns", List.of("unitPrice", "taxIncluded"));
+        dimensions.put("price", dimPrice);
+        Map<String, Object> dimDelivery = new LinkedHashMap<>();
+        dimDelivery.put("weight", wd);
+        dimDelivery.put("scored", true);
+        dimDelivery.put("columns", List.of("leadTimeDays"));
+        dimDelivery.put("onTimeRate", null);   // 占位：历史准时交付率待 2.4 收货
+        dimensions.put("delivery", dimDelivery);
+        Map<String, Object> dimQuality = new LinkedHashMap<>();
+        dimQuality.put("weight", 0);           // 服务端强制 0（spec：质量维数据未接入不计分）
+        dimQuality.put("locked", true);
+        dimQuality.put("scored", false);
+        dimQuality.put("passRate", null);      // 占位：来料合格率待 2.5 质检
+        dimQuality.put("grade", null);         // 占位：质量等级待 2.5
+        dimQuality.put("placeholder", "待接入 2.4/2.5");
+        dimensions.put("quality", dimQuality);
+        Map<String, Object> dimComposite = new LinkedHashMap<>();
+        dimComposite.put("scored", true);
+        dimComposite.put("formula", "可得维度加权分（当前 = 价格分×价格权重% + 交付分×交付权重%，HALF_UP 2 位）");
+        dimensions.put("composite", dimComposite);
+        result.put("dimensions", dimensions);
+        result.put("weightQuality", wq);
         return result;
     }
 
@@ -846,6 +885,9 @@ public class RfqServiceImpl implements RfqService {
         MdmSupplier winner = mdmSupplierDao.selectById(supplierId);
         rfq.setWeightPrice(wp);
         rfq.setWeightDelivery(wd);
+        // 四维权重之质量维：占位期服务端强制 0（spec rfq-comparison-award「质量权重锁定」，
+        // payload 传入非 0 亦回落——绕过前端直调不改变计分口径）
+        rfq.setWeightQuality(0);
         rfq.setAwardSupplierId(supplierId);
         rfq.setAwardPrice(finalPrice);
         rfq.setAnalysisNo(analysisNo.trim());
@@ -856,6 +898,11 @@ public class RfqServiceImpl implements RfqService {
                 "定标：中选 " + (winner == null ? supplierId : winner.getSupplierName())
                         + " 成交价 " + finalPrice + " 分析表 " + analysisNo.trim()
                         + " 权重 " + wp + "/" + wd);
+        // ---- 比价结果快照归档（BR-4.2-14，change add-price-comparison-matrix design D4）----
+        // RFQ 维度唯一：存在即覆盖更新；JSON 与定标同事务，快照失败则定标回滚
+        writeAnalysisSnapshot(rfq, id, wp, wd, supplierId,
+                winner == null ? null : winner.getSupplierName(),
+                finalPrice, analysisNo.trim(), conclusion.trim());
         log.info("RFQ {} awarded to {} price={} analysis={}", rfq.getRfqNo(), supplierId,
                 finalPrice, analysisNo);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -863,6 +910,66 @@ public class RfqServiceImpl implements RfqService {
         result.put("awardPrice", finalPrice);
         result.put("supplierName", winner == null ? null : winner.getSupplierName());
         return result;
+    }
+
+    /**
+     * 比价结果快照归档（BR-4.2-14 / C-4.2-10，change add-price-comparison-matrix design D4）。
+     * 内容：四维权重（含锁定质量维）、全部报价原始/谈判双轨价、异常确认与剔除记录、
+     * 均值与偏离率、analysisNo 与结论、中选供应商与成交价。RFQ 唯一键覆盖更新。
+     */
+    private void writeAnalysisSnapshot(Rfq rfq, String id, int wp, int wd,
+                                       String supplierId, String supplierName,
+                                       BigDecimal finalPrice, String analysisNo,
+                                       String conclusion) {
+        try {
+            // 复用矩阵计算（行含双轨价、异常、偏离、加权分）——定标后调用，不依赖状态
+            Map<String, Object> mx = this.matrix(id, wp, wd);
+            Map<String, Object> snap = new LinkedHashMap<>();
+            snap.put("schemaVersion", 1);
+            snap.put("snapshotDate", LocalDateTime.now().toString());
+            snap.put("rfqNo", rfq.getRfqNo());
+            Map<String, Object> weights = new LinkedHashMap<>();
+            weights.put("price", wp);
+            weights.put("delivery", wd);
+            weights.put("quality", 0);   // 占位期锁定
+            snap.put("weights", weights);
+            snap.put("dimensions", mx.get("dimensions"));
+            snap.put("mean", mx.get("mean"));
+            snap.put("taxNote", mx.get("taxNote"));
+            snap.put("anomalyOpenCount", mx.get("anomalyOpenCount"));
+            snap.put("rows", mx.get("rows"));
+            Map<String, Object> awardInfo = new LinkedHashMap<>();
+            awardInfo.put("supplierId", supplierId);
+            awardInfo.put("supplierName", supplierName);
+            awardInfo.put("awardPrice", finalPrice);
+            awardInfo.put("analysisNo", analysisNo);
+            awardInfo.put("conclusion", conclusion);
+            snap.put("award", awardInfo);
+            String json = jsonMapper.writeValueAsString(snap);
+
+            AnalysisSnapshot ent = analysisSnapshotDao.selectOne(
+                    new LambdaQueryWrapper<AnalysisSnapshot>()
+                            .eq(AnalysisSnapshot::getRfqId, id));
+            boolean isNew = ent == null;
+            if (isNew) {
+                ent = new AnalysisSnapshot();
+                ent.setRfqId(id);
+            }
+            ent.setRfqNo(rfq.getRfqNo());
+            ent.setSnapshotJson(json);
+            ent.setAnalysisNo(analysisNo);
+            ent.setAwardSupplierId(supplierId);
+            ent.setAwardPrice(finalPrice);
+            if (isNew) {
+                analysisSnapshotDao.insert(ent);
+            } else {
+                analysisSnapshotDao.updateById(ent);
+            }
+            log.info("RFQ {} analysis snapshot {} (overwrite={})", rfq.getRfqNo(),
+                    analysisNo, !isNew);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new ServiceException(500, "比价结果快照序列化失败，定标已回滚：" + e.getMessage());
+        }
     }
 
     @Override

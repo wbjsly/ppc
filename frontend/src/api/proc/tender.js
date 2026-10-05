@@ -136,3 +136,10 @@ export function raiseObjectionApi(id, content, valid) {
 export function reviewObjectionApi(id, objectionId, verdict, note) {
   return request.post(`/proc/tenders/${id}/objections/${objectionId}/review`, { verdict, note })
 }
+
+// ---------- 多中标人定标（change add-framework-agreement-order，design D2） ----------
+
+/** 定标录入中标人与份额（≥1 家合格投标方、单价=最终轮报价、Σ份额=100） */
+export function saveWinnersApi(id, winners) {
+  return request.post(`/proc/tenders/${id}/award-winners`, { winners })
+}

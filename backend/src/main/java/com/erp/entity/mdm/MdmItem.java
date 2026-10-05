@@ -24,6 +24,9 @@ public class MdmItem extends BaseEntity {
     /** 4 位分类码，关联 erp_mdm_item_category */
     private String categoryCode;
 
+    /** 风险等级 A 高 / B 中 / C 低（FR-4.2-4-2 检验时限 24/48/72h，默认 C） */
+    private String riskGrade;
+
     /** 基本计量单位（字典 UNIT） */
     private String baseUnit;
 

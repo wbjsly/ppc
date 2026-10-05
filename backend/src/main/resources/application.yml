@@ -29,6 +29,30 @@ app:
     tender-threshold-amount: 1000000  # 招标门槛金额（BR-4.2-44，默认 100 万）
     publicity-days: 3            # 公示期（BR-4.2-48，默认 3 个工作日）
     agreement-valid-months: 12   # 框架协议有效期（BR-4.2-05，默认 12 个月）
+    # 框架协议执行 + 订单域参数（change add-framework-agreement-order，design D4/D6/D7）
+    expiry-remind-days: 30       # 协议临期提醒阈值（L1059：到期前 30 天提醒续签）
+    price-tolerance: 0.05        # 合同/协议价上浮容差（PRICE_TOLERANCE，默认 5%，BR-4.2-15）
+    history-price-tolerance: 0.005  # 历史均价偏差容差（TOLERANCE_DEFAULT，默认 0.5%，BR-4.2-16）
+    purchase-budget-trigger: 1.10   # 预算升级阈值（PURCHASE_BUDGET_TRIGGER，默认 110%，BR-4.2-17）
+    # 收货管理参数（change add-goods-receipt，design D2/D6；同源自 §4.0.3）
+    receipt-tolerance: 0.005     # 收货容差（TOLERANCE_DEFAULT，默认 0.5%，C-4.2-04）
+    qc-hours-a: 24               # 待检时限：A 高风险（FR-4.2-4-2）
+    qc-hours-b: 48               # 待检时限：B 中风险
+    qc-hours-c: 72               # 待检时限：C 低风险
+  qms:
+    # 质量域参数（change add-quality-collaboration，同源自 §4.0.3；yml + 重启生效）
+    sample-rate-a: 1.0           # INSPECTION_SAMPLE_RATE A=100%
+    sample-rate-b: 0.5           # B=50%
+    sample-rate-c: 0.2           # C=20%
+    ncr-review-hours-critical: 4    # BR-4.12-25 Critical 评审时限
+    ncr-review-hours-major: 24      # Major
+    ncr-review-hours-minor: 48      # Minor
+    ncr-close-days: 30              # NCR_CLOSE_DAYS（BR-4.2-27 / BR-4.12-30）
+    ncr-overdue-remind-days: 7      # 超期后重复提醒周期（BR-4.2-27，每 7 天）
+    ncr-sweep-ms: 300000            # NCR 超时/超期扫描轮询（5 分钟）
+    scar-reply-days: 5              # SCAR 回复时限（BR-4.12-45）
+    approval-remind-hours: 72       # 审批节点提醒（C-4.12-01 72h）
+    approval-escalate-days: 7       # 审批节点升级（C-4.12-01 7 天）
   db:
     bootstrap:
       enabled: true

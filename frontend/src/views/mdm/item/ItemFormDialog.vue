@@ -30,6 +30,17 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="风险等级" prop="riskGrade">
+            <el-select v-model="form.riskGrade" style="width: 100%;"
+                       placeholder="待检时限 A24/B48/C72h（收货 2.4.2）">
+              <el-option label="A 高风险（24h 内检验）" value="A" />
+              <el-option label="B 中风险（48h 内检验）" value="B" />
+              <el-option label="C 低风险（72h 内检验）" value="C" />
+            </el-select>
+            <div class="form-tip">决定收货待检时限（FR-4.2-4-2），默认 C</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="基本计量单位" prop="baseUnit">
             <el-select v-model="form.baseUnit" style="width: 100%;">
               <el-option v-for="d in dicts.UNIT" :key="d.code" :label="`${d.name}（${d.code}）`" :value="d.code" />
@@ -179,6 +190,7 @@ const fieldLabels = {
   itemCode: '物料编码',
   itemName: '物料名称', categoryCode: '物料分类', baseUnit: '计量单位',
   materialGroup: '物料组', purchaseType: '采购类型', storageCondition: '存储条件',
+  riskGrade: '风险等级',
   batchFlag: '批次管理', shelfLifeDays: '保质期', safetyStock: '安全库存',
   leadTimeDays: '采购提前期', altItemCode: '替代物料', packingSpec: '包装规格',
   barcode: '条码', bomVersion: 'BOM 版本'
@@ -207,10 +219,11 @@ const currentCategory = computed(() =>
 function initForm() {
   const row = props.row
   form.value = row
-    ? { ...row, changeReason: '' }
+    ? { ...row, riskGrade: row.riskGrade || 'C', changeReason: '' }
     : (props.prefill || {
         itemName: '', categoryCode: '', baseUnit: '', materialGroup: '',
         purchaseType: 'BUY', storageCondition: 'NORMAL', batchFlag: '0',
+        riskGrade: 'C',
         shelfLifeDays: null, safetyStock: null, leadTimeDays: null,
         altItemCode: '', packingSpec: '', barcode: '', bomVersion: ''
       })

@@ -115,6 +115,13 @@ public interface TenderService {
      */
     Map<String, Object> approveAward(String id, boolean approved, String note);
 
+    /**
+     * 定标录入中标人与份额（spec tender-bidding-management「多中标人定标录入」，design D2）：
+     * ≥1 家合格投标方、单价 = 各自最终轮有效报价、Σ份额 = 100（两位小数）；
+     * 落 erp_proc_tender_award 子表并同步头快照（份额最大者）。仅 PENDING_AWARD 可录。
+     */
+    Map<String, Object> saveWinners(String id, java.util.List<Map<String, Object>> winners);
+
     /** 公示期异议登记（BR-4.2-48；valid=true 暂停协议生成并冻结定标） */
     Map<String, Object> raiseObjection(String id, String content, boolean valid);
 
@@ -133,4 +140,13 @@ public interface TenderService {
     /** 协议变更（经审批）：允许修改并留痕变更前后值、操作人与时间 */
     Map<String, Object> changeAgreementLine(String agreementId, String lineId,
                                             Map<String, Object> payload);
+
+    /** 手工创建协议（design D5）：创建即生效 status=1，Σ份额=100，区间成对且含单价校验 */
+    Map<String, Object> createAgreement(Map<String, Object> payload);
+
+    /** 续签（L1059）：仅临期/已到期可续，生成新协议继承行与份额，原协议置已到期 */
+    Map<String, Object> renewAgreement(String id);
+
+    /** 终止：仅生效中/临期可终止，原因必填，置 4（已终止）后不可逆 */
+    Map<String, Object> stopAgreement(String id, String reason);
 }

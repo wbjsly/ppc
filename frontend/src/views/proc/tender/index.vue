@@ -414,6 +414,59 @@
         <el-button type="primary" :loading="saving" @click="submitScore">提交并锁定</el-button>
       </template>
     </el-dialog>
+
+    <!-- ============ 多中标人定标录入（change add-framework-agreement-order，design D2） ============ -->
+    <el-dialog v-model="winnersVisible" title="定标录入：中标人与份额（Σ份额必须 = 100%）" width="720px"
+      :close-on-click-modal="false">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 10px;"
+        title="默认预填评标建议值（评分法=加权最高者 / 最低价法=最低报价者，单家 100%），可增删调整"
+        description="每家中标人须为合格投标方，单价自动取其最终轮有效报价（不可改）；保存后头快照 = 份额最大中标人。" />
+      <el-table :data="winnersRows" size="small" border>
+        <el-table-column label="#" width="50" align="center">
+          <template #default="{ $index }">{{ $index + 1 }}</template>
+        </el-table-column>
+        <el-table-column label="中标人" min-width="200">
+          <template #default="{ row }">
+            <el-select v-model="row.supplierId" placeholder="选择投标方" filterable style="width: 100%;"
+              @change="onWinnerPick(row)">
+              <el-option v-for="c in winnerCandidates" :key="c.supplierId"
+                :label="`${c.supplierName}（${c.score != null ? c.score + '分' : '价' + c.finalPrice}）`"
+                :value="c.supplierId" :disabled="isWinnerPicked(c.supplierId, row)" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="中标单价(锁定)" width="130" align="right">
+          <template #default="{ row }">
+            <el-input-number v-model="row.awardPrice" :min="0" :precision="4" :controls="false"
+              disabled style="width: 120px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="份额 %" width="140">
+          <template #default="{ row }">
+            <el-input-number v-model="row.sharePct" :min="0" :max="100" :precision="2" size="small"
+              style="width: 120px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ $index }">
+            <el-button link type="danger" :disabled="winnersRows.length <= 1"
+              @click="winnersRows.splice($index, 1)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; gap: 12px; align-items: center;">
+        <el-button size="small" :disabled="winnersRows.length >= winnerCandidates.length"
+          @click="addWinnerRow">+ 加中标人</el-button>
+        <span :style="{ color: winnersSum === 100 ? '#67C23A' : '#F56C6C', fontWeight: 600 }">
+          份额合计：{{ winnersSum.toFixed(2) }}% {{ winnersSum === 100 ? '✓' : '（须 = 100）' }}
+        </span>
+      </div>
+      <template #footer>
+        <el-button @click="winnersVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="winnersSum !== 100"
+          @click="saveWinners">保存并提交定标</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -428,7 +481,7 @@ import {
   addTenderSuppliersApi, postponeRegApi, toInviteApi, inviteApprovalApi,
   saveTenderQuoteApi, postponeTenderApi, openTenderApi, setJudgesApi,
   saveScoreApi, evaluateTenderApi, setAnomalyApi, approveAwardApi,
-  raiseObjectionApi, reviewObjectionApi
+  raiseObjectionApi, reviewObjectionApi, saveWinnersApi
 } from '@/api/proc/tender'
 import { getSupplierPageApi } from '@/api/mdm/supplier-admission'
 import { getItemOptionsApi } from '@/api/mdm/item'
@@ -692,7 +745,61 @@ async function doAnomaly(anomaly) {
   await reload()
 }
 async function doEvaluate() {
-  await confirmAction('评标汇总并提交定标？', () => evaluateTenderApi(detail.tender.id))
+  await ElMessageBox.confirm('评标汇总并进入定标录入？（多中标人与份额在此录入）', '评标汇总',
+    { type: 'warning' })
+  const { data } = await evaluateTenderApi(detail.tender.id)
+  // 打开多中标录入弹窗，默认预填评标建议值（spec「评标结果作为定标默认建议」）
+  winnersTenderId.value = detail.tender.id
+  winnersCandidates.value = data.candidates || []
+  winnersRows.value = (data.awardWinners || []).map(w => ({
+    supplierId: w.supplierId, awardPrice: Number(w.awardPrice), sharePct: Number(w.sharePct)
+  }))
+  winnersVisible.value = true
+  await reload()
+}
+
+// ---- 多中标人定标录入（spec tender-bidding-management） ----
+const winnersVisible = ref(false)
+const winnersTenderId = ref('')
+const winnersCandidates = ref([])
+const winnersRows = ref([])
+const winnersSum = computed(() =>
+  winnersRows.value.reduce((s, r) => s + (Number(r.sharePct) || 0), 0))
+
+const winnerCandidates = computed(() => winnersCandidates.value)
+
+function isWinnerPicked(supplierId, currentRow) {
+  return winnersRows.value.some(r => r !== currentRow && r.supplierId === supplierId)
+}
+
+function onWinnerPick(row) {
+  const c = winnersCandidates.value.find(x => x.supplierId === row.supplierId)
+  if (c) row.awardPrice = Number(c.finalPrice)   // 单价 = 最终轮有效报价（锁定）
+}
+
+function addWinnerRow() {
+  const used = new Set(winnersRows.value.map(r => r.supplierId))
+  const next = winnersCandidates.value.find(c => !used.has(c.supplierId))
+  if (!next) { ElMessage.info('无更多合格投标方可选'); return }
+  winnersRows.value.push({
+    supplierId: next.supplierId, awardPrice: Number(next.finalPrice), sharePct: 0
+  })
+}
+
+async function saveWinners() {
+  if (winnersSum.value !== 100) { ElMessage.warning('份额合计须等于 100%'); return }
+  const winners = winnersRows.value.map(r => ({
+    supplierId: r.supplierId, awardPrice: r.awardPrice, sharePct: r.sharePct
+  }))
+  saving.value = true
+  try {
+    await saveWinnersApi(winnersTenderId.value, winners)
+    ElMessage.success(`已保存 ${winners.length} 家中标人，份额合计 100%`)
+    winnersVisible.value = false
+    await reload()
+  } finally {
+    saving.value = false
+  }
 }
 async function doObjection() {
   const { value } = await ElMessageBox.prompt('异议内容（登记后暂停协议生成）', '登记异议', {

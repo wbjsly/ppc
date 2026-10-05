@@ -10,20 +10,30 @@
             </el-select>
             <el-input v-model="listQuery.keyword" placeholder="协议号/招标号/名称" clearable style="width: 200px;" @keyup.enter="loadList(1)" />
             <el-button type="primary" @click="loadList(1)">查询</el-button>
+            <el-button type="success" @click="openCreate">手工创建协议</el-button>
           </div>
         </div>
       </template>
 
       <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-        title="采购框架协议（FR-4.2-10-3 / BR-4.2-05）：招标公示期满无异议后自动生成，含中标单价、份额分配、有效期。"
-        description="协议编号与关联招标编号唯一，重复触发只生成一次；中标单价与份额锁定，直接修改将被 422 拒绝，须走协议变更审批（变更前后值、操作人与时间全程留痕）。" />
+        title="采购框架协议（FR-4.2-10-3 / BR-4.2-05 / L1059）：招标公示期满自动生成，或手工创建（design D5）。"
+        description="状态机：生效中 → 临期(到期≤30天提醒续签) → 已到期 / 已终止；到期后新 PO 不可引用（已有 PO 正常执行）。价格与份额锁定，直接修改 422，须走变更审批留痕；行含承诺量/已下单余量（S-4.2-03）。" />
 
       <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column prop="agreementNo" label="协议编号" width="150">
           <template #default="{ row }"><b>{{ row.agreementNo }}</b></template>
         </el-table-column>
-        <el-table-column prop="tenderNo" label="关联招标" width="160" />
-        <el-table-column prop="title" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="tenderNo" label="关联招标" width="150">
+          <template #default="{ row }">{{ row.tenderNo || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="来源" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.source === 'MANUAL' ? 'warning' : 'success'">
+              {{ row.source === 'MANUAL' ? '手工' : '招标' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="title" label="名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="effectiveDate" label="生效日" width="110" />
         <el-table-column prop="expireDate" label="到期日" width="110" />
         <el-table-column label="状态" width="90" align="center">
@@ -33,9 +43,18 @@
         </el-table-column>
         <el-table-column prop="lineCount" label="明细行" width="80" align="center" />
         <el-table-column prop="totalShare" label="份额合计" width="90" align="center" />
-        <el-table-column label="操作" width="80" fixed="right">
+        <el-table-column label="可下单" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.usable ? 'success' : 'danger'">{{ row.usable ? '可引用' : '阻断' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button link type="warning" :disabled="!['2', '3'].includes(row.status)"
+              @click="doRenew(row)">续签</el-button>
+            <el-button link type="danger" :disabled="!['1', '2'].includes(row.status) || !isAdmin"
+              @click="doStop(row)">终止</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -48,13 +67,21 @@
       <template v-if="detail.agreement">
         <el-descriptions :column="2" border size="small" style="margin-bottom: 12px;">
           <el-descriptions-item label="协议编号">{{ detail.agreement.agreementNo }}</el-descriptions-item>
-          <el-descriptions-item label="关联招标">{{ detail.agreement.tenderNo }}</el-descriptions-item>
+          <el-descriptions-item label="来源">
+            {{ detail.agreement.source === 'MANUAL' ? '手工创建' : '招标生成' }}
+            <span v-if="detail.agreement.renewOf" style="color:#909399;">（续签自原协议）</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="关联招标">{{ detail.agreement.tenderNo || '—' }}</el-descriptions-item>
           <el-descriptions-item label="生效日">{{ detail.agreement.effectiveDate }}</el-descriptions-item>
           <el-descriptions-item label="到期日">{{ detail.agreement.expireDate }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="statusTag(detail.agreement.status)" size="small">{{ statusName(detail.agreement.status) }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="份额合计">{{ detail.agreement.totalShare }}%</el-descriptions-item>
+          <el-descriptions-item label="可引用">{{ detail.agreement.status === '1' || detail.agreement.status === '2' ? '可下单' : '阻断（L1059）' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.agreement.stopReason" label="终止原因" :span="2">
+            <span style="font-size: 12px; color: #F56C6C;">{{ detail.agreement.stopReason }}</span>
+          </el-descriptions-item>
           <el-descriptions-item v-if="detail.agreement.changeReason" label="最近变更" :span="2">
             <span style="font-size: 12px;">{{ detail.agreement.changeReason }}</span>
           </el-descriptions-item>
@@ -64,14 +91,33 @@
           <el-table-column label="#" width="50" align="center">
             <template #default="{ row }">{{ row.lineNo }}</template>
           </el-table-column>
-          <el-table-column prop="itemCode" label="物料" width="140" />
-          <el-table-column prop="itemName" label="名称" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="awardSupplierName" label="中标方" width="130" />
-          <el-table-column label="中标单价" width="110" align="right">
+          <el-table-column prop="itemCode" label="物料" width="130" />
+          <el-table-column prop="itemName" label="名称" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="awardSupplierName" label="中标方" width="110" show-overflow-tooltip />
+          <el-table-column label="单价" width="95" align="right">
             <template #default="{ row }"><b>{{ row.unitPrice }}</b></template>
           </el-table-column>
-          <el-table-column label="份额" width="80" align="center">
+          <el-table-column label="区间" width="110" align="center">
+            <template #default="{ row }">
+              <template v-if="row.priceMin != null">{{ row.priceMin }}~{{ row.priceMax }}</template>
+              <span v-else style="color:#C0C4CC;">锁定价</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="份额" width="70" align="center">
             <template #default="{ row }">{{ row.sharePct }}%</template>
+          </el-table-column>
+          <el-table-column label="承诺量" width="85" align="right">
+            <template #default="{ row }">{{ row.commitQty == null ? '不限量' : row.commitQty }}</template>
+          </el-table-column>
+          <el-table-column label="已下单" width="85" align="right">
+            <template #default="{ row }">{{ row.orderedQty || 0 }}</template>
+          </el-table-column>
+          <el-table-column label="剩余" width="85" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: remain(row) <= 0 ? '#F56C6C' : '#67C23A' }">
+                {{ row.commitQty == null ? '∞' : remain(row) }}
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="操作" width="90" fixed="right">
             <template #default="{ row }">
@@ -110,25 +156,186 @@
         <el-button type="primary" :loading="saving" @click="submitChange">提交变更</el-button>
       </template>
     </el-dialog>
+
+    <!-- 手工创建协议（design D5） -->
+    <el-dialog v-model="createVisible" title="手工创建协议（创建即生效，Σ份额=100%）" width="800px"
+      :close-on-click-modal="false" destroy-on-close>
+      <el-form label-width="90px" style="margin-bottom: 8px;">
+        <div style="display: flex; gap: 12px;">
+          <el-form-item label="协议名称" required style="flex: 1;">
+            <el-input v-model="createForm.title" placeholder="如 2026 年度管件框架" />
+          </el-form-item>
+          <el-form-item label="生效日">
+            <el-date-picker v-model="createForm.effectiveDate" type="date" value-format="YYYY-MM-DD"
+              placeholder="默认当日" />
+          </el-form-item>
+          <el-form-item label="到期日">
+            <el-date-picker v-model="createForm.expireDate" type="date" value-format="YYYY-MM-DD"
+              placeholder="默认 +12 月" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <el-table :data="createForm.lines" size="small" border>
+        <el-table-column label="#" width="46" align="center">
+          <template #default="{ $index }">{{ $index + 1 }}</template>
+        </el-table-column>
+        <el-table-column label="物料" width="170">
+          <template #default="{ row }">
+            <el-select v-model="row.itemCode" filterable allow-create default-first-option placeholder="选择或输入" style="width: 100%;">
+              <el-option v-for="o in itemOptions" :key="o.code" :label="`[${o.code}] ${o.name}`" :value="o.code" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="供应商" width="150">
+          <template #default="{ row }">
+            <el-select v-model="row.supplierId" filterable placeholder="选择" style="width: 100%;">
+              <el-option v-for="s in suppliers" :key="s.id" :label="s.supplierName" :value="s.id" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="单价" width="115">
+          <template #default="{ row }">
+            <el-input-number v-model="row.unitPrice" :min="0" :precision="4" size="small" style="width: 105px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="区间下限" width="110">
+          <template #default="{ row }">
+            <el-input-number v-model="row.priceMin" :min="0" :precision="4" size="small" style="width: 100px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="区间上限" width="110">
+          <template #default="{ row }">
+            <el-input-number v-model="row.priceMax" :min="0" :precision="4" size="small" style="width: 100px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="份额%" width="100">
+          <template #default="{ row }">
+            <el-input-number v-model="row.sharePct" :min="0" :max="100" :precision="2" size="small" style="width: 90px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="承诺量" width="100">
+          <template #default="{ row }">
+            <el-input-number v-model="row.commitQty" :min="0" :precision="2" size="small" style="width: 90px;" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="createForm.lines.splice($index, 1)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 8px; display: flex; gap: 12px; align-items: center;">
+        <el-button size="small" @click="createForm.lines.push({ itemCode: '', supplierId: '', unitPrice: 0, priceMin: null, priceMax: null, sharePct: 0, commitQty: null })">+ 加行</el-button>
+        <span :style="{ color: createSum === 100 ? '#67C23A' : '#F56C6C', fontWeight: 600 }">
+          份额合计：{{ createSum.toFixed(2) }}% {{ createSum === 100 ? '✓' : '（须 = 100）' }}
+        </span>
+        <span class="hint">区间选填（上下限须成对且含单价）；承诺量空 = 不限量</span>
+      </div>
+      <template #footer>
+        <el-button @click="createVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="createSum !== 100" @click="submitCreate">创建</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onActivated } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, reactive, computed, onMounted, onActivated } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import {
-  getAgreementsApi, getAgreementDetailApi, updateAgreementLineApi, changeAgreementLineApi
+  getAgreementsApi, getAgreementDetailApi, updateAgreementLineApi, changeAgreementLineApi,
+  createAgreementApi, renewAgreementApi, stopAgreementApi
 } from '@/api/proc/framework-agreement'
+import { getSupplierPageApi } from '@/api/mdm/supplier-admission'
+import { getItemOptionsApi } from '@/api/mdm/item'
 
 const userStore = useUserStore()
 const isAdmin = (userStore.userInfo?.roles || []).includes('ROLE_ADMIN')
 const loading = ref(false)
 const saving = ref(false)
 
-const statusNames = { '0': '未生效', '1': '生效中', '2': '已过期', '3': '已停用' }
+// design D4 状态机：1 生效 / 2 临期 / 3 已到期 / 4 已终止
+const statusNames = { '1': '生效中', '2': '临期', '3': '已到期', '4': '已终止' }
 function statusName(s) { return statusNames[s] || s }
-function statusTag(s) { return { '0': 'info', '1': 'success', '2': 'warning', '3': 'info' }[s] }
+function statusTag(s) { return { '1': 'success', '2': 'warning', '3': 'info', '4': 'danger' }[s] }
+
+/** 行剩余量 = 承诺量 − 已下单量（S-4.2-03） */
+function remain(row) {
+  if (row.commitQty == null) return Infinity
+  return Number(row.commitQty) - Number(row.orderedQty || 0)
+}
+
+// ---- 续签 / 终止（spec「续签与终止」） ----
+async function doRenew(row) {
+  try {
+    await ElMessageBox.confirm(
+      `续签 ${row.agreementNo}？将生成新协议（继承行结构与份额），原协议置为已到期。`,
+      '协议续签', { type: 'warning' })
+    const { data } = await renewAgreementApi(row.id)
+    ElMessage.success(`已续签：${data.agreement.agreementNo}（原 ${data.renewedFrom} → 已到期）`)
+    loadList()
+  } catch { /* 取消 */ }
+}
+
+async function doStop(row) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '终止原因（必填，终止后不可逆、不可再下单）', `终止 ${row.agreementNo}`,
+      { inputPattern: /^.{2,}$/, inputErrorMessage: '原因不少于 2 字' })
+    await stopAgreementApi(row.id, value)
+    ElMessage.success('已终止，该协议不可再引用（L1059）')
+    loadList()
+  } catch { /* 取消 */ }
+}
+
+// ---- 手工创建（design D5） ----
+const createVisible = ref(false)
+const suppliers = ref([])
+const itemOptions = ref([])
+const createForm = reactive({
+  title: '', effectiveDate: '', expireDate: '',
+  lines: [{ itemCode: '', supplierId: '', unitPrice: 0, priceMin: null, priceMax: null, sharePct: 0, commitQty: null }]
+})
+const createSum = computed(() =>
+  createForm.lines.reduce((s, r) => s + (Number(r.sharePct) || 0), 0))
+
+async function openCreate() {
+  createForm.title = ''
+  createForm.effectiveDate = ''
+  createForm.expireDate = ''
+  createForm.lines = [{ itemCode: '', supplierId: '', unitPrice: 0, priceMin: null, priceMax: null, sharePct: 0, commitQty: null }]
+  createVisible.value = true
+  const [{ data: sups }, { data: items }] = await Promise.all([
+    getSupplierPageApi({ current: 1, size: 100 }), getItemOptionsApi()
+  ])
+  suppliers.value = sups.records || sups || []
+  itemOptions.value = items || []
+}
+
+async function submitCreate() {
+  if (createSum.value !== 100) { ElMessage.warning('份额合计须等于 100%'); return }
+  saving.value = true
+  try {
+    const { data } = await createAgreementApi({
+      title: createForm.title,
+      effectiveDate: createForm.effectiveDate || undefined,
+      expireDate: createForm.expireDate || undefined,
+      lines: createForm.lines.map(l => ({
+        itemCode: l.itemCode, supplierId: l.supplierId, unitPrice: l.unitPrice,
+        priceMin: l.priceMin ?? undefined, priceMax: l.priceMax ?? undefined,
+        sharePct: l.sharePct, commitQty: l.commitQty ?? undefined
+      }))
+    })
+    ElMessage.success(`已创建 ${data.agreement.agreementNo}（${data.lineCount} 行，生效中）`)
+    createVisible.value = false
+    loadList()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '创建失败')
+  } finally {
+    saving.value = false
+  }
+}
 
 const listQuery = ref({ status: '', keyword: '' })
 const rows = ref([])
@@ -208,4 +415,5 @@ onActivated(loadList)
 <style scoped>
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.hint { color: #909399; font-size: 12px; }
 </style>

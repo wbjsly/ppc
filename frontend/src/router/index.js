@@ -122,10 +122,262 @@ const routes = [
         meta: { title: '框架协议', group: '采购管理' }
       },
       {
+        path: '/m/2.2.4',
+        name: 'PriceMatrix',
+        component: () => import('@/views/proc/price-matrix/index.vue'),
+        meta: { title: '比价矩阵', group: '采购管理' }
+      },
+      {
         path: '/m/2.1.4',
         name: 'RequisitionApproval',
         component: () => import('@/views/proc/requisition-approval/index.vue'),
         meta: { title: '请购审批', group: '采购管理' }
+      },
+      {
+        path: '/m/2.3.1',
+        name: 'PoCreate',
+        component: () => import('@/views/proc/purchase-order/index.vue'),
+        meta: { title: '订单创建', group: '采购管理', tab: 'orders' }
+      },
+      {
+        path: '/m/2.3.2',
+        name: 'PoApproval',
+        component: () => import('@/views/proc/purchase-order/index.vue'),
+        meta: { title: '订单审批', group: '采购管理', tab: 'approval' }
+      },
+      {
+        path: '/m/2.3.3',
+        name: 'PoChange',
+        component: () => import('@/views/proc/purchase-order/index.vue'),
+        meta: { title: '订单变更', group: '采购管理', tab: 'change' }
+      },
+      {
+        path: '/m/2.3.4',
+        name: 'PoVersion',
+        component: () => import('@/views/proc/purchase-order/index.vue'),
+        meta: { title: '版本管理', group: '采购管理', tab: 'versions' }
+      },
+      {
+        path: '/m/2.3.5',
+        name: 'PriceControl',
+        component: () => import('@/views/proc/price-control/index.vue'),
+        meta: { title: '价控校验', group: '采购管理' }
+      },
+      {
+        path: '/m/2.4.1',
+        name: 'GoodsReceipt',
+        component: () => import('@/views/proc/goods-receipt/index.vue'),
+        meta: { title: '到货登记', group: '采购管理', tab: 'register' }
+      },
+      {
+        path: '/m/2.4.2',
+        name: 'QcHold',
+        component: () => import('@/views/proc/goods-receipt/index.vue'),
+        meta: { title: '待检管理', group: '采购管理', tab: 'qc' }
+      },
+      {
+        path: '/m/2.4.3',
+        name: 'ReceiptDifference',
+        component: () => import('@/views/proc/goods-receipt/index.vue'),
+        meta: { title: '容差校验', group: '采购管理', tab: 'difference' }
+      },
+      {
+        path: '/m/2.4.4',
+        name: 'ReceiptPosting',
+        component: () => import('@/views/proc/goods-receipt/index.vue'),
+        meta: { title: '入库过账', group: '采购管理', tab: 'posting' }
+      },
+      // 质量审批待办（通用审批底座聚合入口，无菜单项，由各质量页跳转）
+      {
+        path: '/m/qms-approval',
+        name: 'QmsApproval',
+        component: () => import('@/views/qms/approval/index.vue'),
+        meta: { title: '质量审批待办', group: '质量管理', hidden: true }
+      },
+      // 6.1 标准管理（add-quality-collaboration）
+      {
+        path: '/m/6.1.1',
+        name: 'StandardApply',
+        component: () => import('@/views/qms/standard/index.vue'),
+        meta: { title: '标准申请', group: '质量管理', tab: 'apply' }
+      },
+      {
+        path: '/m/6.1.2',
+        name: 'StandardApproval',
+        component: () => import('@/views/qms/standard/index.vue'),
+        meta: { title: '标准审批', group: '质量管理', tab: 'approval' }
+      },
+      {
+        path: '/m/6.1.3',
+        name: 'StandardPublish',
+        component: () => import('@/views/qms/standard/index.vue'),
+        meta: { title: '版本发布', group: '质量管理', tab: 'publish' }
+      },
+      {
+        path: '/m/6.1.4',
+        name: 'SamplingPlan',
+        component: () => import('@/views/qms/standard/index.vue'),
+        meta: { title: '抽样方案', group: '质量管理', tab: 'sampling' }
+      },
+      {
+        path: '/m/6.1.5',
+        name: 'StandardRetire',
+        component: () => import('@/views/qms/standard/index.vue'),
+        meta: { title: '标准退役', group: '质量管理', tab: 'retire' }
+      },
+      // 2.5 质量协同 + 6.2/6.3/6.4 检验执行（add-quality-collaboration，同组件多路由）
+      {
+        path: '/m/2.5.1',
+        name: 'IncomingInspection',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '来料检验', group: '采购管理', tab: 'board', lotType: 'IQC' }
+      },
+      {
+        path: '/m/2.6.1',
+        name: 'QualityReturn',
+        component: () => import('@/views/proc/quality-return/index.vue'),
+        meta: { title: '质量退货', group: '采购管理' }
+      },
+      {
+        path: '/m/2.5.2',
+        name: 'ConcessionPurchase',
+        component: () => import('@/views/qms/concession/index.vue'),
+        meta: { title: '让步接收', group: '采购管理' }
+      },
+      {
+        path: '/m/6.4.2',
+        name: 'ConcessionQuality',
+        component: () => import('@/views/qms/concession/index.vue'),
+        meta: { title: '让步接收', group: '质量管理' }
+      },
+      {
+        path: '/m/6.2.1',
+        name: 'TaskIqc',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '来料检验', group: '质量管理', tab: 'board', lotType: 'IQC' }
+      },
+      {
+        path: '/m/6.2.2',
+        name: 'TaskIpqc',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '过程检验', group: '质量管理', tab: 'board', lotType: 'IPQC' }
+      },
+      {
+        path: '/m/6.2.3',
+        name: 'TaskOqc',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '出货检验', group: '质量管理', tab: 'board', lotType: 'OQC' }
+      },
+      {
+        path: '/m/6.3.1',
+        name: 'SamplingExecute',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '抽样执行', group: '质量管理', tab: 'input' }
+      },
+      {
+        path: '/m/6.3.2',
+        name: 'InspectionRecord',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '检验记录', group: '质量管理', tab: 'input' }
+      },
+      {
+        path: '/m/6.4.1',
+        name: 'QualifiedRelease',
+        component: () => import('@/views/qms/inspection/index.vue'),
+        meta: { title: '合格放行', group: '质量管理', tab: 'board' }
+      },
+      // 6.8 供应质量 SCAR / 6.9 器具校准 / 6.10 过程控制（add-quality-collaboration）
+      {
+        path: '/m/6.8.1',
+        name: 'ScarClaim',
+        component: () => import('@/views/qms/scar/index.vue'),
+        meta: { title: '质量索赔', group: '质量管理' }
+      },
+      {
+        path: '/m/6.8.2',
+        name: 'ScarScore',
+        component: () => import('@/views/qms/scar/index.vue'),
+        meta: { title: '评分反馈', group: '质量管理' }
+      },
+      {
+        path: '/m/6.9.1',
+        name: 'GaugePlan',
+        component: () => import('@/views/qms/gauge/index.vue'),
+        meta: { title: '校准计划', group: '质量管理' }
+      },
+      {
+        path: '/m/6.9.2',
+        name: 'GaugeExecute',
+        component: () => import('@/views/qms/gauge/index.vue'),
+        meta: { title: '校准执行', group: '质量管理' }
+      },
+      {
+        path: '/m/6.9.3',
+        name: 'GaugeWarning',
+        component: () => import('@/views/qms/gauge/index.vue'),
+        meta: { title: '到期预警', group: '质量管理' }
+      },
+      {
+        path: '/m/6.10.1',
+        name: 'SpcMonitor',
+        component: () => import('@/views/qms/spc/index.vue'),
+        meta: { title: '特性监控', group: '质量管理' }
+      },
+      {
+        path: '/m/6.10.2',
+        name: 'SpcTrend',
+        component: () => import('@/views/qms/spc/index.vue'),
+        meta: { title: '趋势预警', group: '质量管理' }
+      },
+      // 6.6 根因分析 CAPA / 6.7 质量成本 COPQ（add-quality-collaboration）
+      {
+        path: '/m/6.6.1',
+        name: 'CapaReport',
+        component: () => import('@/views/qms/capa/index.vue'),
+        meta: { title: '8D 报告', group: '质量管理', tab: 'list' }
+      },
+      {
+        path: '/m/6.6.2',
+        name: 'CapaAction',
+        component: () => import('@/views/qms/capa/index.vue'),
+        meta: { title: '措施执行', group: '质量管理', tab: 'actions' }
+      },
+      {
+        path: '/m/6.6.3',
+        name: 'CapaVerify',
+        component: () => import('@/views/qms/capa/index.vue'),
+        meta: { title: '效果验证', group: '质量管理', tab: 'verify' }
+      },
+      {
+        path: '/m/6.7.1',
+        name: 'CopqLedger',
+        component: () => import('@/views/qms/copq/index.vue'),
+        meta: { title: '成本归集', group: '质量管理', tab: 'ledger' }
+      },
+      {
+        path: '/m/6.7.2',
+        name: 'CopqAnalysis',
+        component: () => import('@/views/qms/copq/index.vue'),
+        meta: { title: '损失分析', group: '质量管理', tab: 'analysis' }
+      },
+      // 2.5.3 / 6.5 不合格品 NCR（add-quality-collaboration，同组件三路由）
+      {
+        path: '/m/2.5.3',
+        name: 'NcrPurchase',
+        component: () => import('@/views/qms/ncr/index.vue'),
+        meta: { title: '不合格品', group: '采购管理', tab: 'all' }
+      },
+      {
+        path: '/m/6.5.1',
+        name: 'NcrIsolate',
+        component: () => import('@/views/qms/ncr/index.vue'),
+        meta: { title: '标识隔离', group: '质量管理', tab: 'isolate' }
+      },
+      {
+        path: '/m/6.5.2',
+        name: 'NcrDispose',
+        component: () => import('@/views/qms/ncr/index.vue'),
+        meta: { title: '处置跟踪', group: '质量管理', tab: 'dispose' }
       },
       {
         path: '/m/1.6.1',

@@ -7,6 +7,7 @@ import com.erp.dao.mdm.MdmSupplierDao;
 import com.erp.dao.proc.FrameworkAgreementDao;
 import com.erp.dao.proc.FrameworkAgreementLineDao;
 import com.erp.dao.proc.TenderDao;
+import com.erp.dao.proc.TenderAwardDao;
 import com.erp.dao.proc.TenderJudgeDao;
 import com.erp.dao.proc.TenderLineDao;
 import com.erp.dao.proc.TenderObjectionDao;
@@ -17,6 +18,7 @@ import com.erp.entity.mdm.MdmSupplier;
 import com.erp.entity.proc.FrameworkAgreement;
 import com.erp.entity.proc.FrameworkAgreementLine;
 import com.erp.entity.proc.Tender;
+import com.erp.entity.proc.TenderAward;
 import com.erp.entity.proc.TenderJudge;
 import com.erp.entity.proc.TenderLine;
 import com.erp.entity.proc.TenderObjection;
@@ -39,9 +41,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -64,12 +68,17 @@ public class TenderServiceImpl implements TenderService {
     @Value("${app.proc.agreement-valid-months:12}")
     private int agreementValidMonths;
 
+    /** 协议临期提醒阈值（L1059：到期前 30 天提醒续签，design D4） */
+    @Value("${app.proc.expiry-remind-days:30}")
+    private int expiryRemindDays;
+
     private final TenderDao tenderDao;
     private final TenderLineDao lineDao;
     private final TenderSupplierDao supplierDao;
     private final TenderQuoteDao quoteDao;
     private final TenderJudgeDao judgeDao;
     private final TenderScoreDao scoreDao;
+    private final TenderAwardDao awardDao;
     private final FrameworkAgreementDao agreementDao;
     private final FrameworkAgreementLineDao agreementLineDao;
     private final TenderObjectionDao objectionDao;
@@ -83,6 +92,7 @@ public class TenderServiceImpl implements TenderService {
                              TenderQuoteDao quoteDao,
                              TenderJudgeDao judgeDao,
                              TenderScoreDao scoreDao,
+                             TenderAwardDao awardDao,
                              FrameworkAgreementDao agreementDao,
                              FrameworkAgreementLineDao agreementLineDao,
                              TenderObjectionDao objectionDao,
@@ -95,6 +105,7 @@ public class TenderServiceImpl implements TenderService {
         this.quoteDao = quoteDao;
         this.judgeDao = judgeDao;
         this.scoreDao = scoreDao;
+        this.awardDao = awardDao;
         this.agreementDao = agreementDao;
         this.agreementLineDao = agreementLineDao;
         this.objectionDao = objectionDao;
@@ -201,6 +212,21 @@ public class TenderServiceImpl implements TenderService {
             judges.add(row);
         }
         result.put("judges", judges);
+
+        // 中标子表（spec「中标子表留存与兼容」：公示/详情/协议生成的权威来源，design D2）
+        List<Map<String, Object>> awards = new ArrayList<>();
+        for (TenderAward a : awardDao.selectList(new LambdaQueryWrapper<TenderAward>()
+                .eq(TenderAward::getTenderId, id).orderByAsc(TenderAward::getLineNo))) {
+            Map<String, Object> aw = new LinkedHashMap<>();
+            aw.put("id", a.getId());
+            aw.put("lineNo", a.getLineNo());
+            aw.put("supplierId", a.getSupplierId());
+            aw.put("supplierName", a.getSupplierName());
+            aw.put("awardPrice", a.getAwardPrice());
+            aw.put("sharePct", a.getSharePct());
+            awards.add(aw);
+        }
+        result.put("awards", awards);
 
         // 异议登记（BR-4.2-48，供复核入口取 ID）
         List<Map<String, Object>> objections = new ArrayList<>();
@@ -1083,6 +1109,17 @@ public class TenderServiceImpl implements TenderService {
         t.setAwardSupplierId(awardSid);
         t.setAwardPrice(awardPrice);
         t.setAwardScore(awardScore);
+        // design D2：评标汇总即落中标子表默认行（单家 100%，采购员可在定标审批前经 saveWinners 调整）
+        awardDao.delete(new LambdaQueryWrapper<TenderAward>()
+                .eq(TenderAward::getTenderId, id));
+        TenderAward def = new TenderAward();
+        def.setTenderId(id);
+        def.setLineNo(1);
+        def.setSupplierId(awardSid);
+        def.setSupplierName(supplierName(awardSid));
+        def.setAwardPrice(awardPrice == null ? BigDecimal.ZERO : awardPrice);
+        def.setSharePct(BigDecimal.valueOf(100));
+        awardDao.insert(def);
         support.transition(t, TenderStateMachine.PENDING_AWARD, "评标汇总，拟中标 "
                 + supplierName(awardSid));
         support.persist(t);
@@ -1096,7 +1133,163 @@ public class TenderServiceImpl implements TenderService {
         result.put("awardPrice", awardPrice);
         result.put("awardScore", awardScore);
         result.put("summary", summary);
+        // 定标录入预填候选（spec tender-bidding-management「评标结果作为定标默认建议」）
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (TenderSupplier ts : qualified) {
+            TenderQuote last = lastQuote(id, ts.getSupplierId());
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("supplierId", ts.getSupplierId());
+            c.put("supplierName", ts.getSupplierName());
+            c.put("finalPrice", last == null ? null : last.getUnitPrice());
+            c.put("score", summary.get(ts.getSupplierId()));
+            c.put("isDefault", ts.getSupplierId().equals(awardSid));
+            candidates.add(c);
+        }
+        result.put("candidates", candidates);
+        List<Map<String, Object>> defWinners = new ArrayList<>();
+        Map<String, Object> w = new LinkedHashMap<>();
+        w.put("supplierId", awardSid);
+        w.put("supplierName", supplierName(awardSid));
+        w.put("awardPrice", awardPrice);
+        w.put("sharePct", BigDecimal.valueOf(100));
+        defWinners.add(w);
+        result.put("awardWinners", defWinners);
         return result;
+    }
+
+    /**
+     * 保存中标人与份额（spec tender-bidding-management「多中标人定标录入」，design D2）。
+     * 校验：≥1 家、均为合格投标方、单价 = 该家最终轮有效报价、无重复、Σ份额 = 100（两位小数）。
+     * 头快照同步为份额最大中标人；PENDING_AWARD（评标汇总后、总监审批前）可反复调整。
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> saveWinners(String id, List<Map<String, Object>> winners) {
+        Tender t = support.requireTender(id);
+        if (!TenderStateMachine.PENDING_AWARD.equals(t.getStatus())) {
+            throw new ServiceException(422, "仅待定标审批状态可录入中标人，当前 " + t.getStatus());
+        }
+        if (winners == null || winners.isEmpty()) {
+            throw new ServiceException(422, "中标人至少 1 家");
+        }
+        List<TenderSupplier> qualified = supplierDao.selectList(
+                new LambdaQueryWrapper<TenderSupplier>()
+                        .eq(TenderSupplier::getTenderId, id)
+                        .eq(TenderSupplier::getQualifyStatus, "PASS"));
+        Map<String, TenderSupplier> qMap = new LinkedHashMap<>();
+        qualified.forEach(x -> qMap.put(x.getSupplierId(), x));
+
+        List<TenderAward> rows = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        BigDecimal sum = BigDecimal.ZERO;
+        for (Map<String, Object> w : winners) {
+            String sid = str(w.get("supplierId"));
+            if (!isNotBlank(sid) || !qMap.containsKey(sid.trim())) {
+                throw new ServiceException(422, "中标人须为该招标的合格投标方"
+                        + (isNotBlank(sid) ? "：" + sid : ""));
+            }
+            sid = sid.trim();
+            if (!seen.add(sid)) {
+                throw new ServiceException(422, "同一中标人不可重复录入：" + qMap.get(sid).getSupplierName());
+            }
+            TenderQuote last = lastQuote(id, sid);
+            if (last == null) {
+                throw new ServiceException(422, qMap.get(sid).getSupplierName()
+                        + " 无最终轮有效报价，不可中标");
+            }
+            BigDecimal price = toDecimal(w.get("awardPrice"));
+            if (price == null || price.compareTo(last.getUnitPrice()) != 0) {
+                throw new ServiceException(422, qMap.get(sid).getSupplierName()
+                        + " 中标单价须等于其最终轮有效报价 " + last.getUnitPrice());
+            }
+            BigDecimal share = toDecimal(w.get("sharePct"));
+            if (share == null || share.signum() <= 0) {
+                throw new ServiceException(422, qMap.get(sid).getSupplierName() + " 份额须大于 0");
+            }
+            share = share.setScale(2, java.math.RoundingMode.HALF_UP);
+            sum = sum.add(share);
+            TenderAward row = new TenderAward();
+            row.setTenderId(id);
+            row.setLineNo(rows.size() + 1);
+            row.setSupplierId(sid);
+            row.setSupplierName(qMap.get(sid).getSupplierName());
+            row.setAwardPrice(price);
+            row.setSharePct(share);
+            rows.add(row);
+        }
+        if (sum.compareTo(BigDecimal.valueOf(100)) != 0) {
+            throw new ServiceException(422, "份额合计须等于 100%，当前 " + sum.stripTrailingZeros().toPlainString() + "%");
+        }
+
+        // 替换子表（原子：先删后插，同一事务）
+        awardDao.delete(new LambdaQueryWrapper<TenderAward>().eq(TenderAward::getTenderId, id));
+        for (TenderAward row : rows) {
+            awardDao.insert(row);
+        }
+
+        // 头快照 = 份额最大中标人（并列取先录者）
+        TenderAward main = rows.get(0);
+        for (TenderAward r : rows) {
+            if (r.getSharePct().compareTo(main.getSharePct()) > 0) {
+                main = r;
+            }
+        }
+        t.setAwardSupplierId(main.getSupplierId());
+        t.setAwardPrice(main.getAwardPrice());
+        if ("SCORE".equals(t.getEvalMethod())) {
+            t.setAwardScore(avgSubmittedScore(id, main.getSupplierId()));
+        } else {
+            t.setAwardScore(null);
+        }
+        // 先 persist（verNo+1）再发头事件（C-0-06 幂等键铁律）
+        support.persist(t);
+        support.publishHead(t, "PROC.TENDER.AWARD_WINNERS",
+                "录入中标 " + rows.size() + " 家，份额合计 100%；主中标 "
+                        + main.getSupplierName() + " " + main.getSharePct() + "%");
+        log.info("TENDER {} winners saved n={} main={} share={}", t.getTenderNo(),
+                rows.size(), main.getSupplierName(), main.getSharePct());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<Map<String, Object>> saved = new ArrayList<>();
+        for (TenderAward r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("supplierId", r.getSupplierId());
+            m.put("supplierName", r.getSupplierName());
+            m.put("awardPrice", r.getAwardPrice());
+            m.put("sharePct", r.getSharePct());
+            saved.add(m);
+        }
+        result.put("winners", saved);
+        result.put("awardSupplierId", t.getAwardSupplierId());
+        result.put("awardPrice", t.getAwardPrice());
+        result.put("awardScore", t.getAwardScore());
+        return result;
+    }
+
+    /** 综合评分法：该投标方已提交评分的算术平均（与 evaluate 汇总同口径） */
+    private BigDecimal avgSubmittedScore(String tenderId, String supplierId) {
+        List<TenderScore> scores = scoreDao.selectList(new LambdaQueryWrapper<TenderScore>()
+                .eq(TenderScore::getTenderId, tenderId)
+                .eq(TenderScore::getSupplierId, supplierId)
+                .eq(TenderScore::getStatus, "SUBMITTED"));
+        if (scores.isEmpty()) {
+            return null;
+        }
+        return scores.stream().map(TenderScore::getWeightedScore)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .divide(BigDecimal.valueOf(scores.size()), 4, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** 载荷数字解析（接受 Number / 数字字符串），null 或非法返回 null */
+    private BigDecimal toDecimal(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(o).trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @Override
@@ -1238,6 +1431,18 @@ public class TenderServiceImpl implements TenderService {
         if (!isNotBlank(note) || note.trim().length() < 2) {
             throw new ServiceException(422, "审批意见必填（不少于 2 字）");
         }
+        // 防御：审批前子表必须完整且份额和 = 100（spec「多中标人定标录入」）
+        List<TenderAward> winners = awardDao.selectList(new LambdaQueryWrapper<TenderAward>()
+                .eq(TenderAward::getTenderId, id));
+        if (winners.isEmpty()) {
+            throw new ServiceException(422, "无中标记录，先完成定标录入");
+        }
+        BigDecimal winSum = winners.stream().map(TenderAward::getSharePct)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (winSum.compareTo(BigDecimal.valueOf(100)) != 0) {
+            throw new ServiceException(422, "中标份额合计须等于 100%，当前 "
+                    + winSum.stripTrailingZeros().toPlainString() + "%");
+        }
         t.setAwardApprovalStatus(approved ? "APPROVED" : "REJECTED");
         t.setAwardApprovedBy(SecurityUtils.getCurrentUserId());
         t.setAwardApprovedDate(LocalDateTime.now());
@@ -1354,6 +1559,8 @@ public class TenderServiceImpl implements TenderService {
                     "复核维持原定标，恢复公示；结论：" + note.trim());
         } else {
             t.setObjectionFlag("0");
+            // spec「中标子表留存与兼容」：重新招标时定标子表随定标结果作废
+            awardDao.delete(new LambdaQueryWrapper<TenderAward>().eq(TenderAward::getTenderId, id));
             support.transition(t, TenderStateMachine.CANCELLED,
                     "复核裁定重新招标，作废原定标");
             t.setAbortReason("复核裁定重新招标：" + note.trim());
@@ -1389,6 +1596,9 @@ public class TenderServiceImpl implements TenderService {
             row.put("effectiveDate", fa.getEffectiveDate());
             row.put("expireDate", fa.getExpireDate());
             row.put("status", fa.getStatus());
+            // design D4：生效中/临期可被下单引用（3 已到期 / 4 已终止阻断，spec「到期协议阻断引用」）
+            row.put("usable", "1".equals(fa.getStatus()) || "2".equals(fa.getStatus()));
+            row.put("source", fa.getSource());
             row.put("totalShare", fa.getTotalShare());
             row.put("lineCount", agreementLineDao.selectCount(
                     new LambdaQueryWrapper<FrameworkAgreementLine>()
@@ -1474,6 +1684,258 @@ public class TenderServiceImpl implements TenderService {
         return result;
     }
 
+    /**
+     * 手工创建协议（design D5，spec「手工创建协议」）：采购经理权限、创建即生效（status=1），
+     * 与招标生成协议共用锁定/变更留痕/到期状态机，来源标记 MANUAL。
+     * 行校验：物料与供应商必填、单价 > 0、priceMin/Max 须成对且含 unitPrice、Σ份额 = 100。
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> createAgreement(Map<String, Object> payload) {
+        String title = str(payload.get("title"));
+        if (!isNotBlank(title) || title.trim().length() < 2) {
+            throw new ServiceException(422, "协议名称必填（不少于 2 字）");
+        }
+        Object rawLines = payload.get("lines");
+        if (!(rawLines instanceof List<?> list) || list.isEmpty()) {
+            throw new ServiceException(422, "协议明细行必填");
+        }
+        LocalDate effective = parseDate(payload.get("effectiveDate"));
+        if (effective == null) {
+            effective = LocalDate.now();
+        }
+        LocalDate expire = parseDate(payload.get("expireDate"));
+        if (expire == null) {
+            expire = effective.plusMonths(agreementValidMonths);
+        }
+        if (!expire.isAfter(effective)) {
+            throw new ServiceException(422, "到期日须晚于生效日");
+        }
+
+        // 行校验（先全量校验再落库，避免半截）
+        record Row(String itemCode, String itemName, String sid, String sname,
+                   BigDecimal price, BigDecimal min, BigDecimal max,
+                   BigDecimal share, BigDecimal commit) {}
+        List<Row> rows = new ArrayList<>();
+        BigDecimal sum = BigDecimal.ZERO;
+        Set<String> items = new HashSet<>();
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) {
+                throw new ServiceException(422, "明细行格式非法");
+            }
+            String itemCode = str(m.get("itemCode"));
+            String sid = str(m.get("supplierId"));
+            if (!isNotBlank(itemCode)) {
+                throw new ServiceException(422, "明细行物料必填");
+            }
+            if (!items.add(itemCode)) {
+                throw new ServiceException(422, "同物料手工协议行不可重复：" + itemCode);
+            }
+            if (!isNotBlank(sid)) {
+                throw new ServiceException(422, "明细行供应商必填");
+            }
+            BigDecimal price = toDecimal(m.get("unitPrice"));
+            if (price == null || price.signum() <= 0) {
+                throw new ServiceException(422, itemCode + " 单价须大于 0");
+            }
+            BigDecimal min = toDecimal(m.get("priceMin"));
+            BigDecimal max = toDecimal(m.get("priceMax"));
+            if ((min == null) != (max == null)) {
+                throw new ServiceException(422, itemCode + " 价格区间上下限须同时填写");
+            }
+            if (min != null) {
+                if (min.compareTo(max) > 0) {
+                    throw new ServiceException(422, itemCode + " 价格下限不得高于上限");
+                }
+                if (price.compareTo(min) < 0 || price.compareTo(max) > 0) {
+                    throw new ServiceException(422, itemCode + " 单价须落在价格区间内");
+                }
+            }
+            BigDecimal share = toDecimal(m.get("sharePct"));
+            if (share == null || share.signum() <= 0) {
+                throw new ServiceException(422, itemCode + " 份额须大于 0");
+            }
+            share = share.setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal commit = toDecimal(m.get("commitQty"));
+            if (commit != null && commit.signum() < 0) {
+                throw new ServiceException(422, itemCode + " 承诺量不得为负");
+            }
+            sum = sum.add(share);
+            rows.add(new Row(itemCode.trim(), str(m.get("itemName")), sid.trim(),
+                    str(m.get("supplierName")), price, min, max, share, commit));
+        }
+        if (sum.compareTo(BigDecimal.valueOf(100)) != 0) {
+            throw new ServiceException(422, "份额合计须等于 100%，当前 "
+                    + sum.stripTrailingZeros().toPlainString() + "%");
+        }
+
+        FrameworkAgreement fa = new FrameworkAgreement();
+        fa.setAgreementNo(nextAgreementNo());
+        fa.setTitle(title.trim());
+        fa.setEffectiveDate(effective);
+        fa.setExpireDate(expire);
+        fa.setStatus("1");
+        fa.setSource("MANUAL");
+        fa.setTotalShare(BigDecimal.valueOf(100));
+        fa.setChangeNote("手工创建（" + SecurityUtils.getCurrentUserId() + "，" + LocalDateTime.now() + "）");
+        agreementDao.insert(fa);
+
+        int no = 1;
+        for (Row r : rows) {
+            FrameworkAgreementLine fl = new FrameworkAgreementLine();
+            fl.setAgreementId(fa.getId());
+            fl.setLineNo(no++);
+            fl.setItemCode(r.itemCode());
+            fl.setItemName(r.itemName() == null ? r.itemCode() : r.itemName());
+            fl.setAwardSupplierId(r.sid());
+            fl.setAwardSupplierName(isNotBlank(r.sname()) ? r.sname() : supplierName(r.sid()));
+            fl.setUnitPrice(r.price());
+            fl.setSharePct(r.share());
+            fl.setCommitQty(r.commit());
+            fl.setOrderedQty(BigDecimal.ZERO);
+            fl.setPriceMin(r.min());
+            fl.setPriceMax(r.max());
+            fl.setCreateBy(SecurityUtils.getCurrentUserId());
+            agreementLineDao.insert(fl);
+        }
+        log.info("AGREEMENT {} manually created lines={} expire={}", fa.getAgreementNo(), rows.size(), expire);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("agreement", fa);
+        result.put("lineCount", rows.size());
+        return result;
+    }
+
+    /**
+     * 续签（spec「续签与终止」/ L1059 到期前 30 天提醒续签）：
+     * 仅临期(2)/已到期(3)可续签 → 生成新协议（新编号、继承行结构与份额、有效期 +N 月），
+     * 原协议置已到期并记录关联。
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> renewAgreement(String id) {
+        FrameworkAgreement orig = agreementDao.selectById(id);
+        if (orig == null) {
+            throw new ServiceException(404, "框架协议不存在");
+        }
+        if (!"2".equals(orig.getStatus()) && !"3".equals(orig.getStatus())) {
+            throw new ServiceException(422, "仅临期或已到期协议可续签，当前状态 " + orig.getStatus());
+        }
+        if (agreementDao.selectCount(new LambdaQueryWrapper<FrameworkAgreement>()
+                .eq(FrameworkAgreement::getRenewOf, id)) > 0) {
+            throw new ServiceException(422, "该协议已存在续签记录，请勿重复续签");
+        }
+        List<FrameworkAgreementLine> origLines = agreementLineDao.selectList(
+                new LambdaQueryWrapper<FrameworkAgreementLine>()
+                        .eq(FrameworkAgreementLine::getAgreementId, id)
+                        .orderByAsc(FrameworkAgreementLine::getLineNo));
+        if (origLines.isEmpty()) {
+            throw new ServiceException(422, "原协议无明细行，不可续签");
+        }
+
+        LocalDate effective = LocalDate.now();
+        FrameworkAgreement na = new FrameworkAgreement();
+        na.setAgreementNo(nextAgreementNo());
+        na.setTenderNo(orig.getTenderNo());
+        na.setTenderId(orig.getTenderId());
+        na.setTitle(orig.getTitle());
+        na.setEffectiveDate(effective);
+        na.setExpireDate(effective.plusMonths(agreementValidMonths));
+        na.setStatus("1");
+        na.setSource(orig.getSource());
+        na.setRenewOf(orig.getId());
+        na.setTotalShare(orig.getTotalShare());
+        na.setChangeNote("由 " + orig.getAgreementNo() + " 续签（" + SecurityUtils.getCurrentUserId()
+                + "，" + LocalDateTime.now() + "）");
+        agreementDao.insert(na);
+
+        int no = 1;
+        for (FrameworkAgreementLine l : origLines) {
+            FrameworkAgreementLine nl = new FrameworkAgreementLine();
+            nl.setAgreementId(na.getId());
+            nl.setLineNo(no++);
+            nl.setItemCode(l.getItemCode());
+            nl.setItemName(l.getItemName());
+            nl.setAwardSupplierId(l.getAwardSupplierId());
+            nl.setAwardSupplierName(l.getAwardSupplierName());
+            nl.setUnitPrice(l.getUnitPrice());
+            nl.setSharePct(l.getSharePct());
+            nl.setCommitQty(l.getCommitQty());
+            nl.setOrderedQty(BigDecimal.ZERO);   // 新协议余量从零计
+            nl.setPriceMin(l.getPriceMin());
+            nl.setPriceMax(l.getPriceMax());
+            nl.setCreateBy(SecurityUtils.getCurrentUserId());
+            agreementLineDao.insert(nl);
+        }
+
+        orig.setStatus("3");
+        orig.setChangeNote("已由 " + na.getAgreementNo() + " 续签（" + LocalDateTime.now() + "）");
+        agreementDao.updateById(orig);
+        log.info("AGREEMENT {} renewed to {} (lines={})", orig.getAgreementNo(),
+                na.getAgreementNo(), origLines.size());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("agreement", na);
+        result.put("renewedFrom", orig.getAgreementNo());
+        return result;
+    }
+
+    /** 终止协议（spec「续签与终止」）：仅生效中/临期可终止，原因必填，置 4 后不可逆 */
+    @Override
+    @Transactional
+    public Map<String, Object> stopAgreement(String id, String reason) {
+        FrameworkAgreement fa = agreementDao.selectById(id);
+        if (fa == null) {
+            throw new ServiceException(404, "框架协议不存在");
+        }
+        if (!"1".equals(fa.getStatus()) && !"2".equals(fa.getStatus())) {
+            throw new ServiceException(422, "仅生效中/临期协议可终止，当前状态 " + fa.getStatus());
+        }
+        if (!isNotBlank(reason) || reason.trim().length() < 2) {
+            throw new ServiceException(422, "终止原因必填（不少于 2 字）");
+        }
+        fa.setStatus("4");
+        fa.setStopReason(reason.trim());
+        fa.setChangeNote("终止（" + SecurityUtils.getCurrentUserId() + "，" + LocalDateTime.now() + "）");
+        agreementDao.updateById(fa);
+        log.info("AGREEMENT {} stopped: {}", fa.getAgreementNo(), reason.trim());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", fa.getStatus());
+        result.put("stopReason", fa.getStopReason());
+        return result;
+    }
+
+    /** 协议状态懒推进（design D4，与招标 sweep 同范式，无 @Scheduled）：1→2 临期、1/2→3 已到期 */
+    private void sweepAgreements() {
+        LocalDate today = LocalDate.now();
+        for (FrameworkAgreement fa : agreementDao.selectList(new LambdaQueryWrapper<FrameworkAgreement>()
+                .in(FrameworkAgreement::getStatus, "1", "2")
+                .isNotNull(FrameworkAgreement::getExpireDate))) {
+            if (fa.getExpireDate().isBefore(today)) {
+                fa.setStatus("3");
+                agreementDao.updateById(fa);
+                log.info("AGREEMENT {} expired (was {})", fa.getAgreementNo(), "1".equals(fa.getStatus()) ? "生效中" : "临期");
+            } else if ("1".equals(fa.getStatus())
+                    && !fa.getExpireDate().isAfter(today.plusDays(expiryRemindDays))) {
+                fa.setStatus("2");
+                agreementDao.updateById(fa);
+                log.info("AGREEMENT {} approaching expiry {} (<= {}d), reminder on",
+                        fa.getAgreementNo(), fa.getExpireDate(), expiryRemindDays);
+            }
+        }
+    }
+
+    /** 解析 yyyy-MM-dd 日期（载荷），非法抛 422 */
+    private LocalDate parseDate(Object o) {
+        if (o == null || !isNotBlank(String.valueOf(o))) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(String.valueOf(o).trim().substring(0, 10));
+        } catch (Exception e) {
+            throw new ServiceException(422, "日期格式非法（应为 yyyy-MM-dd）：" + o);
+        }
+    }
+
     /** 协议编号 FA-YYYYMMDD-NNN */
     private String nextAgreementNo() {
         String prefix = "FA-" + LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE) + "-";
@@ -1537,20 +1999,46 @@ public class TenderServiceImpl implements TenderService {
             }
             generateAgreement(t);
         }
+        // 3) 协议状态懒推进（design D4：临期提醒 / 到期，L1059）
+        sweepAgreements();
     }
 
     /**
      * 公示期满无异议 → 自动生成框架协议（幂等：TENDER_NO 唯一约束兜底）。
-     * 明细 = 招标行 × 中标供应商，单价取中标价，份额 100%（单中标口径，见 design Open Questions）。
+     * 明细 = 招标行 × 中标子表每家中标人（design D2/D3）：单价取该家中标价、份额取子表值、
+     * COMMIT_QTY = 招标行数量、ORDERED_QTY = 0。份额和 ≠ 100 阻断生成（在 sweep 内只记日志不抛出）。
      */
     private void generateAgreement(Tender t) {
-        if (t.getAwardSupplierId() == null || t.getAwardPrice() == null) {
-            log.warn("TENDER {} cannot generate agreement: award price missing (BR-4.2-05)", t.getTenderNo());
+        if (t.getAwardSupplierId() == null) {
+            log.warn("TENDER {} cannot generate agreement: no award winner (BR-4.2-05)", t.getTenderNo());
             return;
         }
         if (agreementDao.selectCount(new LambdaQueryWrapper<FrameworkAgreement>()
                 .eq(FrameworkAgreement::getTenderId, t.getId())) > 0) {
             return;   // 已生成，幂等
+        }
+        // 中标子表为权威来源；空则回退头快照合成单家（存量/迁移兜底）
+        List<TenderAward> winners = awardDao.selectList(new LambdaQueryWrapper<TenderAward>()
+                .eq(TenderAward::getTenderId, t.getId())
+                .orderByAsc(TenderAward::getLineNo));
+        if (winners.isEmpty()) {
+            if (t.getAwardPrice() == null) {
+                log.warn("TENDER {} cannot generate agreement: award price missing (BR-4.2-05)", t.getTenderNo());
+                return;
+            }
+            TenderAward legacy = new TenderAward();
+            legacy.setSupplierId(t.getAwardSupplierId());
+            legacy.setSupplierName(supplierName(t.getAwardSupplierId()));
+            legacy.setAwardPrice(t.getAwardPrice());
+            legacy.setSharePct(BigDecimal.valueOf(100));
+            winners = new ArrayList<>(List.of(legacy));
+        }
+        BigDecimal winSum = winners.stream().map(TenderAward::getSharePct)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (winSum.compareTo(BigDecimal.valueOf(100)) != 0) {
+            log.warn("TENDER {} award share sum {} != 100, agreement generation blocked",
+                    t.getTenderNo(), winSum);
+            return;
         }
         FrameworkAgreement fa = new FrameworkAgreement();
         fa.setAgreementNo(nextAgreementNo());
@@ -1572,30 +2060,42 @@ public class TenderServiceImpl implements TenderService {
         List<TenderLine> lines = lineDao.selectList(new LambdaQueryWrapper<TenderLine>()
                 .eq(TenderLine::getTenderId, t.getId())
                 .orderByAsc(TenderLine::getLineNo));
-        String winner = supplierName(t.getAwardSupplierId());
         int no = 1;
         for (TenderLine l : lines) {
-            FrameworkAgreementLine fl = new FrameworkAgreementLine();
-            fl.setAgreementId(fa.getId());
-            fl.setLineNo(no++);
-            fl.setItemCode(l.getItemCode());
-            fl.setItemName(l.getItemName());
-            fl.setAwardSupplierId(t.getAwardSupplierId());
-            fl.setAwardSupplierName(winner);
-            fl.setUnitPrice(t.getAwardPrice());
-            fl.setSharePct(BigDecimal.valueOf(100));
-            fl.setCreateBy("system");
-            agreementLineDao.insert(fl);
+            for (TenderAward w : winners) {
+                FrameworkAgreementLine fl = new FrameworkAgreementLine();
+                fl.setAgreementId(fa.getId());
+                fl.setLineNo(no++);
+                fl.setItemCode(l.getItemCode());
+                fl.setItemName(l.getItemName());
+                fl.setAwardSupplierId(w.getSupplierId());
+                fl.setAwardSupplierName(isNotBlank(w.getSupplierName())
+                        ? w.getSupplierName() : supplierName(w.getSupplierId()));
+                fl.setUnitPrice(w.getAwardPrice());
+                fl.setSharePct(w.getSharePct());
+                // design D3：承诺量 = 招标行数量，已下单量清零
+                fl.setCommitQty(l.getQty());
+                fl.setOrderedQty(BigDecimal.ZERO);
+                fl.setCreateBy("system");
+                agreementLineDao.insert(fl);
+            }
         }
 
         support.transition(t, TenderStateMachine.AWARDED,
                 "公示期满无异议，生成框架协议 " + fa.getAgreementNo());
         support.persist(t);
+        StringBuilder winnersDesc = new StringBuilder();
+        for (TenderAward w : winners) {
+            if (winnersDesc.length() > 0) {
+                winnersDesc.append("、");
+            }
+            winnersDesc.append(w.getSupplierName()).append(" ").append(w.getSharePct()).append("%");
+        }
         support.publishHead(t, "PROC.TENDER.AWARDED",
-                "公示期满，生成协议 " + fa.getAgreementNo() + " 中标 " + winner
-                        + " 单价 " + t.getAwardPrice() + " 有效期至 " + fa.getExpireDate());
-        log.info("AGREEMENT {} generated for tender {} lines={} expire={}",
-                fa.getAgreementNo(), t.getTenderNo(), lines.size(), fa.getExpireDate());
+                "公示期满，生成协议 " + fa.getAgreementNo() + " 中标 " + winnersDesc
+                        + " 有效期至 " + fa.getExpireDate());
+        log.info("AGREEMENT {} generated for tender {} lines={} winners={} expire={}",
+                fa.getAgreementNo(), t.getTenderNo(), lines.size(), winners.size(), fa.getExpireDate());
     }
 
     // ---------- 私有 ----------

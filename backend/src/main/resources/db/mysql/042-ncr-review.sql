@@ -1,0 +1,58 @@
+-- 042-ncr-review.sql
+-- NCR 状态机补齐（change add-quality-collaboration tasks 6.1~6.6，spec ncr-management）
+-- 1) NCR 补列：评审超时升级标记 / 提醒计数 / 超期 7 天重复提醒计数
+-- 2) erp_qms_ncr_log：评审、处置、关闭、升级、解冻全链留痕（BR-4.12-25/30 可追溯）
+-- 幂等：information_schema + PREPARE（037 范式）
+
+-- ---------- 1) NCR 补列 ----------
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_qms_ncr'
+        AND COLUMN_NAME = 'REVIEW_ESCALATED_FLAG') = 0,
+    'ALTER TABLE erp_qms_ncr
+       ADD COLUMN REVIEW_ESCALATED_FLAG VARCHAR(1) NOT NULL DEFAULT ''0''
+         COMMENT ''评审超 1 倍时限：已升级质量经理（BR-4.12-25）'' AFTER REVIEW_DUE_TIME,
+       ADD COLUMN REVIEW_REMIND_COUNT INT NOT NULL DEFAULT 0
+         COMMENT ''评审超时提醒次数'' AFTER REVIEW_ESCALATED_FLAG,
+       ADD COLUMN OVERDUE_REMIND_COUNT INT NOT NULL DEFAULT 0
+         COMMENT ''超 30 天后每 7 天提醒计数（BR-4.2-27）'' AFTER ESCALATED_FLAG,
+       ADD COLUMN LAST_ESCALATE_TIME DATETIME
+         COMMENT ''上次升级/提醒时间（7 天周期基准）'' AFTER OVERDUE_REMIND_COUNT,
+       ADD COLUMN DISPOSE_PLAN VARCHAR(1000)
+         COMMENT ''挑选/返工处置方案（质量工程师确认，tasks 6.3）'' AFTER DISPOSITION,
+       ADD COLUMN DISPOSE_RESULT VARCHAR(1000)
+         COMMENT ''处置执行结果凭证（tasks 6.4，缺失 422）'' AFTER DISPOSE_PLAN,
+       ADD COLUMN DISPOSE_BY VARCHAR(64)
+         COMMENT ''处置执行确认人'' AFTER DISPOSE_RESULT',
+    'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ---------- 2) NCR 操作日志 ----------
+CREATE TABLE IF NOT EXISTS erp_qms_ncr_log (
+    ID VARCHAR(64) NOT NULL,
+    NCR_ID VARCHAR(64) NOT NULL,
+    NCR_NO VARCHAR(32),
+    -- CREATE / REVIEW / DISPOSE / CONFIRM / CLOSE / CANCEL /
+    -- ESCALATE_MGR / ESCALATE_DIRECTOR / REMIND / UNFREEZE / RECHECK
+    ACTION VARCHAR(32) NOT NULL,
+    FROM_STATUS VARCHAR(16),
+    TO_STATUS VARCHAR(16),
+    DETAIL VARCHAR(1000),
+    -- 升级接收角色（质量经理/质量总监）与抄送（采购经理）
+    NOTIFY_ROLE VARCHAR(64),
+    CC_ROLE VARCHAR(64),
+    OPERATOR VARCHAR(64),
+    OPERATOR_NAME VARCHAR(128),
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- BaseEntity 审计列（create_date 由 fill 填充，DB DEFAULT 兜底）
+    CREATE_BY VARCHAR(64),
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    KEY IDX_QMS_NCR_LOG_NCR (NCR_ID, CREATE_DATE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

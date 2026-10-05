@@ -17,7 +17,7 @@
 
       <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
         title="询价比价（FR-4.2-2-1/2）：对「待询价」PR 创建 RFQ，合格供应商 ≥ MIN_QUOTE_COUNT（默认 3）；紧急放行可放宽至 1 家（C-4.2-01）。"
-        description="截止日到自动锁价；±20% 异常须确认/剔除后定标（BR-4.2-12）；谈判双轨留存（BR-4.2-14）；本菜单终点为定标，PO 生成属 2.3。" />
+        description="截止日到自动锁价；±20% 异常须确认/剔除（BR-4.2-12）；谈判双轨留存（BR-4.2-14）；矩阵展示、权重调整与定标归档已迁移至 2.2.4 比价矩阵；PO 生成属 2.3。" />
 
       <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column prop="rfqNo" label="RFQ 单号" width="170">
@@ -124,7 +124,7 @@
           <el-button type="warning" plain @click="doPostpone">延期截止</el-button>
           <el-button type="primary" plain @click="openAddSuppliers">追加供应商</el-button>
         </template>
-        <el-button v-if="dt.rfq.status === 'QUOTED_CLOSED'" type="success" @click="openAward">定标</el-button>
+        <el-button type="primary" @click="goMatrix">前往比价矩阵</el-button>
         <el-button v-if="!['AWARDED','CLOSED'].includes(dt.rfq.status)" type="danger" plain @click="doClose">
           {{ dt.rfq.insufficientFlag === '1' ? '作废重询' : '关闭' }}
         </el-button>
@@ -190,78 +190,27 @@
                               value-format="YYYY-MM-DD" size="small" style="width: 145px;" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="80">
+          <el-table-column label="操作" width="230">
             <template #default="{ row }">
               <el-button link type="primary" @click="submitQuote(row.supplierId)">提交</el-button>
+              <template v-if="isAdmin && quoteOf(row.supplierId)">
+                <el-button v-if="quoteOf(row.supplierId).anomalyFlag === '1' && quoteOf(row.supplierId).anomalyConfirmed !== '1'"
+                           link type="warning" @click="doConfirmAnomaly(quoteOf(row.supplierId))">确认异常</el-button>
+                <el-button link type="danger" @click="doExclude(quoteOf(row.supplierId))">剔除</el-button>
+                <el-button link type="primary" @click="doNegotiate(quoteOf(row.supplierId))">谈判</el-button>
+              </template>
             </template>
           </el-table-column>
         </el-table>
       </template>
 
-      <!-- 比价矩阵（有报价时） -->
-      <template v-if="matrix.rows && matrix.rows.length">
+      <!-- 矩阵已迁移至 2.2.4 工作台（change add-price-comparison-matrix，design D1/D5） -->
+      <template v-if="dt.quotes && dt.quotes.length">
         <el-divider content-position="left">比价矩阵</el-divider>
-        <div class="toolbar">
-          <span class="tip">价格权重</span>
-          <el-input-number v-model="weightPrice" :min="0" :max="100" :precision="0" size="small" style="width: 90px;"
-                           @change="loadMatrix" />
-          <span class="tip">交付权重</span>
-          <el-input-number v-model="weightDelivery" :min="0" :max="100" :precision="0" size="small" style="width: 90px;"
-                           @change="loadMatrix" />
-          <span class="tip">（合计须 100）</span>
-          <span class="tip" style="margin-left: 12px;">均值 {{ matrix.mean }} · {{ matrix.taxNote }}</span>
-        </div>
-        <el-table :data="matrix.rows" size="small" border>
-          <el-table-column prop="supplierName" label="供应商" min-width="140" />
-          <el-table-column prop="unitPrice" label="原始单价" width="100" align="right" />
-          <el-table-column label="谈判后" width="100" align="right">
-            <template #default="{ row }">{{ row.negotiatedPrice ?? '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="taxIncluded" label="含税单价" width="100" align="right">
-            <template #default="{ row }">{{ row.taxIncluded ?? '待税率' }}</template>
-          </el-table-column>
-          <el-table-column prop="leadTimeDays" label="交期(天)" width="80" align="center" />
-          <el-table-column prop="moq" label="MOQ" width="80" align="right" />
-          <el-table-column prop="paymentTerms" label="付款" width="90" />
-          <el-table-column prop="quoteValidDate" label="有效期" width="105" />
-          <el-table-column label="偏离/异常" width="130">
-            <template #default="{ row }">
-              <template v-if="row.excluded">
-                <el-tag type="info" size="small">已剔除</el-tag>
-              </template>
-              <template v-else-if="row.anomaly">
-                <el-tag type="danger" size="small">异常 {{ (row.deviation * 100).toFixed(1) }}%</el-tag>
-                <el-tag v-if="row.anomalyConfirmed === '1'" type="success" size="small" style="margin-left:2px;">已确认</el-tag>
-              </template>
-              <span v-else-if="row.deviation != null" style="color:#909399;">{{ (row.deviation * 100).toFixed(1) }}%</span>
-              <span v-else style="color:#c0c4cc;">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="得分" width="160">
-            <template #default="{ row }">
-              <template v-if="!row.excluded">
-                价 {{ row.priceScore }} · 交 {{ row.deliveryScore }} → <b>{{ row.totalScore }}</b>
-              </template>
-              <span v-else style="color:#c0c4cc;">不计分</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="桩列" width="150">
-            <template #default>
-              <span style="color:#c0c4cc; font-size:12px;">准时率/合格率/评分 待接入</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="230" fixed="right">
-            <template #default="{ row }">
-              <template v-if="isAdmin && !row.excluded">
-                <el-button v-if="row.anomaly && row.anomalyConfirmed !== '1' && row.anomalyConfirmed !== 1"
-                           link type="warning" @click="doConfirmAnomaly(row)">确认</el-button>
-                <el-tag v-else-if="row.anomaly" type="success" size="small">异常已确认</el-tag>
-                <el-button link type="danger" @click="doExclude(row)">剔除</el-button>
-                <el-button link type="primary" @click="doNegotiate(row)">谈判</el-button>
-              </template>
-            </template>
-          </el-table-column>
-        </el-table>
+        <el-alert type="info" :closable="false" style="margin-bottom: 8px;"
+          title="矩阵展示、四维权重、异常处置与定标归档已集中至「比价矩阵（2.2.4）」"
+          description="本页保留询价流程动作：报价录入、异常确认/剔除、谈判双轨。定标请前往 2.2.4（成功后自动生成比价结果快照）。" />
+        <el-button type="primary" size="small" @click="goMatrix">前往比价矩阵 →</el-button>
       </template>
     </el-drawer>
 
@@ -285,32 +234,6 @@
       </template>
     </el-dialog>
 
-    <!-- 定标 -->
-    <el-dialog v-model="awardVisible" title="定标（比价分析表登记 + 选定中选）" width="560px">
-      <el-alert v-if="awardMsg" type="error" show-icon :closable="false" :title="awardMsg" style="margin-bottom: 10px;" />
-      <el-form label-width="130px">
-        <el-form-item label="中选供应商" required>
-          <el-select v-model="awardForm.supplierId" placeholder="选择中选（须有未剔除报价）" style="width: 100%;">
-            <el-option v-for="q in quoteSuppliers" :key="q.supplierId" :label="q.supplierName" :value="q.supplierId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="分析表编号" required>
-          <el-input v-model="awardForm.analysisNo" maxlength="64" placeholder="如 BJFX-2026-001（≥4 字符，文档生成为桩）" />
-        </el-form-item>
-        <el-form-item label="分析结论" required>
-          <el-input v-model="awardForm.conclusion" type="textarea" :rows="2" maxlength="500" placeholder="≥2 字" />
-        </el-form-item>
-        <el-form-item label="权重快照">
-          价格 <el-input-number v-model="awardForm.weightPrice" :min="0" :max="100" :precision="0" style="width: 90px;" />
-          交付 <el-input-number v-model="awardForm.weightDelivery" :min="0" :max="100" :precision="0" style="width: 90px;" />
-          <span class="tip">合计须 100</span>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="awardVisible = false">取消</el-button>
-        <el-button type="success" :loading="saving" @click="submitAward">定标</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -321,11 +244,13 @@ import { Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import {
   getRfqPageApi, getRfqDetailApi, getRfqPrCandidatesApi, createRfqApi, sendRfqApi,
-  saveQuoteApi, postponeRfqApi, addRfqSuppliersApi, closeRfqApi, getMatrixApi,
-  confirmAnomalyApi, excludeQuoteApi, negotiateQuoteApi, awardRfqApi
+  saveQuoteApi, postponeRfqApi, addRfqSuppliersApi, closeRfqApi,
+  confirmAnomalyApi, excludeQuoteApi, negotiateQuoteApi
 } from '@/api/proc/rfq'
 import { getSupplierPageApi } from '@/api/mdm/supplier-admission'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const userStore = useUserStore()
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).includes('ROLE_ADMIN'))
 const loading = ref(false)
@@ -404,9 +329,6 @@ async function submitCreate() {
 const dtVisible = ref(false)
 const dt = ref({ rfq: {}, lines: [], suppliers: [], quotes: [] })
 const quoteForm = reactive({})
-const weightPrice = ref(60)
-const weightDelivery = ref(40)
-const matrix = ref({ rows: [] })
 
 async function openDetail(row) {
   const res = await getRfqDetailApi(row.id)
@@ -418,20 +340,6 @@ async function openDetail(row) {
     }
   }
   dtVisible.value = true
-  if (res.data.quotes && res.data.quotes.length) {
-    await loadMatrix()
-  } else {
-    matrix.value = { rows: [] }
-  }
-}
-
-async function loadMatrix() {
-  try {
-    const res = await getMatrixApi(dt.value.rfq.id, weightPrice.value, weightDelivery.value)
-    matrix.value = res.data
-  } catch (e) {
-    ElMessage.error(e?.message || '矩阵计算失败')
-  }
 }
 
 async function doSend() {
@@ -464,11 +372,6 @@ async function refresh() {
     quoteForm[s.supplierId] = quoteForm[s.supplierId] || {
       unitPrice: null, leadTimeDays: 7, moq: 1, paymentTerms: 'NET30', quoteValidDate: ''
     }
-  }
-  if (res.data.quotes && res.data.quotes.length) {
-    await loadMatrix()
-  } else {
-    matrix.value = { rows: [] }
   }
   loadList()
 }
@@ -531,7 +434,7 @@ function doExclude(row) {
   askReason('剔除报价（不参与均值/加权/定标）', '剔除原因（≥2 字）', async (reason) => {
     try {
       await excludeQuoteApi(row.quoteId, reason)
-      ElMessage.success('已剔除，矩阵已重算')
+      ElMessage.success('已剔除（不参与均值/加权/定标）')
       refresh()
     } catch (e) {
       ElMessage.error(e?.message || '剔除失败')
@@ -583,36 +486,16 @@ async function submitAdd() {
   }
 }
 
-// ---------- 定标 ----------
-const awardVisible = ref(false)
-const awardMsg = ref('')
-const awardForm = ref({})
-const quoteSuppliers = ref([])
-
-function openAward() {
-  awardMsg.value = ''
-  const m = matrix.value.rows || []
-  quoteSuppliers.value = m.filter(r => !r.excluded)
-  awardForm.value = {
-    supplierId: quoteSuppliers.value.length === 1 ? quoteSuppliers.value[0].supplierId : '',
-    analysisNo: '', conclusion: '',
-    weightPrice: weightPrice.value, weightDelivery: weightDelivery.value
-  }
-  awardVisible.value = true
+// ---------- 比价矩阵跳转（矩阵展示/权重/定标/快照归档已迁移至 2.2.4，design D1/D5） ----------
+function goMatrix() {
+  const id = dt.value.rfq && dt.value.rfq.id
+  router.push({ path: '/m/2.2.4', query: id ? { rfqId: id } : {} })
 }
-async function submitAward() {
-  awardMsg.value = ''
-  saving.value = true
-  try {
-    const res = await awardRfqApi(dt.value.rfq.id, awardForm.value)
-    ElMessage.success(`已定标：${res.data.supplierName} @ ${res.data.awardPrice}`)
-    awardVisible.value = false
-    refresh()
-  } catch (e) {
-    if (e?.message) awardMsg.value = e.message
-  } finally {
-    saving.value = false
-  }
+
+/** 该供应商已录入的报价（异常确认/剔除/谈判动作取 quoteId） */
+function quoteOf(supplierId) {
+  const q = (dt.value.quotes || []).find(x => x.supplierId === supplierId)
+  return q ? { ...q, quoteId: q.id } : null
 }
 
 onMounted(() => { loadList(1); loadSuppliers() })

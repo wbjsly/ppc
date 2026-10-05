@@ -190,9 +190,21 @@ public class TenderController {
         return R.ok(service.approvalTodo());
     }
 
+    @Operation(summary = "定标录入中标人与份额", description = "多中标人：≥1 家合格投标方、单价=最终轮报价、Σ份额=100（design D2）")
+    @PostMapping("/tenders/{id}/award-winners")
+    public R<Map<String, Object>> saveWinners(@PathVariable String id,
+                                               @RequestBody Map<String, Object> body) {
+        Object ws = body.get("winners");
+        if (!(ws instanceof java.util.List)) {
+            return R.fail(422, "winners 必填（数组）");
+        }
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> list = (java.util.List<Map<String, Object>>) ws;
+        return R.ok(service.saveWinners(id, list));
+    }
+
     @Operation(summary = "定标审批", description = "FR-4.2-10-3：通过进入公示并按 PUBLICITY_DAYS 计算起止；驳回回评标")
-    @PostMapping("/tenders/{id}/approve-award")
-    public R<Map<String, Object>> approveAward(@PathVariable String id,
+    @PostMapping("/tenders/{id}/approve-award")    public R<Map<String, Object>> approveAward(@PathVariable String id,
                                                @RequestBody Map<String, Object> body) {
         Object ap = body.get("approved");
         boolean approved = ap != null && Boolean.parseBoolean(String.valueOf(ap));
@@ -216,9 +228,27 @@ public class TenderController {
         return R.ok(service.reviewObjection(id, objId, str(body.get("verdict")), str(body.get("note"))));
     }
 
+    @Operation(summary = "手工创建协议", description = "design D5：创建即生效（status=1），Σ份额=100，区间成对校验")
+    @PostMapping("/framework-agreements")
+    public R<Map<String, Object>> createAgreement(@RequestBody Map<String, Object> payload) {
+        return R.ok(service.createAgreement(payload));
+    }
+
+    @Operation(summary = "协议续签", description = "仅临期/已到期可续签：生成新协议，原协议置已到期（L1059）")
+    @PostMapping("/framework-agreements/{id}/renew")
+    public R<Map<String, Object>> renewAgreement(@PathVariable String id) {
+        return R.ok(service.renewAgreement(id));
+    }
+
+    @Operation(summary = "协议终止", description = "仅生效中/临期可终止，原因必填，置 4 后不可逆")
+    @PostMapping("/framework-agreements/{id}/stop")
+    public R<Map<String, Object>> stopAgreement(@PathVariable String id,
+                                                 @RequestBody Map<String, Object> body) {
+        return R.ok(service.stopAgreement(id, str(body.get("reason"))));
+    }
+
     @Operation(summary = "框架协议列表", description = "按协议号/招标号/状态检索（2.2.3）")
-    @GetMapping("/framework-agreements")
-    public R<java.util.List<Map<String, Object>>> agreements(
+    @GetMapping("/framework-agreements")    public R<java.util.List<Map<String, Object>>> agreements(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String status) {
         return R.ok(service.agreements(keyword, status));
