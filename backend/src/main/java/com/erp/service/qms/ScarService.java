@@ -17,7 +17,7 @@ import java.util.Map;
  * 加严联动（BR-4.12-44）：SENT 起抽样上调一档（推导加严，currentStrictness 读 SCAR 状态）；
  *   回复时限 scar-reply-days=5 工作日，超期升级采购经理 + 每 3 天提醒 + 响应及时性扣分标记；
  *   SQE 代录 8D 回复（D7 偏差），浅层根因回复退回（REJECT_COUNT 累计）。
- * 扣款单：PENDING_FINANCE → CONFIRMED → TO_DEDUCT（货款抵扣 TODO-NOTIFY 桩 D3）/ DISPUTED。
+ * 扣款单：PENDING_FINANCE → CONFIRMED → TO_DEDUCT（付款单挂接抵扣）→ DEDUCTED / DISPUTED。
  */
 public interface ScarService {
 
@@ -47,7 +47,7 @@ public interface ScarService {
     /** 财务确认（底座 ScarFinance 单签 ADMIN 代）→ CONFIRMED */
     ScarDeduction submitFinance(String deductionId);
 
-    /** 推送待抵扣（CONFIRMED → TO_DEDUCT + 应付抵扣 TODO-NOTIFY 桩 D3） */
+    /** 推送待抵扣（CONFIRMED → TO_DEDUCT，付款执行时挂接抵扣并置 DEDUCTED） */
     ScarDeduction markToDeduct(String deductionId);
 
     /** 争议暂挂 / 解除争议 */

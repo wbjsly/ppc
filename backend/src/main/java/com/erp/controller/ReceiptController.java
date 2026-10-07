@@ -162,9 +162,10 @@ public class ReceiptController {
 
     // ---------- 2.4.4 过账 ----------
 
-    @Operation(summary = "入库过账", description = "FR-4.2-6-1 单事务五步；BR-4.2-28 阻断")
+    @Operation(summary = "入库过账", description = "FR-4.2-6-1 单事务五步；BR-4.2-28 阻断；寄售超水位确认放行 confirmWaterLevel")
     @PostMapping("/grs/{id}/postings")
-    public R<Map<String, Object>> posting(@PathVariable String id) {
-        return R.ok(service.posting(id));
+    public R<Map<String, Object>> posting(@PathVariable String id,
+                                          @RequestBody(required = false) Map<String, Object> body) {
+        return R.ok(service.posting(id, body));
     }
 }

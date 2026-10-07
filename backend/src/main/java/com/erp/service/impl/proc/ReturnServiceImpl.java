@@ -42,11 +42,16 @@ import java.util.Map;
  * 退货单实现（spec quality-return，tasks 8.1~8.5，2.6.1）。
  * NCR 自动带出（BR-4.2-32 未过账例外口：仅关联 PO/收货单按 PO 计价）；
  * 出库单事务：库存扣减（QC 锁定优先，不足 422）/未入库置行 REJECTED + 红字凭证 RV
- * + 应付冲减 TODO-NOTIFY 桩（D4）+ NCR 处置推进 + 30 天跟踪起算。
+ * + 应付冲减（ap-accrual 真实冲减，D4 已接）+ NCR 处置推进 + 30 天跟踪起算。
  */
 @Slf4j
 @Service
 public class ReturnServiceImpl implements ReturnService {
+
+    /** 结构化退货原因枚举（spec other-return） */
+    private static final java.util.Set<String> REASON_TYPES =
+            java.util.Set.of("WRONG_ITEM", "OVER_SHIP", "QUALITY_FOUND", "OTHER");
+
 
     private final ReturnOrderDao returnDao;
     private final ReturnOrderLineDao lineReturnDao;
@@ -58,6 +63,8 @@ public class ReturnServiceImpl implements ReturnService {
     private final ApprovalEngine approvalEngine;
     private final NcrService ncrService;
     private final com.erp.service.qms.CopqService copqService;
+    /** 应付冲减（BR-4.2-34 落地，add-accrual-three-way-match D5） */
+    private final com.erp.service.fin.AccrualService accrualService;
 
     public ReturnServiceImpl(ReturnOrderDao returnDao,
                              ReturnOrderLineDao lineReturnDao,
@@ -68,7 +75,8 @@ public class ReturnServiceImpl implements ReturnService {
                              NcrDao ncrDao,
                              ApprovalEngine approvalEngine,
                              @Lazy NcrService ncrService,
-                             com.erp.service.qms.CopqService copqService) {
+                             com.erp.service.qms.CopqService copqService,
+                             com.erp.service.fin.AccrualService accrualService) {
         this.returnDao = returnDao;
         this.lineReturnDao = lineReturnDao;
         this.grDao = grDao;
@@ -79,6 +87,7 @@ public class ReturnServiceImpl implements ReturnService {
         this.approvalEngine = approvalEngine;
         this.ncrService = ncrService;
         this.copqService = copqService;
+        this.accrualService = accrualService;
     }
 
     // ================= 8.1 NCR 自动带出 =================
@@ -157,11 +166,18 @@ public class ReturnServiceImpl implements ReturnService {
     @Override
     @Transactional
     public ReturnOrder createManual(Map<String, Object> body) {
+        // ---------- 1) 结构化退货原因（spec other-return：四枚举，非法 422） ----------
+        String reasonType = str(body.get("reasonType"));
+        if (!hasText(reasonType) || !REASON_TYPES.contains(reasonType)) {
+            throw new ServiceException(422, "退货原因类型必填，仅支持：供应商发错货（WRONG_ITEM）/"
+                    + "多发货（OVER_SHIP）/到货后发现质量问题（QUALITY_FOUND）/其他（OTHER）");
+        }
         String itemCode = str(body.get("itemCode"));
-        String batchNo = str(body.get("batchNo")) == null ? "" : str(body.get("batchNo"));
         if (!hasText(itemCode)) {
             throw new ServiceException(422, "物料编码必填");
         }
+        String poId = str(body.get("poId"));
+        String batchNo = str(body.get("batchNo")) == null ? "" : str(body.get("batchNo"));
         BigDecimal qty;
         try {
             qty = new BigDecimal(String.valueOf(body.get("qty")));
@@ -171,48 +187,63 @@ public class ReturnServiceImpl implements ReturnService {
         if (qty == null || qty.signum() <= 0) {
             throw new ServiceException(422, "退货数量必须大于 0");
         }
-        String reason = str(body.get("returnReason"));
-        if (!hasText(reason)) {
-            throw new ServiceException(422, "退货原因必填");
+
+        // ---------- 2) 后端反查（D3）：原入库单价 / 入库凭证 / 关联单据，前端传值一律忽略 ----------
+        if (!hasText(poId)) {
+            throw new ServiceException(422, "原 PO 关联必填（BR-4.2-32）");
+        }
+        GoodsReceipt gr = grDao.selectOne(new com.baomidou.mybatisplus.core.conditions.query
+                .LambdaQueryWrapper<GoodsReceipt>()
+                .eq(GoodsReceipt::getPoId, poId)
+                .eq(GoodsReceipt::getStatus, "POSTED")
+                .orderByDesc(GoodsReceipt::getCreateDate)
+                .last("LIMIT 1"));
+        if (gr == null) {
+            throw new ServiceException(422, "该 PO 无已入库过账记录，非质量退货仅支持已入库物料（BR-4.2-32）");
+        }
+        GoodsReceiptLine grLine = grLineDao.selectOne(new com.baomidou.mybatisplus.core.conditions.query
+                .LambdaQueryWrapper<GoodsReceiptLine>()
+                .eq(GoodsReceiptLine::getGrId, gr.getId())
+                .eq(GoodsReceiptLine::getItemCode, itemCode)
+                .last("LIMIT 1"));
+        if (grLine == null) {
+            throw new ServiceException(422, "该 PO 的入库记录中无此物料，无法关联原入库单（BR-4.2-32）");
+        }
+        String originDocNo = gr.getPostingDocNo();
+        if (!hasText(originDocNo)) {
+            throw new ServiceException(422, "原入库凭证缺失，无法建立关联（BR-4.2-32）");
+        }
+        BigDecimal unitPrice = grLine.getUnitPrice();
+        if (unitPrice == null || unitPrice.signum() <= 0) {
+            throw new ServiceException(422, "原入库单价缺失或非正数，无法自动计价");
         }
 
-        // 已入库判定：存在库存行 → 必须关联原入库单 + 原入库单价（缺失 422）
+        // ---------- 3) 可退库存校验（qty ≤ 可退量） ----------
         InvStock stock = stockOf(itemCode, batchNo);
-        boolean stocked = stock != null && stock.getQty() != null && stock.getQty().signum() > 0;
-        String originDocNo = str(body.get("originDocNo"));
-        BigDecimal unitPrice = null;
-        try {
-            String up = str(body.get("unitPrice"));
-            unitPrice = hasText(up) ? new BigDecimal(up) : null;
-        } catch (Exception e) {
-            throw new ServiceException(422, "原入库单价必须为数字");
+        BigDecimal returnable = stock == null || stock.getQty() == null ? BigDecimal.ZERO : stock.getQty();
+        if (returnable.signum() <= 0) {
+            throw new ServiceException(422, "该物料批次无可退货库存（非质量退货仅支持已入库物料）");
         }
-        List<String> missing = new ArrayList<>();
-        if (stocked) {
-            if (!hasText(originDocNo)) {
-                missing.add("原入库单号（已入库退货必填，BR-4.2-33）");
-            }
-            if (unitPrice == null) {
-                missing.add("原入库单价（已入库退货必填）");
-            }
-        }
-        if (!missing.isEmpty()) {
-            throw new ServiceException(422, "手工退货要素缺失：" + String.join("、", missing));
+        if (qty.compareTo(returnable) > 0) {
+            throw new ServiceException(422, "退货数量超出可退库存量（可退 " + returnable.stripTrailingZeros().toPlainString() + "）");
         }
 
+        // ---------- 4) 落库：金额 = qty × 反查单价（系统自动计算） ----------
         ReturnOrder r = new ReturnOrder();
         r.setReturnNo(nextReturnNo());
         r.setSourceType("MANUAL");
-        r.setPoId(str(body.get("poId")));
-        r.setPoNo(str(body.get("poNo")));
-        r.setGrId(str(body.get("grId")));
+        r.setPoId(poId);
+        r.setPoNo(gr.getPoNo());
+        r.setGrId(gr.getId());
+        r.setGrNo(gr.getGrNo());
         r.setOriginDocNo(originDocNo);
-        r.setSupplierId(str(body.get("supplierId")));
-        r.setSupplierName(str(body.get("supplierName")));
+        r.setSupplierId(gr.getSupplierId());
+        r.setSupplierName(gr.getSupplierName());
         r.setTotalQty(qty);
         r.setStatus("DRAFT");
-        r.setPerfFlag("0"); // 非质量手工退货不扣分（tasks 8.5）
-        r.setReturnReason(reason);
+        r.setPerfFlag("0"); // 非质量退货不扣分（BR-4.2-34：仅质量退货扣分）
+        r.setReasonType(reasonType);
+        r.setReturnReason(str(body.get("note"))); // 补充说明（可选）
         r.setCreateBy(SecurityUtils.getCurrentUserId());
         returnDao.insert(r);
 
@@ -223,13 +254,122 @@ public class ReturnServiceImpl implements ReturnService {
         l.setItemName(str(body.get("itemName")));
         l.setBatchNo(batchNo);
         l.setQty(qty);
-        l.setUnitPrice(unitPrice == null ? BigDecimal.ZERO : unitPrice);
-        l.setAmount(qty.multiply(l.getUnitPrice()).setScale(2, java.math.RoundingMode.HALF_UP));
+        l.setUnitPrice(unitPrice);
+        l.setAmount(qty.multiply(unitPrice).setScale(2, java.math.RoundingMode.HALF_UP));
         l.setCreateBy(SecurityUtils.getCurrentUserId());
         lineReturnDao.insert(l);
         r.setTotalAmt(l.getAmount());
         returnDao.updateById(r);
         return r;
+    }
+
+    /** PO 可退入库带出（spec other-return D2）：聚合 POSTED 收货行 + 库存可退量 + 原入库单价 */
+    @Override
+    public List<Map<String, Object>> poReturnables(String poId) {
+        if (!hasText(poId)) {
+            throw new ServiceException(422, "原 PO 必填");
+        }
+        List<GoodsReceipt> grs = grDao.selectList(new com.baomidou.mybatisplus.core.conditions.query
+                .LambdaQueryWrapper<GoodsReceipt>()
+                .eq(GoodsReceipt::getPoId, poId)
+                .eq(GoodsReceipt::getStatus, "POSTED")
+                .orderByDesc(GoodsReceipt::getCreateDate));
+        if (grs.isEmpty()) {
+            throw new ServiceException(422, "该 PO 无已入库过账记录，无可退入库（BR-4.2-32）");
+        }
+        List<String> grIds = grs.stream().map(GoodsReceipt::getId).toList();
+        List<GoodsReceiptLine> lines = grLineDao.selectList(new com.baomidou.mybatisplus.core.conditions.query
+                .LambdaQueryWrapper<GoodsReceiptLine>()
+                .in(GoodsReceiptLine::getGrId, grIds)
+                .eq(GoodsReceiptLine::getStatus, "POSTED"));
+        Map<String, GoodsReceipt> grById = new java.util.HashMap<>();
+        grs.forEach(g -> grById.put(g.getId(), g));
+        // 同 item+batch 取最近一张入库凭证（默认），聚合可退量
+        Map<String, Map<String, Object>> agg = new java.util.LinkedHashMap<>();
+        for (GoodsReceiptLine line : lines) {
+            GoodsReceipt gr = grById.get(line.getGrId());
+            if (gr == null) {
+                continue;
+            }
+            String batch = gr.getBatchNo() == null ? "" : gr.getBatchNo();
+            String key = line.getItemCode() + "|" + batch;
+            InvStock stock = stockOf(line.getItemCode(), batch);
+            BigDecimal returnable = stock == null || stock.getQty() == null ? BigDecimal.ZERO : stock.getQty();
+            Map<String, Object> row = agg.get(key);
+            if (row == null) {
+                row = new LinkedHashMap<>();
+                row.put("itemCode", line.getItemCode());
+                row.put("itemName", line.getItemName());
+                row.put("batchNo", batch);
+                row.put("grId", gr.getId());
+                row.put("grNo", gr.getGrNo());
+                row.put("originDocNo", gr.getPostingDocNo()); // 入库凭证号（最近一张）
+                row.put("unitPrice", line.getUnitPrice());    // 原入库单价（只读）
+                row.put("returnableQty", returnable);         // 可退库存量
+                row.put("poId", poId);
+                row.put("poNo", gr.getPoNo());
+                row.put("supplierId", gr.getSupplierId());
+                row.put("supplierName", gr.getSupplierName());
+                row.put("docList", new java.util.ArrayList<String>());
+                agg.put(key, row);
+            }
+            @SuppressWarnings("unchecked")
+            java.util.List<String> docs = (java.util.List<String>) row.get("docList");
+            if (hasText(gr.getPostingDocNo()) && !docs.contains(gr.getPostingDocNo())) {
+                docs.add(gr.getPostingDocNo());
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>(agg.values());
+        if (out.isEmpty()) {
+            throw new ServiceException(422, "该 PO 无可退的已入库收货行（BR-4.2-32）");
+        }
+        return out;
+    }
+
+    // ================= 8.6 红字凭证台账（2.6.3，spec red-receipt-voucher） =================
+
+    @Override
+    public Page<Map<String, Object>> redVouchers(long current, long size, String redDocNo,
+                                                 String returnNo, String supplierId,
+                                                 String sourceType, String dateFrom, String dateTo) {
+        LambdaQueryWrapper<ReturnOrder> qw = new LambdaQueryWrapper<ReturnOrder>()
+                .eq(ReturnOrder::getStatus, "OUT_DONE")
+                .isNotNull(ReturnOrder::getRedDocNo)
+                .like(hasText(redDocNo), ReturnOrder::getRedDocNo, redDocNo)
+                .like(hasText(returnNo), ReturnOrder::getReturnNo, returnNo)
+                .eq(hasText(supplierId), ReturnOrder::getSupplierId, supplierId)
+                .eq(hasText(sourceType), ReturnOrder::getSourceType, sourceType)
+                .ge(hasText(dateFrom), ReturnOrder::getOutDate, dateFrom + " 00:00:00")
+                .le(hasText(dateTo), ReturnOrder::getOutDate, dateTo + " 23:59:59")
+                .orderByDesc(ReturnOrder::getOutDate);
+        Page<ReturnOrder> raw = returnDao.selectPage(new Page<>(current, size), qw);
+        Page<Map<String, Object>> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ReturnOrder r : raw.getRecords()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", r.getId());
+            m.put("redDocNo", r.getRedDocNo());           // 红字入库凭证号（RV）
+            m.put("returnNo", r.getReturnNo());
+            m.put("sourceType", r.getSourceType());
+            m.put("reasonType", r.getReasonType());
+            m.put("supplierId", r.getSupplierId());
+            m.put("supplierName", r.getSupplierName());
+            m.put("poNo", r.getPoNo());                   // 关联链
+            m.put("grNo", r.getGrNo());
+            m.put("originDocNo", r.getOriginDocNo());
+            m.put("ncrNo", r.getNcrNo());
+            m.put("totalQty", r.getTotalQty());
+            m.put("totalAmt", r.getTotalAmt());
+            m.put("outDate", r.getOutDate());
+            m.put("outBy", r.getOutBy());
+            m.put("returnReason", r.getReturnReason());
+            m.put("lines", lineReturnDao.selectList(new LambdaQueryWrapper<ReturnOrderLine>()
+                    .eq(ReturnOrderLine::getReturnId, r.getId())
+                    .orderByAsc(ReturnOrderLine::getLineNo)));
+            rows.add(m);
+        }
+        out.setRecords(rows);
+        return out;
     }
 
     // ================= 8.2 审批（底座单签采购经理） =================
@@ -346,9 +486,13 @@ public class ReturnServiceImpl implements ReturnService {
             throw new ServiceException(409, "退货单状态更新冲突");
         }
 
-        // 应付冲减（2.7 财务未建 → TODO-NOTIFY 桩，D4）
-        log.info("[TODO-NOTIFY] return {} red {} 应付冲减与供应商扣款（2.7/8.3 桩）",
-                r.getReturnNo(), r.getRedDocNo());
+        // 应付冲减（BR-4.2-34 落地，change add-accrual-three-way-match D5）：
+        // 同供应商同 PO 的 OPEN 暂估倒序累加冲减；挂起批次跳过；不足部分记应付借项凭证。
+        // 失败随出库事务整体回滚（不产生半冲减）。
+        BigDecimal offsetted = accrualService.offset(r.getSupplierId(), r.getPoNo(),
+                r.getTotalAmt(), r.getReturnNo());
+        log.info("return {} red {} 应付冲减 {} / 退货金额 {}",
+                r.getReturnNo(), r.getRedDocNo(), offsetted, r.getTotalAmt());
 
         // COPQ 归集（tasks 9.6）：退货金额记内部失败成本（来源 RETURN，幂等按 sourceId）
         if (r.getTotalAmt() != null && r.getTotalAmt().signum() > 0) {
@@ -506,6 +650,7 @@ public class ReturnServiceImpl implements ReturnService {
 
     private InvStock stockOf(String itemCode, String batchNo) {
         return stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
                 .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
                 .last("LIMIT 1"));

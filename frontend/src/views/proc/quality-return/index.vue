@@ -2,7 +2,7 @@
   <div class="rt-page">
     <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
       title="质量退货（2.6.1）：NCR 评审选退货自动带出（PO/收货单/数量/PO 单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪"
-      description="未入库质检退货仅关联 PO 与收货单（BR-4.2-32）；已入库手工退货须关联原入库单与单价；质量退货打绩效扣分标记（D4），MANUAL 手工退货不扣分。" />
+      description="本页仅管理 NCR 源质量退货；非质量退货（发错货/多发货等）已迁移至 2.6.2「其他退货」独立入口。未入库质检退货仅关联 PO 与收货单（BR-4.2-32 例外口），质量退货打绩效扣分标记（D4）。" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -14,15 +14,11 @@
           <el-option label="已出库" value="OUT_DONE" />
           <el-option label="已作废" value="CANCELLED" />
         </el-select>
-        <el-select v-model="filters.sourceType" placeholder="来源" clearable style="width: 130px;" @change="load">
-          <el-option label="质量退货(NCR)" value="NCR" />
-          <el-option label="手工退货" value="MANUAL" />
-        </el-select>
         <el-input v-model="filters.keyword" placeholder="退货单号 / 供应商 / NCR / PO" clearable
           style="width: 230px;" @keyup.enter="load" @clear="load" />
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
-        <el-button v-if="canOperate" type="success" @click="openCreate">手工发起退货</el-button>
+        <el-button link type="primary" @click="$router.push('/m/2.6.2')">非质量退货请走 2.6.2 其他退货 →</el-button>
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading" @row-click="openDetail" row-style="cursor:pointer">
@@ -31,9 +27,7 @@
         </el-table-column>
         <el-table-column label="来源" width="110" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.sourceType === 'NCR' ? 'danger' : 'info'">
-              {{ row.sourceType === 'NCR' ? '质量退货' : '手工' }}
-            </el-tag>
+            <el-tag size="small" type="danger">质量退货</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="ncrNo" label="NCR" width="150" show-overflow-tooltip />
@@ -89,9 +83,7 @@
       <div v-if="detail.return">
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="来源">
-            <el-tag size="small" :type="detail.return.sourceType === 'NCR' ? 'danger' : 'info'">
-              {{ detail.return.sourceType === 'NCR' ? '质量退货' : '手工退货' }}
-            </el-tag>
+            <el-tag size="small" type="danger">质量退货（NCR）</el-tag>
             <el-tag v-if="detail.return.perfFlag === '1'" size="small" type="warning" style="margin-left:6px;">
               绩效扣分标记
             </el-tag>
@@ -161,39 +153,6 @@
       </div>
     </el-drawer>
 
-    <!-- 手工发起 -->
-    <el-dialog v-model="createVisible" title="手工发起退货（已入库须关联原入库单与单价）" width="540px">
-      <el-form label-width="110px" size="small">
-        <el-form-item label="物料编码" required>
-          <el-input v-model="createForm.itemCode" />
-        </el-form-item>
-        <el-form-item label="物料名称">
-          <el-input v-model="createForm.itemName" />
-        </el-form-item>
-        <el-form-item label="批次">
-          <el-input v-model="createForm.batchNo" />
-        </el-form-item>
-        <el-form-item label="退货数量" required>
-          <el-input-number v-model="createForm.qty" :min="0.0001" :precision="4" />
-        </el-form-item>
-        <el-form-item label="退货原因" required>
-          <el-input v-model="createForm.returnReason" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item label="原入库单号">
-          <el-input v-model="createForm.originDocNo" placeholder="已入库退货必填（BR-4.2-33）" />
-        </el-form-item>
-        <el-form-item label="原入库单价">
-          <el-input-number v-model="createForm.unitPrice" :min="0" :precision="4" />
-        </el-form-item>
-        <el-form-item label="供应商">
-          <el-input v-model="createForm.supplierName" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" @click="doCreate">创建草稿</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -201,7 +160,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getReturnPageApi, getReturnDetailApi, createReturnApi,
+  getReturnPageApi, getReturnDetailApi,
   submitReturnApi, cancelReturnApi, postReturnApi, closeTrackApi
 } from '@/api/proc/quality-return'
 import { useUserStore } from '@/store/user'
@@ -223,14 +182,14 @@ const STATUS_TEXT = {
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const filters = reactive({ status: '', sourceType: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', keyword: '', current: 1, size: 10 })
 
 async function load() {
   loading.value = true
   try {
     const res = await getReturnPageApi({
       current: filters.current, size: filters.size,
-      status: filters.status || undefined, sourceType: filters.sourceType || undefined,
+      status: filters.status || undefined, sourceType: 'NCR',
       keyword: filters.keyword || undefined
     })
     rows.value = (res.data && res.data.records) || []
@@ -291,33 +250,6 @@ async function doCloseTrack() {
     await closeTrackApi(detail.value.return.id, trackRemark.value)
     ElMessage.success('跟踪已闭环')
     refresh()
-  } catch { /* 拦截器已弹错 */ }
-}
-
-// ---------- 手工发起 ----------
-const createVisible = ref(false)
-const createForm = reactive({
-  itemCode: '', itemName: '', batchNo: '', qty: undefined,
-  returnReason: '', originDocNo: '', unitPrice: undefined, supplierName: ''
-})
-function openCreate() {
-  createForm.itemCode = ''
-  createForm.itemName = ''
-  createForm.batchNo = ''
-  createForm.qty = undefined
-  createForm.returnReason = ''
-  createForm.originDocNo = ''
-  createForm.unitPrice = undefined
-  createForm.supplierName = ''
-  createVisible.value = true
-}
-async function doCreate() {
-  try {
-    const res = await createReturnApi({ ...createForm })
-    ElMessage.success('草稿已创建，请提交审批')
-    createVisible.value = false
-    load()
-    if (res.data) openDetail(res.data)
   } catch { /* 拦截器已弹错 */ }
 }
 

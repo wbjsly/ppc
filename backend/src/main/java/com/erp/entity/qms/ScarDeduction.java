@@ -9,8 +9,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * SCAR 扣款单（BR-4.12-47，偏差 D3）：待财务确认 → 已确认 → 待抵扣；
- * 货款实际抵扣记 TODO-NOTIFY 桩（2.7/8.3 未建）；争议可置 DISPUTED 暂挂。
+ * SCAR 扣款单（BR-4.12-47，D3 已落地）：待财务确认 → 已确认 → 待抵扣 → 已抵扣；
+ * 货款实际抵扣由付款单挂接完成（add-payment-management）；争议可置 DISPUTED 暂挂。
  */
 @Getter
 @Setter
@@ -63,5 +63,17 @@ public class ScarDeduction extends BaseEntity {
     /** 备注 */
     @TableField("REMARK")
     private String remark;
+
+    /** 抵扣付款单 ID（D3 落地，add-payment-management） */
+    @TableField("PAYMENT_ID")
+    private String paymentId;
+
+    /** 实际抵扣时间 */
+    @TableField("DEDUCT_DATE")
+    private LocalDateTime deductDate;
+
+    /** 实际抵扣金额 */
+    @TableField("DEDUCT_AMOUNT")
+    private BigDecimal deductAmount;
 
 }

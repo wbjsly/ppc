@@ -84,6 +84,7 @@ public class QualityGateServiceImpl implements QualityGateService {
 
         // 2) 库存锁定检查（QC_QTY > 0 → 待检/让步锁定）
         InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
                 .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
                 .last("LIMIT 1"));

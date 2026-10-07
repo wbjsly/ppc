@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -66,8 +67,14 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
     private final ProcRequisitionService requisitionService;
     private final com.erp.service.proc.PoApprovalService poApprovalService;
     private final com.erp.service.proc.PriceControlService priceControlService;
+    /** 寄售 PO 判定与协议价（spec vmi-consignment，design D9） */
+    private final com.erp.service.vmi.VmiAgreementService vmiAgreementService;
+    /** 门户协同新版本复推（spec po-collaboration：currVersion+1 → 再次推送） */
+    private final com.erp.service.proc.PoCoopService poCoopService;
     private final com.erp.dao.proc.PurchaseOrderVersionDao versionDao;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    /** 记分卡 D 级冻结校验（spec supplier-scorecard BR-4.9-05：冻结拦新单，在途不受影响） */
+    private final com.erp.service.scm.ScorecardService scorecardService;
 
     /** 合同/协议价上浮容差（PRICE_TOLERANCE，C-4.2-07 变更升级判据） */
     @org.springframework.beans.factory.annotation.Value("${app.proc.price-tolerance:0.05}")
@@ -85,8 +92,11 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                                     ProcRequisitionService requisitionService,
                                     com.erp.service.proc.PoApprovalService poApprovalService,
                                     com.erp.service.proc.PriceControlService priceControlService,
+                                    com.erp.service.vmi.VmiAgreementService vmiAgreementService,
+                                    com.erp.service.proc.PoCoopService poCoopService,
                                     com.erp.dao.proc.PurchaseOrderVersionDao versionDao,
-                                    com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+                                    com.fasterxml.jackson.databind.ObjectMapper objectMapper,
+                                    com.erp.service.scm.ScorecardService scorecardService) {
         this.poDao = poDao;
         this.lineDao = lineDao;
         this.agreementDao = agreementDao;
@@ -99,8 +109,11 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         this.requisitionService = requisitionService;
         this.poApprovalService = poApprovalService;
         this.priceControlService = priceControlService;
+        this.vmiAgreementService = vmiAgreementService;
+        this.poCoopService = poCoopService;
         this.versionDao = versionDao;
         this.objectMapper = objectMapper;
+        this.scorecardService = scorecardService;
     }
 
     @Override
@@ -227,6 +240,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             total = total.add(l.getAmount());
             rows.add(l);
         }
+        // 寄售 PO 判定（全部行命中同供应商生效 VMI 协议 → CONSIGN，design D9）
+        markConsignment(po, rows, true);
+        total = BigDecimal.ZERO;
+        for (PurchaseOrderLine l : rows) {
+            total = total.add(l.getAmount());
+        }
         po.setTotalAmt(total);
         poDao.insert(po);
         insertLines(po.getId(), rows);
@@ -318,6 +337,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             total = total.add(l.getAmount());
             rows.add(l);
         }
+        // 寄售 PO 判定（全部行命中 → NORMAL 才转换，SPECIAL 应急保持原类型，design D9）
+        markConsignment(po, rows, true);
+        total = BigDecimal.ZERO;
+        for (PurchaseOrderLine l : rows) {
+            total = total.add(l.getAmount());
+        }
         po.setTotalAmt(total);
         poDao.insert(po);
         insertLines(po.getId(), rows);
@@ -350,12 +375,11 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         if (!(rawLines instanceof List<?> list) || list.isEmpty()) {
             throw new ServiceException(422, "订单明细行必填");
         }
-        String poType = str(payload.get("poType"));
-        if (poType == null || poType.trim().isEmpty()) {
-            poType = "NORMAL";
-        }
-        if (!"NORMAL".equals(poType) && !"SPECIAL".equals(poType)) {
-            throw new ServiceException(422, "poType 须为 NORMAL 或 SPECIAL");
+        String rawPoType = str(payload.get("poType"));
+        boolean explicitPoType = isNotBlank(rawPoType);
+        String poType = explicitPoType ? rawPoType.trim() : "NORMAL";
+        if (!"NORMAL".equals(poType) && !"SPECIAL".equals(poType) && !"CONSIGN".equals(poType)) {
+            throw new ServiceException(422, "poType 须为 NORMAL、SPECIAL 或 CONSIGN");
         }
 
         PurchaseOrder po = new PurchaseOrder();
@@ -422,6 +446,12 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             total = total.add(l.getAmount());
             rows.add(l);
         }
+        // 寄售 PO 判定与协议价回填（spec vmi-consignment FR-4.2-8-1 SOP / design D9）
+        String consignHint = markConsignment(po, rows, !explicitPoType);
+        total = BigDecimal.ZERO;
+        for (PurchaseOrderLine l : rows) {
+            total = total.add(l.getAmount());
+        }
         po.setTotalAmt(total);
         poDao.insert(po);
         insertLines(po.getId(), rows);
@@ -436,6 +466,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("po", po);
         result.put("lineCount", rows.size());
+        if (consignHint != null) {
+            result.put("consignmentHint", consignHint);
+        }
         return result;
     }
 
@@ -668,6 +701,11 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         log.info("PO {} change v{} type={} total {} -> {} approval={} reqRole={}",
                 po.getPoNo(), v.getVersionNo(), chgType, oldTotal, newTotal,
                 v.getApprovalStatus(), v.getReqRole());
+        // 新版本复推（spec po-collaboration）：即时生效的变更（调减/未增）当场复推；
+        // 增额待审批的在 approveChange 通过时复推（审批期间门户保持原版本，S-4.2 L1127）
+        if ("APPROVED".equals(v.getApprovalStatus()) && "APPROVED".equals(po.getStatus())) {
+            poCoopService.push(po);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", v);
@@ -726,6 +764,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             versionDao.updateById(v);
             log.info("PO {} change v{} approved by {}: {}", po.getPoNo(), versionNo,
                     v.getReqApprovedBy(), reason.trim());
+            if ("APPROVED".equals(po.getStatus())) {
+                poCoopService.push(po);   // 变更通过 → 新版本复推（currVersion 已在提交时 +1）
+            }
         } else {
             v.setApprovalStatus("REJECTED");
             v.setReqReason((v.getReqReason() == null ? "" : v.getReqReason() + "；")
@@ -804,6 +845,7 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         poDao.updateById(po);
         log.info("PO {} rolled back to v{} (now currVersion={})", po.getPoNo(),
                 versionNo, po.getCurrVersion());
+        poCoopService.push(po);   // 回滚生成新版本 → 复推
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("currVersion", po.getCurrVersion());
         result.put("restoredFrom", versionNo);
@@ -936,11 +978,63 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         return po;
     }
 
+    /**
+     * 寄售 PO 判定与协议价回填（spec vmi-consignment FR-4.2-8-1 SOP / design D9）。
+     * poType 已显式为 CONSIGN → 校验全部行在生效协议清单内（否则 422）；
+     * autoDetect 且当前为 NORMAL 且全部行命中 → 自动置 CONSIGN；
+     * 部分命中（autoDetect）→ 保持原类型并返回拆单提示。
+     * CONSIGN 行单价取协议行价格、行金额重算、清除框架协议行关联（design D13 价控豁免配套）。
+     */
+    private String markConsignment(PurchaseOrder po, List<PurchaseOrderLine> rows, boolean autoDetect) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        List<String> items = rows.stream()
+                .map(PurchaseOrderLine::getItemCode)
+                .filter(Objects::nonNull).distinct().toList();
+        Set<String> hits = vmiAgreementService.hitItems(po.getSupplierId(), items);
+        boolean consign = "CONSIGN".equals(po.getPoType())
+                || (autoDetect && "NORMAL".equals(po.getPoType())
+                        && !hits.isEmpty() && hits.size() == items.size());
+        if (!consign) {
+            if (hits.isEmpty() || !autoDetect || "CONSIGN".equals(po.getPoType())) {
+                return null;
+            }
+            String hint = "含寄售协议物料 " + String.join("、", hits)
+                    + "，寄售请单独下寄售 PO（不支持混合行，design D9）";
+            log.info("PO {} partial consignment hits {}, keep {}: {}", po.getPoNo(),
+                    hits, po.getPoType(), hint);
+            return hint;
+        }
+        List<String> missing = items.stream().filter(i -> !hits.contains(i)).toList();
+        if (!missing.isEmpty()) {
+            throw new ServiceException(422, "以下物料不在该供应商生效寄售协议清单内"
+                    + "（BR-4.2-35 / design D9）：" + String.join("、", missing));
+        }
+        po.setPoType("CONSIGN");
+        for (PurchaseOrderLine l : rows) {
+            var pl = vmiAgreementService.priceLineOn(po.getSupplierId(), l.getItemCode(), LocalDate.now());
+            if (pl == null) {
+                pl = vmiAgreementService.lineFor(po.getSupplierId(), l.getItemCode());
+            }
+            if (pl != null) {
+                l.setUnitPrice(pl.getUnitPrice());
+                l.setAmount(l.getQty().multiply(pl.getUnitPrice()).setScale(2, RoundingMode.HALF_UP));
+            }
+            l.setAgreementLineId(null);   // 寄售价与框架协议解耦（design D13）
+        }
+        log.info("PO {} marked CONSIGN, {} lines repriced by VMI agreement",
+                po.getPoNo(), rows.size());
+        return null;
+    }
+
     /** BR-4.2-18：供应商状态非合格（冻结/停用/证照过期）硬阻断 */
     private void requireQualified(String supplierId) {
         if (!isNotBlank(supplierId)) {
             throw new ServiceException(422, "供应商必填");
         }
+        // BR-4.9-05：记分卡 D 级冻结 → 拦截新采购订单创建（三个创建入口统一经过此处）
+        scorecardService.assertNotFrozen(supplierId.trim());
         MdmSupplier s = mdmSupplierDao.selectById(supplierId.trim());
         if (s == null) {
             throw new ServiceException(422, "供应商不存在：" + supplierId);

@@ -90,6 +90,16 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     private final OutboxPublisher outbox;
     private final com.erp.service.qms.InspectionLotService lotService;
     private final com.erp.dao.qms.ConcessionDao concessionDao;
+    /** 应付暂估生成（BR-4.2-30，add-accrual-three-way-match D3） */
+    private final com.erp.service.fin.AccrualService accrualService;
+    /** ASN 衔接（spec asn-collaboration）：过账前置拦截 + 核销 */
+    private final com.erp.service.proc.AsnService asnService;
+    private final com.erp.dao.proc.AsnDao asnDao;
+    /** 寄售库存分流与水位（spec vmi-consignment / MODIFIED receipt-posting ①④⑥） */
+    private final com.erp.dao.vmi.VmiStockDao vmiStockDao;
+    private final com.erp.dao.vmi.VmiAgreementDao vmiAgreeDao;
+    private final com.erp.service.vmi.VmiAgreementService vmiAgreementService;
+    private final com.erp.service.vmi.VmiAlertService vmiAlertService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
 
     // ================================================================
@@ -150,6 +160,21 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         gr.setPoNo(po.getPoNo());
         gr.setSupplierId(po.getSupplierId());
         gr.setSupplierName(po.getSupplierName());
+        // 从 ASN 带出登记（spec asn-collaboration 预生成收货预约）：关联校验属同 PO/同供应商
+        String asnId = str(payload.get("asnId"));
+        if (hasText(asnId)) {
+            com.erp.entity.proc.Asn linked = asnDao.selectById(asnId);
+            if (linked == null) {
+                throw new ServiceException(422, "关联 ASN 不存在：" + asnId);
+            }
+            if (!po.getId().equals(linked.getPoId()) || !po.getSupplierId().equals(linked.getSupplierId())) {
+                throw new ServiceException(422, "ASN 与该 PO/供应商不匹配：" + linked.getAsnNo());
+            }
+            if ("CLOSED".equals(linked.getStatus())) {
+                throw new ServiceException(422, "ASN 已核销关闭，不可再收货：" + linked.getAsnNo());
+            }
+            gr.setAsnId(linked.getId());
+        }
         gr.setGrNo(nextGrNo());
         gr.setStatus(GR_CREATED);
         gr.setCreateBy(SecurityUtils.getCurrentUserId());
@@ -191,6 +216,19 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
                 diffs.add(d);
                 diffOwners.add(gl);   // 差异挂行：与 diffs 同索引
             }
+        }
+        // 寄售收货水位预检（BR-4.2-36，design D3 登记提前拦截）：超水位 422 并落 OPEN 告警，
+        // 采购员确认后携带 confirmWaterLevel=true 重试登记；过账时权威复核再校验一次
+        if ("CONSIGN".equals(po.getPoType())) {
+            Map<String, BigDecimal> incoming = new LinkedHashMap<>();
+            for (GoodsReceiptLine l : builtLines) {
+                BigDecimal w = nvl(l.getWithinToleranceQty());
+                if (w.signum() > 0) {
+                    incoming.merge(l.getItemCode(), w, BigDecimal::add);
+                }
+            }
+            vmiAlertService.assertWaterLevel(po.getSupplierId(), incoming,
+                    Boolean.TRUE.equals(payload.get("confirmWaterLevel")));
         }
         return insertGr(gr, builtLines, diffs, diffOwners);
     }
@@ -813,6 +851,12 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     @Override
     @Transactional
     public Map<String, Object> posting(String grId) {
+        return posting(grId, null);
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> posting(String grId, Map<String, Object> body) {
         GoodsReceipt gr = requireGr(grId);
         if (!GR_CREATED.equals(gr.getStatus())) {
             throw new ServiceException(422, "仅待过账的收货单可过账，当前 " + gr.getStatus());
@@ -829,6 +873,34 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
             if (!PO_APPROVED.equals(po.getStatus())) {
                 throw new ServiceException(422, "PO 状态不可过账（BR-4.2-28）：" + po.getStatus());
             }
+        }
+        // 寄售收货最高水位权威复核（BR-4.2-36，MODIFIED receipt-posting ①）：
+        // 超水位 422 并确保 OPEN 告警落库；confirmWaterLevel=true 且已有采购员确认 → 放行
+        boolean consign = po != null && "CONSIGN".equals(po.getPoType());
+        Map<String, BigDecimal> incoming = new LinkedHashMap<>();
+        if (consign) {
+            for (GoodsReceiptLine gl : lineList(grId)) {
+                if (!"PENDING".equals(gl.getStatus())) {
+                    continue;
+                }
+                BigDecimal w = nvl(gl.getWithinToleranceQty());
+                if (w.signum() <= 0) {
+                    continue;
+                }
+                incoming.merge(gl.getItemCode(), w, BigDecimal::add);
+            }
+            boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirmWaterLevel"));
+            vmiAlertService.assertWaterLevel(gr.getSupplierId(), incoming, confirm);
+        }
+        // ASN 超收拦截（C-4.9-07，spec asn-collaboration）：超收未放行/超出可收量 → 422（早期，纯校验）
+        if (hasText(gr.getAsnId())) {
+            List<GoodsReceiptLine> pending = new ArrayList<>();
+            for (GoodsReceiptLine gl : lineList(grId)) {
+                if ("PENDING".equals(gl.getStatus())) {
+                    pending.add(gl);
+                }
+            }
+            asnService.assertReceiptWithin(gr, pending);
         }
         // 检验合格前置校验（C-4.12-06 前移，spec receipt-posting ADDED）：
         // 全部待过账行的检验批须为 RELEASED / SKIPPED（免检）/ CONCESSION（让步批准），否则 422 逐行列出
@@ -851,6 +923,7 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         }
         String userId = SecurityUtils.getCurrentUserId();
         int postedLines = 0;
+        List<GoodsReceiptLine> postedLineEntities = new ArrayList<>();
         for (GoodsReceiptLine gl : lineList(grId)) {
             if (!"PENDING".equals(gl.getStatus())) {
                 continue;   // REJECTED 行不入待检不过账
@@ -877,8 +950,13 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
                     closeShortDiffs(pl.getId());
                 }
             }
-            // 库存 upsert（物料+批次唯一）：全部进待检锁定（FR-4.2-4-2）
-            upsertStock(gr, gl, within);
+            // 库存 upsert 分流（MODIFIED receipt-posting ④）：寄售 PO 入独立寄售库存
+            // （物权=供应商，BR-4.2-01），普通 PO 入自有库存（进待检锁定，FR-4.2-4-2）
+            if (consign) {
+                upsertVmiStock(gr, gl, within);
+            } else {
+                upsertStock(gr, gl, within);
+            }
             // 行金额快照（FREE 单价空则金额空）
             if (gl.getUnitPrice() != null) {
                 gl.setAmount(within.multiply(gl.getUnitPrice()).setScale(2, RoundingMode.HALF_UP));
@@ -886,6 +964,7 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
             gl.setStatus("POSTED");
             gl.setUpdateBy(userId);
             lineDao.updateById(gl);
+            postedLineEntities.add(gl);
             postedLines++;
         }
         if (postedLines == 0) {
@@ -896,12 +975,22 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         gr.setPostingDate(LocalDateTime.now());
         gr.setUpdateBy(userId);
         grDao.updateById(gr);
-        // 财务暂估与三方匹配桩（4.6 落地后接，design D5）
-        // 偏差 D2（add-goods-receipt）—— 应付暂估与三方匹配（FR-4.2-6-2 / BR-4.2-30）为 4.6 财务域，
-        // 模块未建：记 TODO-NOTIFY 日志桩，4.6 落地后接正式凭证生成
-        log.info("[TODO-NOTIFY] GR {} posting {} 应付暂估与三方匹配（PO-收货单-发票，4.6 桩）",
-                gr.getGrNo(), gr.getPostingDocNo());
-        log.info("GR {} posted lines={} doc={}", gr.getGrNo(), postedLines, gr.getPostingDocNo());
+        if (consign) {
+            // 寄售 PO 跳过暂估（BR-4.2-01 物权属供应商，不确认应付；暂估于领用物权转移时经
+            // createFromVmiTransfer 生成，MODIFIED receipt-posting ⑥）；消费水位放行额度（一次性）
+            log.info("GR {} posted lines={} doc={} 寄售分流：入寄售库存、不生成暂估",
+                    gr.getGrNo(), postedLines, gr.getPostingDocNo());
+            vmiAlertService.consumeConfirmed(gr.getSupplierId(), incoming.keySet());
+        } else {
+            // ⑥ 应付暂估（BR-4.2-30 落地，change add-accrual-three-way-match design D3）：
+            // 同事务生成暂估单 + 借存货/贷应付暂估凭证；FREE 无单价行不计价（全无单价则跳过），
+            // 生成失败整体回滚（收货单保持 CREATED）。三方匹配（PO-收货单-发票）见 2.7.2。
+            accrualService.createFromGr(gr, postedLineEntities);
+        // ASN 核销（spec asn-collaboration）：回写收货量、全收 CLOSED、承诺-到货偏差留痕
+        asnService.settle(gr, postedLineEntities);
+            log.info("GR {} posted lines={} doc={} 暂估已生成", gr.getGrNo(), postedLines,
+                    gr.getPostingDocNo());
+        }
         return detail(grId);
     }
 
@@ -915,11 +1004,13 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         boolean concession = "CONCESSION".equals(gl.getQcStatus());
         String limitJson = concession ? concessionLimitOf(gl.getId()) : null;
         InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, gl.getItemCode())
                 .eq(InvStock::getBatchNo, batch)
                 .last("LIMIT 1"));
         if (s == null) {
             s = new InvStock();
+            s.setWarehouseCode(InvStock.DEFAULT_WH);
             s.setItemCode(gl.getItemCode());
             s.setItemName(gl.getItemName());
             s.setBatchNo(batch);
@@ -952,6 +1043,53 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
                 throw new ServiceException(409, "库存并发更新冲突，请重试：" + gl.getItemCode());
             }
         }
+    }
+
+    /**
+     * 寄售库存 upsert（MODIFIED receipt-posting ④：物权=供应商，独立分账，BR-4.2-01）。
+     * 唯一键 物料+批次+供应商；INBOUND_DATE 取首批（补货不刷新，FIFO 依据）；
+     * 寄售库存不区分 QC 锁定——不合格已在检验环节拒收不入账（spec vmi-consignment 收货口径）。
+     */
+    private void upsertVmiStock(GoodsReceipt gr, GoodsReceiptLine gl, BigDecimal within) {
+        String batch = hasText(gr.getBatchNo()) ? gr.getBatchNo() : "";
+        com.erp.entity.vmi.VmiStock s = vmiStockDao.selectOne(
+                new LambdaQueryWrapper<com.erp.entity.vmi.VmiStock>()
+                        .eq(com.erp.entity.vmi.VmiStock::getItemCode, gl.getItemCode())
+                        .eq(com.erp.entity.vmi.VmiStock::getBatchNo, batch)
+                        .eq(com.erp.entity.vmi.VmiStock::getSupplierId, gr.getSupplierId())
+                        .last("LIMIT 1"));
+        if (s == null) {
+            s = new com.erp.entity.vmi.VmiStock();
+            s.setItemCode(gl.getItemCode());
+            s.setItemName(gl.getItemName());
+            s.setBatchNo(batch);
+            s.setSupplierId(gr.getSupplierId());
+            s.setSupplierName(gr.getSupplierName());
+            s.setQty(within);
+            s.setIssuedQty(BigDecimal.ZERO);
+            s.setInboundDate(java.time.LocalDate.now());
+            s.setAgreeNo(agreeNoOf(gr.getSupplierId(), gl.getItemCode()));
+            s.setCreateBy(SecurityUtils.getCurrentUserId());
+            vmiStockDao.insert(s);
+        } else {
+            int upd = vmiStockDao.update(null, new LambdaUpdateWrapper<com.erp.entity.vmi.VmiStock>()
+                    .eq(com.erp.entity.vmi.VmiStock::getId, s.getId())
+                    .eq(com.erp.entity.vmi.VmiStock::getVerNo, s.getVerNo())
+                    .setSql("QTY = QTY + " + within.toPlainString()));
+            if (upd == 0) {
+                throw new ServiceException(409, "寄售库存并发更新冲突，请重试：" + gl.getItemCode());
+            }
+        }
+    }
+
+    /** 最近生效 VMI 协议号（寄售库存溯源，可空） */
+    private String agreeNoOf(String supplierId, String itemCode) {
+        var line = vmiAgreementService.lineFor(supplierId, itemCode);
+        if (line == null) {
+            return null;
+        }
+        var a = vmiAgreeDao.selectById(line.getAgreeId());
+        return a == null ? null : a.getAgreeNo();
     }
 
     /** 让步限制快照 JSON（有效期 / 上限 / 使用范围，来源已批准让步接收单） */

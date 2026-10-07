@@ -26,6 +26,18 @@ public class MdmCustomerGroup extends BaseEntity {
     /** 统一社会信用代码 */
     private String uscc;
 
+    /** 营业执照/资质证照有效期（BR-4.3-08 过期阻断报价；空 = 不校验）。053 动态列 */
+    private java.time.LocalDate licenseExpire;
+
+    /** 一般纳税人资格（C-4.3-06 税务资质校验：GENERAL 一般 / SMALL 小规模 / 空未维护）。056 动态列 */
+    private String taxpayerType;
+
+    /** 一般纳税人资格有效期（空 = 不校验；过期阻断开专票）。056 动态列 */
+    private java.time.LocalDate taxQualExpire;
+
+    /** 销项税码（开票税率来源之一，与物料税码二选一优先物料）。056 动态列 */
+    private String taxCode;
+
     /** 集团信用评级（外部征信 + 内部履约，每半年复评——本期人工维护） */
     private String creditRating;
 

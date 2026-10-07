@@ -43,6 +43,15 @@ public class MdmItem extends BaseEntity {
 
     private BigDecimal safetyStock;
 
+    /** MOQ 最小起订量（BR-4.3-09 报价行校验；空 = 不校验）。053 动态列 */
+    private BigDecimal minOrderQty;
+
+    /** 标准成本（毛利公式 FR-4.3-1-5；空 = 毛利不可算）。053 动态列 */
+    private BigDecimal standardCost;
+
+    /** 销项税码（开票税率来源，优先于客户税码）。056 动态列 */
+    private String taxCode;
+
     private Integer leadTimeDays;
 
     /** 批次管理标识 1/0（BR-4.1-08：为 1 时保质期必填） */

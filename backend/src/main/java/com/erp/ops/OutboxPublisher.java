@@ -51,13 +51,20 @@ public class OutboxPublisher {
     public void publishEvent(String eventType, String bizCode, int recordVersion,
                              String legalEntityId, String diffSummary,
                              Map<String, Object> extra) {
+        publishSourced(eventType, bizCode, recordVersion, legalEntityId, diffSummary, extra, "mdm-service");
+    }
+
+    /** 指定来源（门户协同事件 source=portal-service，spec portal-event-push） */
+    public void publishSourced(String eventType, String bizCode, int recordVersion,
+                               String legalEntityId, String diffSummary,
+                               Map<String, Object> extra, String source) {
         MdmOutboxEvent e = new MdmOutboxEvent();
         e.setEventId(UUID.randomUUID().toString());
         e.setEventType(eventType);
         e.setVersion(1);
         e.setRecordVersion(recordVersion);
         e.setOccurredAt(LocalDateTime.now());
-        e.setSource("mdm-service");
+        e.setSource(source);
         e.setIdempotencyKey(bizCode + ":v" + recordVersion);
         e.setLegalEntityId(legalEntityId);
         e.setPayload(buildPayload(eventType, bizCode, recordVersion, diffSummary, extra));

@@ -10,7 +10,9 @@ import org.apache.ibatis.annotations.Select;
 public interface MdmSupplierDao extends BaseMapper<MdmSupplier> {
 
     /** 同库最大供应商编码，用于生成下一个 SUP-{4位流水} */
-    @Select("SELECT MAX(SUPPLIER_CODE) FROM erp_mdm_supplier")
+    /** 同库最大供应商编码（仅 SUP-{4位纯数字流水}；SUPTEST001/SUPVMI001 等无连字符的
+     *  种子码在字符串 MAX 中排最后，会使 startsWith("SUP-") 判定失败回落序号 1 → 撞唯一键） */
+    @Select("SELECT MAX(SUPPLIER_CODE) FROM erp_mdm_supplier WHERE SUPPLIER_CODE REGEXP '^SUP-[0-9]+$'")
     String selectMaxCode();
 
     /** 税号占用检查：返回占用方编码（非自身），C-4.1-07 同款 */

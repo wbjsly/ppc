@@ -26,8 +26,13 @@ public class JwtTokenProvider {
     }
 
     public String generateToken(String subject, Map<String, Object> claims) {
+        return generateToken(subject, claims, expiration);
+    }
+
+    /** 指定有效期（开放入口访问令牌 2 小时，spec FR-4.9-3-1） */
+    public String generateToken(String subject, Map<String, Object> claims, long ttlMillis) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + expiration);
+        Date expiryDate = new Date(now.getTime() + ttlMillis);
 
         return Jwts.builder()
                 .setSubject(subject)

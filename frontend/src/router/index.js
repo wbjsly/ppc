@@ -9,6 +9,13 @@ const routes = [
     meta: { title: '登录' }
   },
   {
+    // 供应商门户（spec supplier-portal-account：ROLE_SUPPLIER 独立路由，不进内部主菜单）
+    path: '/portal',
+    name: 'SupplierPortal',
+    component: () => import('@/views/portal/supplier/index.vue'),
+    meta: { title: '供应商门户', perm: 'ROLE_SUPPLIER' }
+  },
+  {
     path: '/',
     name: 'Layout',
     redirect: '/dashboard',
@@ -238,6 +245,370 @@ const routes = [
         component: () => import('@/views/proc/quality-return/index.vue'),
         meta: { title: '质量退货', group: '采购管理' }
       },
+      // 2.6.2 其他退货（add-other-return，非质量退货独立入口）
+      {
+        path: '/m/2.6.2',
+        name: 'OtherReturn',
+        component: () => import('@/views/proc/other-return/index.vue'),
+        meta: { title: '其他退货', group: '采购管理' }
+      },
+      // 2.6.3 红字凭证台账（add-other-return，只读）
+      {
+        path: '/m/2.6.3',
+        name: 'RedVoucher',
+        component: () => import('@/views/proc/red-voucher/index.vue'),
+        meta: { title: '红字凭证', group: '采购管理' }
+      },
+      // 2.7.1 应付暂估（add-accrual-three-way-match，台账 + 手工冲回）
+      {
+        path: '/m/2.7.1',
+        name: 'Accrual',
+        component: () => import('@/views/proc/accrual/index.vue'),
+        meta: { title: '应付暂估', group: '采购管理' }
+      },
+      // 2.7.2 三方匹配（add-accrual-three-way-match，发票登记 + 匹配 + 异常对账单）
+      {
+        path: '/m/2.7.2',
+        name: 'ThreeWayMatch',
+        component: () => import('@/views/proc/three-way-match/index.vue'),
+        meta: { title: '三方匹配', group: '采购管理' }
+      },
+      // 2.7.3 付款管理（add-payment-management，单页五 Tab：对账/申请/排期执行/核销/预付）
+      {
+        path: '/m/2.7.3',
+        name: 'PaymentManagement',
+        component: () => import('@/views/proc/payment/index.vue'),
+        meta: { title: '付款管理', group: '采购管理' }
+      },
+      {
+        // 2.8.1 寄售采购（add-consignment-procurement，五 Tab：协议/库存/领用/结算/告警）
+        path: '/m/2.8.1',
+        name: 'Consignment',
+        component: () => import('@/views/proc/consignment/index.vue'),
+        meta: { title: '寄售采购', group: '采购管理' }
+      },
+      {
+        // 2.8.2 门户协同（add-supplier-portal-collaboration，单页四 Tab：PO/ASN/VMI/对账）
+        path: '/m/2.8.2',
+        name: 'PortalCollaboration',
+        component: () => import('@/views/proc/portal-collaboration/index.vue'),
+        meta: { title: '门户协同', group: '采购管理' }
+      },
+      {
+        // 2.8.3 接口对接（add-interface-integration，单页五 Tab：总览/事件与报文/接入治理/凭证与防护/SLA）
+        path: '/m/2.8.3',
+        name: 'InterfaceIntegration',
+        component: () => import('@/views/proc/interface-integration/index.vue'),
+        meta: { title: '接口对接', group: '采购管理', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 2.9.1 成本分析（add-procurement-analysis，spec procurement-cost-analysis 三 Tab）
+        path: '/m/2.9.1',
+        name: 'CostAnalysis',
+        component: () => import('@/views/proc/cost-analysis/index.vue'),
+        meta: { title: '成本分析', group: '采购管理', perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
+      },
+      {
+        // 2.9.2 绩效评估（spec supplier-scorecard，4.9 流程七）
+        path: '/m/2.9.2',
+        name: 'SupplierScorecard',
+        component: () => import('@/views/proc/scorecard/index.vue'),
+        meta: { title: '绩效评估', group: '采购管理', perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
+      },
+      {
+        // 2.9.3 价格监测（spec price-monitoring 监测工作台）
+        path: '/m/2.9.3',
+        name: 'PriceMonitoring',
+        component: () => import('@/views/proc/price-monitoring/index.vue'),
+        meta: { title: '价格监测', group: '采购管理', perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
+      },
+      {
+        // 4.1.1 仓库档案（add-sales-lead-to-cash，spec warehouse-master）
+        path: '/m/4.1.1',
+        name: 'WarehouseMaster',
+        component: () => import('@/views/inv/warehouse/index.vue'),
+        meta: { title: '仓库档案', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 11.1.1 线索录入（add-sales-lead-to-cash，spec crm-lead-management）
+        path: '/m/11.1.1',
+        name: 'LeadEntry',
+        component: () => import('@/views/crm/lead/index.vue'),
+        meta: { title: '线索录入', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.1.2 线索评分（add-sales-lead-to-cash，spec crm-lead-management）
+        path: '/m/11.1.2',
+        name: 'LeadScore',
+        component: () => import('@/views/crm/lead-score/index.vue'),
+        meta: { title: '线索评分', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.1.1 商机录入（add-sales-lead-to-cash，spec opportunity-management）
+        path: '/m/3.1.1',
+        name: 'OpportunityEntry',
+        component: () => import('@/views/crm/opportunity/index.vue'),
+        meta: { title: '商机录入', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.1.2 商机转化（add-sales-lead-to-cash，spec opportunity-management）
+        path: '/m/3.1.2',
+        name: 'OpportunityConvert',
+        component: () => import('@/views/crm/opportunity-convert/index.vue'),
+        meta: { title: '商机转化', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.1.3 商机跟进（add-sales-lead-to-cash，spec opportunity-management）
+        path: '/m/3.1.3',
+        name: 'OpportunityFollowup',
+        component: () => import('@/views/crm/opportunity-followup/index.vue'),
+        meta: { title: '商机跟进', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.2.1 报价创建（add-sales-lead-to-cash，spec sales-quote）
+        path: '/m/3.2.1',
+        name: 'QuoteCreate',
+        component: () => import('@/views/sales/quote-create/index.vue'),
+        meta: { title: '报价创建', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.2.2 毛利测算（add-sales-lead-to-cash，spec sales-quote）
+        path: '/m/3.2.2',
+        name: 'QuoteMargin',
+        component: () => import('@/views/sales/quote-margin/index.vue'),
+        meta: { title: '毛利测算', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.2.3 报价转化（add-sales-lead-to-cash，spec sales-quote）
+        path: '/m/3.2.3',
+        name: 'QuoteConvert',
+        component: () => import('@/views/sales/quote-convert/index.vue'),
+        meta: { title: '报价转化', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.3.1 信用检查（add-sales-lead-to-cash，spec customer-credit-control）
+        path: '/m/3.3.1',
+        name: 'CreditCheck',
+        component: () => import('@/views/sales/credit-check/index.vue'),
+        meta: { title: '信用检查', group: '销售管理', perm: 'ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.3.2 信用冻结看板（add-sales-lead-to-cash，spec customer-credit-control）
+        path: '/m/3.3.2',
+        name: 'CreditFreeze',
+        component: () => import('@/views/sales/credit-freeze/index.vue'),
+        meta: { title: '信用冻结', group: '销售管理', perm: 'ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.3.3 预收处理（add-sales-lead-to-cash，spec customer-credit-control）
+        path: '/m/3.3.3',
+        name: 'Prepayment',
+        component: () => import('@/views/sales/prepayment/index.vue'),
+        meta: { title: '预收处理', group: '销售管理', perm: 'ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.7.1 部分发货（add-sales-lead-to-cash，spec sales-shipment）
+        path: '/m/3.7.1',
+        name: 'ShipmentPartial',
+        component: () => import('@/views/sales/shipment-partial/index.vue'),
+        meta: { title: '部分发货', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_SALES,ROLE_ADMIN' }
+      },
+      {
+        // 3.7.2 合并发货（add-sales-lead-to-cash，spec sales-shipment）
+        path: '/m/3.7.2',
+        name: 'ShipmentMerge',
+        component: () => import('@/views/sales/shipment-merge/index.vue'),
+        meta: { title: '合并发货', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_SALES,ROLE_ADMIN' }
+      },
+      {
+        // 3.7.3 分批发货（add-sales-lead-to-cash，spec sales-shipment）
+        path: '/m/3.7.3',
+        name: 'ShipmentBatch',
+        component: () => import('@/views/sales/shipment-batch/index.vue'),
+        meta: { title: '分批发货', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_SALES,ROLE_ADMIN' }
+      },
+      {
+        // 3.7.4 发货确认（add-sales-lead-to-cash，spec sales-shipment）
+        path: '/m/3.7.4',
+        name: 'ShipmentConfirm',
+        component: () => import('@/views/sales/shipment-confirm/index.vue'),
+        meta: { title: '发货确认', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_SALES,ROLE_ADMIN' }
+      },
+      {
+        // 3.8.1 开票触发（add-sales-lead-to-cash，spec sales-invoicing-receivable）
+        path: '/m/3.8.1',
+        name: 'InvoiceTrigger',
+        component: () => import('@/views/sales/invoice-trigger/index.vue'),
+        meta: { title: '开票触发', group: '销售管理', perm: 'ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.8.2 自动核销（add-sales-lead-to-cash，spec sales-invoicing-receivable）
+        path: '/m/3.8.2',
+        name: 'ArWriteoff',
+        component: () => import('@/views/sales/ar-writeoff/index.vue'),
+        meta: { title: '自动核销', group: '销售管理', perm: 'ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.8.3 应收管理（add-sales-lead-to-cash，spec sales-invoicing-receivable）
+        path: '/m/3.8.3',
+        name: 'ArManage',
+        component: () => import('@/views/sales/ar-manage/index.vue'),
+        meta: { title: '应收管理', group: '销售管理', perm: 'ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.9.1 返利计算（add-sales-lead-to-cash，spec sales-rebate，含三配置 Tab）
+        path: '/m/3.9.1',
+        name: 'RebateCalc',
+        component: () => import('@/views/sales/rebate-calc/index.vue'),
+        meta: { title: '返利计算', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.9.2 返利审批（add-sales-lead-to-cash，spec sales-rebate）
+        path: '/m/3.9.2',
+        name: 'RebateApproval',
+        component: () => import('@/views/sales/rebate-approval/index.vue'),
+        meta: { title: '返利审批', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.9.3 返利兑现（add-sales-lead-to-cash，spec sales-rebate）
+        path: '/m/3.9.3',
+        name: 'RebateCash',
+        component: () => import('@/views/sales/rebate-cash/index.vue'),
+        meta: { title: '返利兑现', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.10.1 退货申请（add-sales-lead-to-cash，spec sales-return）
+        path: '/m/3.10.1',
+        name: 'ReturnRequest',
+        component: () => import('@/views/sales/return-request/index.vue'),
+        meta: { title: '退货申请', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.10.2 退货判定（add-sales-lead-to-cash，spec sales-return）
+        path: '/m/3.10.2',
+        name: 'ReturnJudge',
+        component: () => import('@/views/sales/return-judge/index.vue'),
+        meta: { title: '退货判定', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.10.3 退款换货（add-sales-lead-to-cash，spec sales-return）
+        path: '/m/3.10.3',
+        name: 'ReturnSettle',
+        component: () => import('@/views/sales/return-settle/index.vue'),
+        meta: { title: '退款换货', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.11.1 框架订单（add-sales-lead-to-cash，spec sales-framework-agreement）
+        path: '/m/3.11.1',
+        name: 'FrameworkAgreement',
+        component: () => import('@/views/sales/framework-agreement/index.vue'),
+        meta: { title: '框架订单', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.11.2 分批发货执行视图（add-sales-lead-to-cash，spec sales-framework-agreement）
+        path: '/m/3.11.2',
+        name: 'FrameworkExecution',
+        component: () => import('@/views/sales/framework-execution/index.vue'),
+        meta: { title: '分批发货', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 11.11.1 合同签订（add-sales-lead-to-cash，spec sales-contract）
+        path: '/m/11.11.1',
+        name: 'ContractSign',
+        component: () => import('@/views/crm/contract-sign/index.vue'),
+        meta: { title: '合同签订', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.11.2 收款计划（add-sales-lead-to-cash，spec sales-contract）
+        path: '/m/11.11.2',
+        name: 'ContractPlan',
+        component: () => import('@/views/crm/contract-plan/index.vue'),
+        meta: { title: '收款计划', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.11.3 合同变更（add-sales-lead-to-cash，spec sales-contract）
+        path: '/m/11.11.3',
+        name: 'ContractChange',
+        component: () => import('@/views/crm/contract-change/index.vue'),
+        meta: { title: '合同变更', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 3.4.1 承诺试算（add-sales-lead-to-cash，spec sales-atp-reservation）
+        path: '/m/3.4.1',
+        name: 'AtpTrial',
+        component: () => import('@/views/sales/atp/index.vue'),
+        meta: { title: '承诺试算', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_SALES,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.4.2 分批交付（add-sales-lead-to-cash，spec sales-atp-reservation）
+        path: '/m/3.4.2',
+        name: 'BatchDelivery',
+        component: () => import('@/views/sales/batch-delivery/index.vue'),
+        meta: { title: '分批交付', group: '销售管理', perm: 'ROLE_SALES_MGR,ROLE_SALES,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 3.5.1 订单创建（add-sales-lead-to-cash，spec sales-order）
+        path: '/m/3.5.1',
+        name: 'SoCreate',
+        component: () => import('@/views/sales/so-create/index.vue'),
+        meta: { title: '订单创建', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.5.2 订单审批（add-sales-lead-to-cash，spec sales-order）
+        path: '/m/3.5.2',
+        name: 'SoApproval',
+        component: () => import('@/views/sales/so-approval/index.vue'),
+        meta: { title: '订单审批', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.5.3 订单变更（add-sales-lead-to-cash，spec sales-order）
+        path: '/m/3.5.3',
+        name: 'SoChange',
+        component: () => import('@/views/sales/so-change/index.vue'),
+        meta: { title: '订单变更', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.5.4 订单关闭（add-sales-lead-to-cash，spec sales-order）
+        path: '/m/3.5.4',
+        name: 'SoClose',
+        component: () => import('@/views/sales/so-close/index.vue'),
+        meta: { title: '订单关闭', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.6.1 价格矩阵（add-sales-lead-to-cash，spec sales-pricing-discount）
+        path: '/m/3.6.1',
+        name: 'PriceMatrix',
+        component: () => import('@/views/sales/price-matrix/index.vue'),
+        meta: { title: '价格矩阵', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.6.2 折扣矩阵（add-sales-lead-to-cash，spec sales-pricing-discount）
+        path: '/m/3.6.2',
+        name: 'DiscountMatrix',
+        component: () => import('@/views/sales/discount-matrix/index.vue'),
+        meta: { title: '折扣矩阵', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.6.3 专属折扣（add-sales-lead-to-cash，spec sales-pricing-discount）
+        path: '/m/3.6.3',
+        name: 'ExclusiveDiscount',
+        component: () => import('@/views/sales/exclusive-discount/index.vue'),
+        meta: { title: '专属折扣', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 3.6.4 取价记录（add-sales-lead-to-cash，spec sales-pricing-discount）
+        path: '/m/3.6.4',
+        name: 'PriceAudit',
+        component: () => import('@/views/sales/price-audit/index.vue'),
+        meta: { title: '取价记录', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
+      },
+      {
+        // 4.5.2 领料出库（add-consignment-procurement，spec material-issue）
+        path: '/m/4.5.2',
+        name: 'MaterialIssue',
+        component: () => import('@/views/inv/material-issue/index.vue'),
+        meta: { title: '领料出库', group: '库存管理' }
+      },
       {
         path: '/m/2.5.2',
         name: 'ConcessionPurchase',
@@ -464,6 +835,19 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
+  // 门户/内部双向隔离（spec supplier-portal-account，C-4.9-06 前端第一道防线）
+  const rolesNow = (userStore.userInfo && userStore.userInfo.roles) || []
+  const isPortalRoute = to.path.startsWith('/portal')
+  if (isPortalRoute && !rolesNow.includes('ROLE_SUPPLIER')) {
+    ElMessage.warning('需供应商门户账号访问')
+    next('/dashboard')
+    return
+  }
+  if (!isPortalRoute && rolesNow.includes('ROLE_SUPPLIER')) {
+    next('/portal')
+    return
+  }
+
   // 权限拦截（01 文档 3.3 第一道防线）：直接输 URL 也无法进入受限页
   if (to.meta && to.meta.perm) {
     const needed = to.meta.perm.split(',').map(s => s.trim())
@@ -476,13 +860,14 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  const menuStore = (await import('@/store/menu')).useMenuStore()
-  if (!menuStore.loaded && !menuStore.loading) {
-    menuStore.fetchMenus().catch(() => {})
+  if (!isPortalRoute) {
+    const menuStore = (await import('@/store/menu')).useMenuStore()
+    if (!menuStore.loaded && !menuStore.loading) {
+      menuStore.fetchMenus().catch(() => {})
+    }
+    const tabStore = (await import('@/store/tab')).useTabStore()
+    tabStore.addTab(to)
   }
-
-  const tabStore = (await import('@/store/tab')).useTabStore()
-  tabStore.addTab(to)
 
   next()
 })

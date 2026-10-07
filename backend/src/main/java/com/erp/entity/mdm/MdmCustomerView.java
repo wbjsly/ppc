@@ -32,6 +32,12 @@ public class MdmCustomerView extends BaseEntity {
     /** 付款条件（如 NET30 / 月结30天） */
     private String paymentTerms;
 
+    /**
+     * 渠道属性：DIRECT 直销 / DEALER 经销 / ECOM 电商 / KA 大客户。
+     * 三层折扣中渠道折扣的匹配输入（FR-4.3-5-1）；可空，为空时销售侧按无渠道折扣计算（BR-4.3-32）。
+     */
+    private String channel;
+
     /** 本法人信用额度（可空；额度调整 UI 属 1.3.2，本期建列并落求和校验） */
     private BigDecimal creditLimit;
 

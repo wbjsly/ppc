@@ -116,6 +116,14 @@ public class ReturnOrder extends BaseEntity {
     @TableField("RETURN_REASON")
     private String returnReason;
 
+    /**
+     * 结构化退货原因类型（045，spec other-return）：
+     * WRONG_ITEM 发错货 / OVER_SHIP 多发货 / QUALITY_FOUND 到货后发现质量问题 / OTHER 其他；
+     * NULL 为存量数据，读侧兼容展示为「其他」。
+     */
+    @TableField("RETURN_REASON_TYPE")
+    private String reasonType;
+
     /** 备注 */
     @TableField("REMARK")
     private String remark;

@@ -3,12 +3,14 @@ package com.erp.service.impl.proc;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.mdm.MdmItemDao;
+import com.erp.dao.mdm.MdmSupplierDao;
 import com.erp.dao.proc.PoApprovalLogDao;
 import com.erp.dao.proc.PoApprovalTaskDao;
 import com.erp.dao.proc.PurchaseOrderDao;
 import com.erp.dao.proc.PurchaseOrderLineDao;
 import com.erp.dao.system.SysUserDao;
 import com.erp.entity.mdm.MdmItem;
+import com.erp.entity.mdm.MdmSupplier;
 import com.erp.entity.proc.PoApprovalLog;
 import com.erp.entity.proc.PoApprovalTask;
 import com.erp.entity.proc.PurchaseOrder;
@@ -22,11 +24,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * PO 独立审批（design D1，spec purchase-order「订单三档分级审批」）。
@@ -55,6 +59,10 @@ public class PoApprovalServiceImpl implements PoApprovalService {
     private final ProcBudgetService budgetService;
     private final MdmItemDao itemDao;
     private final SysUserDao sysUserDao;
+    private final MdmSupplierDao supplierDao;
+    private final com.erp.service.vmi.VmiAgreementService vmiAgreementService;
+    /** 门户协同下达推送（spec po-collaboration：审批通过同事务推送） */
+    private final com.erp.service.proc.PoCoopService poCoopService;
 
     public PoApprovalServiceImpl(PoApprovalTaskDao taskDao,
                                  PoApprovalLogDao logDao,
@@ -62,7 +70,10 @@ public class PoApprovalServiceImpl implements PoApprovalService {
                                  PurchaseOrderLineDao lineDao,
                                  ProcBudgetService budgetService,
                                  MdmItemDao itemDao,
-                                 SysUserDao sysUserDao) {
+                                 SysUserDao sysUserDao,
+                                 MdmSupplierDao supplierDao,
+                                 com.erp.service.vmi.VmiAgreementService vmiAgreementService,
+                                 com.erp.service.proc.PoCoopService poCoopService) {
         this.taskDao = taskDao;
         this.logDao = logDao;
         this.poDao = poDao;
@@ -70,6 +81,9 @@ public class PoApprovalServiceImpl implements PoApprovalService {
         this.budgetService = budgetService;
         this.itemDao = itemDao;
         this.sysUserDao = sysUserDao;
+        this.supplierDao = supplierDao;
+        this.vmiAgreementService = vmiAgreementService;
+        this.poCoopService = poCoopService;
     }
 
     // ---------- 判级与建链（FR-4.2-3-2 / design D1） ----------
@@ -275,6 +289,16 @@ public class PoApprovalServiceImpl implements PoApprovalService {
                                               String condition, String unused) {
         PoApprovalTask t = requireActive(taskId);
         PurchaseOrder po = requirePo(t.getPoId());
+        // 寄售 PO 下达卡控（BR-4.2-35，L1）：末节点通过前校验，未过则审批不生效
+        if ("CONSIGN".equals(po.getPoType())) {
+            Long waiting = taskDao.selectCount(new LambdaQueryWrapper<PoApprovalTask>()
+                    .eq(PoApprovalTask::getPoId, po.getId())
+                    .eq(PoApprovalTask::getSubmitBatch, t.getSubmitBatch())
+                    .eq(PoApprovalTask::getStatus, "WAITING"));
+            if (waiting == null || waiting == 0) {
+                requireConsignIssueable(po);
+            }
+        }
         LocalDateTime now = LocalDateTime.now();
         t.setStatus("APPROVED");
         t.setAction(action);
@@ -305,6 +329,8 @@ public class PoApprovalServiceImpl implements PoApprovalService {
             po.setUpdateBy(t.getActedBy());
             poDao.updateById(po);
             log.info("PO {} approved (batch={}, all nodes passed)", po.getPoNo(), t.getSubmitBatch());
+            // 门户协同（spec po-collaboration）：下达即推送供应商门户（PUSHED 流水 + PROC.PO_PUSHED）
+            poCoopService.push(po);
         }
         return logs(po.getId());
     }
@@ -326,6 +352,28 @@ public class PoApprovalServiceImpl implements PoApprovalService {
             throw new ServiceException(404, "采购订单不存在");
         }
         return po;
+    }
+
+    /**
+     * 寄售 PO 下达卡控（BR-4.2-35，L1 硬阻断，spec vmi-consignment）：
+     * ① 供应商状态 = 合格（BR-4.2-18 语义）；② 生效 VMI 协议有效期 ≥ PO 交期（行 reqDate 最大值）。
+     * 任一不满足 422，末节点审批不生效（任务不落 APPROVED）。
+     */
+    private void requireConsignIssueable(PurchaseOrder po) {
+        MdmSupplier s = supplierDao.selectById(po.getSupplierId());
+        if (s == null || !"QUALIFIED".equals(s.getStatus())) {
+            throw new ServiceException(422, "供应商状态 "
+                    + (s == null ? "不存在" : s.getStatus())
+                    + " 不可下达寄售 PO（BR-4.2-35 / BR-4.2-18），请联系供应商管理员处理");
+        }
+        LocalDate delivery = lineDao.selectList(new LambdaQueryWrapper<PurchaseOrderLine>()
+                        .eq(PurchaseOrderLine::getPoId, po.getId())).stream()
+                .map(PurchaseOrderLine::getReqDate)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(null);
+        vmiAgreementService.requireIssueable(po.getSupplierId(), delivery);
+        log.info("PO {} consignment issue gate passed, delivery={}", po.getPoNo(), delivery);
     }
 
     /** 超预算判定（BR-4.2-17）：任一涉及科目 本年累计 + 本次 > 预算 × trigger */

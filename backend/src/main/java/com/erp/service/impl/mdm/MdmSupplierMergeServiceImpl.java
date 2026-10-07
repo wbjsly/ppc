@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.erp.common.ServiceException;
 import com.erp.common.SimilarityUtil;
+import com.erp.dao.fin.FinAccrualDao;
 import com.erp.dao.mdm.MdmSupplierCertDao;
 import com.erp.dao.mdm.MdmSupplierDao;
 import com.erp.dao.mdm.MdmSupplierMergeLogDao;
+import com.erp.entity.fin.FinAccrual;
 import com.erp.entity.mdm.MdmSupplier;
 import com.erp.entity.mdm.MdmSupplierCert;
 import com.erp.entity.mdm.MdmSupplierMergeLog;
@@ -16,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -37,17 +40,21 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
     private final OutboxPublisher outbox;
     /** 快照桥接（同包，避免快照逻辑双份漂移） */
     private final MdmSupplierServiceImpl supplierService;
+    /** 未清应付暂估迁移（BR-4.1-28，add-accrual-three-way-match 4.3） */
+    private final FinAccrualDao accrualDao;
 
     public MdmSupplierMergeServiceImpl(MdmSupplierDao supplierDao,
                                        MdmSupplierCertDao certDao,
                                        MdmSupplierMergeLogDao logDao,
                                        OutboxPublisher outbox,
-                                       MdmSupplierServiceImpl supplierService) {
+                                       MdmSupplierServiceImpl supplierService,
+                                       FinAccrualDao accrualDao) {
         this.supplierDao = supplierDao;
         this.certDao = certDao;
         this.logDao = logDao;
         this.outbox = outbox;
         this.supplierService = supplierService;
+        this.accrualDao = accrualDao;
     }
 
     // ---------- 候选与对比（FR-4.1-5-1） ----------
@@ -135,9 +142,10 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
         result.put("certCount", certs.size());
         result.put("certDetails", certs.stream().map(c ->
                 c.getCertType() + " " + Objects.toString(c.getCertNo(), "") + " 至 " + c.getExpireDate()).toList());
-        // 四类单据迁移桩（BR-4.1-28：采购/质量域未接入，明示不造假数字）
+        // 四类单据迁移：应付暂估真实迁移（BR-4.1-28，add-accrual-three-way-match 4.3）；
+        // 其余三类仍为桩（采购/质量域未接入，明示不造假数字）
         List<Map<String, Object>> migrations = new ArrayList<>();
-        for (String type : List.of("未清 PO", "在途收货", "应付暂估", "质量绩效记录")) {
+        for (String type : List.of("未清 PO", "在途收货", "质量绩效记录")) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("type", type);
             m.put("count", null);
@@ -145,11 +153,32 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
             m.put("note", "采购/质量域模块未接入，暂不迁移（OriginalSupplierCode 锚点已预埋）");
             migrations.add(m);
         }
-        // 应付财务确认（BR-4.1-29）桩
+        // 应付暂估：真实计数（OPEN 暂估条数与金额）
+        Long accrualCount = accrualDao.selectCount(new LambdaQueryWrapper<FinAccrual>()
+                .eq(FinAccrual::getSupplierId, sourceId)
+                .eq(FinAccrual::getStatus, FinAccrual.ST_OPEN));
+        BigDecimal accrualAmount = BigDecimal.ZERO;
+        for (FinAccrual a : accrualDao.selectList(new LambdaQueryWrapper<FinAccrual>()
+                .eq(FinAccrual::getSupplierId, sourceId)
+                .eq(FinAccrual::getStatus, FinAccrual.ST_OPEN))) {
+            accrualAmount = accrualAmount.add(a.getAmount() == null ? BigDecimal.ZERO : a.getAmount());
+        }
+        Map<String, Object> accrualRow = new LinkedHashMap<>();
+        accrualRow.put("type", "应付暂估");
+        accrualRow.put("count", accrualCount == null ? 0 : accrualCount.intValue());
+        accrualRow.put("amount", accrualAmount);
+        accrualRow.put("stub", false);
+        accrualRow.put("note", "合并时整体改挂目标并写 OriginalSupplierCode 快照（BR-4.1-28）");
+        migrations.add(accrualRow);
+
+        // 应付余额财务确认（BR-4.1-29）：批次挂起待 ADMIN 确认后自动重跑三方匹配（已落地）
+        Long pending = accrualDao.selectCount(new LambdaQueryWrapper<FinAccrual>()
+                .eq(FinAccrual::getMigrationConfirmed, 0));
         Map<String, Object> fin = new LinkedHashMap<>();
         fin.put("type", "应付余额财务确认");
-        fin.put("stub", true);
-        fin.put("note", "财务域模块未接入，三方匹配重跑暂不可执行");
+        fin.put("count", pending == null ? 0 : pending.intValue());
+        fin.put("stub", false);
+        fin.put("note", "迁移批次默认挂起，财务（ADMIN）确认后自动重跑三方匹配（BR-4.1-29）");
         migrations.add(fin);
         result.put("migrations", migrations);
         result.put("disputeStub", "未结争议单据预检（BR-4.1-26）：采购/质量域模块未接入，暂不可检出");
@@ -204,9 +233,19 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
             throw new ServiceException(409, "数据已被他人修改，请刷新后重试");
         }
 
-        // 4) 合并日志 INSERT
-        String impactSummary = "证照改挂 " + certs.size() + " 份；未清PO/在途收货/应付暂估/质量绩效："
-                + "采购、质量、财务域模块未接入，暂不迁移";
+        // 4) 未清应付暂估清点（BR-4.1-28：只迁 OPEN，已冲回历史单不迁仅留只读引用）
+        List<FinAccrual> openAccruals = accrualDao.selectList(new LambdaQueryWrapper<FinAccrual>()
+                .eq(FinAccrual::getSupplierId, sourceId)
+                .eq(FinAccrual::getStatus, FinAccrual.ST_OPEN));
+        BigDecimal accrualAmt = BigDecimal.ZERO;
+        for (FinAccrual a : openAccruals) {
+            accrualAmt = accrualAmt.add(a.getAmount() == null ? BigDecimal.ZERO : a.getAmount());
+        }
+
+        // 5) 合并日志 INSERT
+        String impactSummary = "证照改挂 " + certs.size() + " 份；应付暂估迁移 " + openAccruals.size()
+                + " 条（合计 " + accrualAmt.toPlainString() + "，批次挂起待财务确认）；"
+                + "未清PO/在途收货/质量绩效：采购、质量域模块未接入，暂不迁移";
         MdmSupplierMergeLog logRow = new MdmSupplierMergeLog();
         logRow.setLogNo(generateLogNo());
         logRow.setSourceId(sourceId);
@@ -225,21 +264,40 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
             throw new ServiceException(409, "日志单号并发冲突，请重试");
         }
 
-        // 5) 双方 MERGE 快照 + 事件
+        // 6) 未清应付暂估迁移（BR-4.1-28/29，同事务）：改挂目标 + 原编码快照 + 批次挂起
+        String batchNo = "MB" + logRow.getLogNo();
+        for (FinAccrual a : openAccruals) {
+            a.setSupplierId(targetId);
+            a.setSupplierName(target.getSupplierName());
+            a.setOriginalSupplierCode(source.getSupplierCode());
+            a.setMigrationBatchNo(batchNo);
+            a.setMigrationConfirmed(0);
+            a.setUpdateBy(currentOperator());
+            accrualDao.updateById(a);
+        }
+        if (!openAccruals.isEmpty()) {
+            log.info("合并 {} → {} 迁移应付暂估 {} 条（批次 {}，挂起待财务确认）",
+                    source.getSupplierCode(), target.getSupplierCode(), openAccruals.size(), batchNo);
+        }
+
+        // 7) 双方 MERGE 快照 + 事件
         MdmSupplier sourceAfter = require(sourceId);
         supplierService.saveSnapshotFor(sourceAfter, "MERGE",
                 "合并至 " + target.getSupplierCode() + "；证照改挂 " + certs.size()
-                        + " 份；原因：" + r, r);
+                        + " 份；应付暂估迁移 " + openAccruals.size() + " 条；原因：" + r, r);
         MdmSupplier targetAfter = require(targetId);
         supplierService.saveSnapshotFor(targetAfter, "MERGE",
                 "接收合并：源 " + source.getSupplierCode() + "（原状态 " + source.getStatus()
-                        + "）；改挂证照 " + certs.size() + " 份；原因：" + r, r);
+                        + "）；改挂证照 " + certs.size() + " 份；接收应付暂估 " + openAccruals.size()
+                        + " 条；原因：" + r, r);
         outbox.publish("MDM.SUPPLIER.MERGED", sourceAfter.getSupplierCode(),
                 sourceAfter.getVerNo() + 1, sourceAfter.getLegalEntityId(),
                 "mergedTo=" + target.getSupplierCode() + "；preStatus=" + source.getStatus()
-                        + "；certs=" + certs.size() + "；原因：" + r);
-        log.info("MDM.SUPPLIER.MERGED source={} target={} certs={} reason={}",
-                source.getSupplierCode(), target.getSupplierCode(), certs.size(), r);
+                        + "；certs=" + certs.size() + "；accruals=" + openAccruals.size()
+                        + "；原因：" + r);
+        log.info("MDM.SUPPLIER.MERGED source={} target={} certs={} accruals={} reason={}",
+                source.getSupplierCode(), target.getSupplierCode(), certs.size(),
+                openAccruals.size(), r);
         return logRow;
     }
 
@@ -293,6 +351,28 @@ public class MdmSupplierMergeServiceImpl implements MdmSupplierMergeService {
             if (certDao.update(null, cuw) == 0) {
                 throw new ServiceException(409, "证照并发冲突，请刷新后重试");
             }
+        }
+
+        // 2b) 未清应付暂估回迁（与证照对称，BR-4.1-28 镜像）：只回迁本批次仍 OPEN 的暂估，
+        //     已冲回历史单不回迁（保持只读引用）；批次与快照字段一并清除
+        List<FinAccrual> movedAccruals = accrualDao.selectList(new LambdaQueryWrapper<FinAccrual>()
+                .eq(FinAccrual::getSupplierId, logRow.getTargetId())
+                .eq(FinAccrual::getStatus, FinAccrual.ST_OPEN)
+                .eq(FinAccrual::getMigrationBatchNo, "MB" + logRow.getLogNo()));
+        for (FinAccrual a : movedAccruals) {
+            a.setSupplierId(logRow.getSourceId());
+            a.setSupplierName(source.getSupplierName());
+            a.setOriginalSupplierCode(null);
+            a.setMigrationBatchNo(null);
+            a.setMigrationConfirmed(null);
+            a.setMigrationConfirmBy(null);
+            a.setMigrationConfirmAt(null);
+            a.setUpdateBy(currentOperator());
+            accrualDao.updateById(a);
+        }
+        if (!movedAccruals.isEmpty()) {
+            log.info("合并回退 {} 应付暂估回迁 {} 条（批次 MB{}）",
+                    source.getSupplierCode(), movedAccruals.size(), logRow.getLogNo());
         }
 
         // 3) 日志回填

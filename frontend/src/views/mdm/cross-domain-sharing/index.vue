@@ -345,7 +345,9 @@ const EVENT_TYPES = [
   'MDM.SUPPLIER.DISABLED', 'MDM.SUPPLIER.ENABLED', 'MDM.SUPPLIER.CERT_EXPIRED',
   'MDM.SUPPLIER.CERT_RENEWED',
   'MDM.SUPPLIER.MERGED', 'MDM.SUPPLIER.MERGE_REVERTED',
-  'MDM.RATE.CREATED', 'MDM.RATE.UPDATED'
+  'MDM.RATE.CREATED', 'MDM.RATE.UPDATED',
+  // add-sales-lead-to-cash 15.3：销售/财务域跨域事件登记
+  'SO.CONFIRMED', 'AR.CONFIRMED', 'SHIP.COMPLETED', 'INV.ISSUED', 'CREDIT.FROZEN'
 ]
 const catalogRows = EVENT_TYPES.map(t => ({ type: t, desc: descOf(t) }))
 function descOf(t) {
@@ -361,7 +363,10 @@ function descOf(t) {
     'MDM.SUPPLIER.DISABLED': '供应商停用', 'MDM.SUPPLIER.ENABLED': '供应商启用',
     'MDM.SUPPLIER.CERT_EXPIRED': '证照到期受限（行 805）', 'MDM.SUPPLIER.CERT_RENEWED': '证照核验解除',
     'MDM.SUPPLIER.MERGED': '供应商合并（源锁定终态）', 'MDM.SUPPLIER.MERGE_REVERTED': '合并回退（30 天窗口）',
-    'MDM.RATE.CREATED': '汇率记录创建', 'MDM.RATE.UPDATED': '汇率记录变更'
+    'MDM.RATE.CREATED': '汇率记录创建', 'MDM.RATE.UPDATED': '汇率记录变更',
+    'SO.CONFIRMED': 'SO 确认（生成批次预留并生效）', 'AR.CONFIRMED': '应收确认（出库过账）',
+    'SHIP.COMPLETED': '发货完成（物流确认发出）', 'INV.ISSUED': '销项发票开具',
+    'CREDIT.FROZEN': 'SO 信用冻结（挂起待预收/特批）'
   })[t] || t
 }
 

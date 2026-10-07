@@ -26,6 +26,9 @@ public class PurchaseOrder extends BaseEntity {
 
     /** AGREEMENT 协议 / RFQ 中选 / MANUAL 手工 */
     private String source;
+    /** EDI 第四入口来源报文编号（spec purchase-order ADDED） */
+    private String ediMsgNo;
+    private String ediIdemKey;
 
     /** 来源单据 ID（协议 ID / RFQ ID；手工为 null） */
     private String sourceId;
@@ -47,6 +50,16 @@ public class PurchaseOrder extends BaseEntity {
 
     /** 含税总金额 */
     private BigDecimal totalAmt;
+
+    /** 供应商确认的承诺交期（spec po-collaboration） */
+    private java.time.LocalDate promiseDate;
+    /** PUSHED/CONFIRMED/CHANGE_PENDING/ESCATED（NULL=未推送） */
+    private String confirmStatus;
+    /** 供应商确认入口锁定（连续 3 张超时，design D5）：0/1 */
+    private String coopLock;
+
+    /** 约定预付比例（C-4.2-13，047 增列；空则按 app.proc.prepay-ratio 默认） */
+    private BigDecimal prepayRatio;
 
     private BigDecimal taxRate;
 

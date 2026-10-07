@@ -79,13 +79,68 @@ for (const e of extra) {
 }
 
 // ---- 拼装行 ----
+// 工程新增的非默认 PERM（迁移与种子必须同口径，避免重建库时丢失）
+// add-sales-lead-to-cash design D15：销售域角色分层；父节点必须与子节点同权限，
+// 否则前端 SidebarMenu 的 map[parentId] 判定会把子节点提升为顶级孤儿
+const PERM = {
+  // 3.1 商机 / 3.2 报价 / 11.1 线索：销售与销售经理
+  sales: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN',
+  // 3.5 订单 / 3.6 价格折扣：加销售总监
+  order: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN',
+  // 3.3 信用
+  credit: 'ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_ADMIN',
+  // 3.4 ATP / 3.7 发货：销售 + 仓库
+  atp: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  ship: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // 3.8 开票核销 / 11.11 收款侧
+  invoice: 'ROLE_FINANCE_MGR,ROLE_ADMIN',
+  // 3.9 返利
+  rebate: 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN',
+  // 3.10 退货
+  ret: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // 3.11 框架合同
+  fw: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // 11.11 合同管理
+  contract: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN',
+  // 4.1.1 仓库档案
+  warehouse: 'ROLE_WAREHOUSE,ROLE_ADMIN',
+  // 一级域 M3：取其下各组权限并集，避免非授权角色看到空的销售管理域
+  domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+}
+const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
+const EXTRA_PERM = {
+  'M2-8-3': 'ROLE_INTF_OPS,ROLE_ADMIN',
+  'M2-9-1': 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN',
+  'M2-9-2': 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN',
+  'M2-9-3': 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN',
+  ...leaf(['M3'], PERM.domain3),
+  ...leaf(['M3-1', 'M3-1-1', 'M3-1-2', 'M3-1-3'], PERM.sales),
+  ...leaf(['M3-2', 'M3-2-1', 'M3-2-2', 'M3-2-3'], PERM.sales),
+  ...leaf(['M3-3', 'M3-3-1', 'M3-3-2', 'M3-3-3'], PERM.credit),
+  ...leaf(['M3-4', 'M3-4-1', 'M3-4-2'], PERM.atp),
+  ...leaf(['M3-5', 'M3-5-1', 'M3-5-2', 'M3-5-3', 'M3-5-4'], PERM.order),
+  ...leaf(['M3-6', 'M3-6-1', 'M3-6-2', 'M3-6-3', 'M3-6-4'], PERM.order),
+  ...leaf(['M3-7', 'M3-7-1', 'M3-7-2', 'M3-7-3', 'M3-7-4'], PERM.ship),
+  ...leaf(['M3-8', 'M3-8-1', 'M3-8-2', 'M3-8-3'], PERM.invoice),
+  ...leaf(['M3-9', 'M3-9-1', 'M3-9-2', 'M3-9-3'], PERM.rebate),
+  ...leaf(['M3-10', 'M3-10-1', 'M3-10-2', 'M3-10-3'], PERM.ret),
+  ...leaf(['M3-11', 'M3-11-1', 'M3-11-2'], PERM.fw),
+  ...leaf(['M11-1', 'M11-1-1', 'M11-1-2'], PERM.sales),
+  ...leaf(['M11-11', 'M11-11-1', 'M11-11-2', 'M11-11-3'], PERM.contract),
+  // M4-1 仓库管理下 4.1.2/4.1.3 尚未纳入本轮，仅限制 4.1.1 叶子（父节点保持开放避免孤儿）
+  ...leaf(['M4-1-1'], PERM.warehouse)
+}
+// add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
+const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])
 const rows = []
 const pushRow = (n) => {
   const path = n.path !== undefined ? n.path : n.level === 3 ? `/m/${n.code}` : ''
   const icon = n.icon !== undefined ? n.icon : n.level === 1 ? DOMAIN_ICON[Number(n.code)] || '' : ''
   const isAdminOnly = Number(String(n.code).split('.')[0]) === ADMIN_DOMAIN || n.id === 'M16-10'
-  const perm = isAdminOnly ? 'ROLE_ADMIN' : ''
-  rows.push([n.id, n.parentId, n.code, n.title, path, icon, n.sort, perm, '1'])
+  // add-interface-integration：2.8.3 接口对接仅接口运维与管理员可见（与迁移 050 回填口径一致）
+  const perm = EXTRA_PERM[n.id] || (isAdminOnly ? 'ROLE_ADMIN' : '')
+  const status = HIDDEN.has(n.id) ? '0' : '1'
+  rows.push([n.id, n.parentId, n.code, n.title, path, icon, n.sort, perm, status])
 }
 pushRow(extra.find((e) => e.id === 'M-HOME'))
 for (const n of nodes) pushRow(n)
@@ -95,8 +150,9 @@ const header = `-- 099 种子数据：全量层次化菜单（自 docs/design/08
 -- 生成命令：node backend/scripts/generate-menu-seed.js（勿手工编辑）
 -- 一级 18 域 + 工作台；二级/三级为 08 文档清单；菜单管理（16.10）为工程新增导航入口
 -- 路径约定：目录节点 PATH 为空；三级叶子 PATH=/m/<编号>（前端未实现页面由占位路由承接）
--- PERM：系统管理域（16）整体 ROLE_ADMIN；其余为空（所有登录用户可见）
--- 统计：一级 ${l1.length}，二级 ${l2.length}，三级 ${l3.length}，新增 2，合计 ${rows.length}
+-- PERM：系统管理域（16）整体 ROLE_ADMIN；销售域按 add-sales-lead-to-cash design D15 分层；其余为空（所有登录用户可见）
+-- HIDDEN：M11-1-3 / M11-1-4（已归入 3.1 商机管理，design D2）写 STATUS=0
+-- 统计：一级 ${l1.length}，二级 ${l2.length}，三级 ${l3.length}，新增 2，隐藏 ${HIDDEN.size}，合计 ${rows.length}
 
 INSERT IGNORE INTO erp_admin_menu (ID, PARENT_ID, MENU_CODE, TITLE, PATH, ICON, SORT_ORDER, PERM, STATUS) VALUES
 `

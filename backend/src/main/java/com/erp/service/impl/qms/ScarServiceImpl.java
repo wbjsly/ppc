@@ -31,7 +31,7 @@ import java.util.Map;
  * SCAR 实现（spec supplier-quality-claim，tasks 10.1~10.5）。
  * NCR 退货/挑选自动带出草稿；重大（索赔 ≥1 万）质量经理审批后 SENT；
  * 回复时限 5 工作日（跳周末），超期升采购经理 + 每 3 天提醒 + 扣分标记（幂等）；
- * SQE 代录浅层根因退回计数；扣款单四态 + 应付抵扣 TODO-NOTIFY 桩（D3）。
+ * SQE 代录浅层根因退回计数；扣款单四态 + 货款抵扣由付款单挂接（D3 已落地，add-payment-management）。
  */
 @Slf4j
 @Service
@@ -347,7 +347,7 @@ public class ScarServiceImpl implements ScarService {
     @Override
     @Transactional
     public ScarDeduction markToDeduct(String deductionId) {
-        // 偏差 D3（add-quality-collaboration）——货款实际抵扣在 2.7/8.3 应付域落地前挂 TODO-NOTIFY 桩
+        // D3（add-quality-collaboration 留桩 → add-payment-management 落地）——抵扣动作在付款执行时完成
         requireRole("推送待抵扣", "ROLE_ADMIN", "ROLE_QUALITY_MGR", "ROLE_SQE");
         ScarDeduction d = requireDeduction(deductionId);
         if ("TO_DEDUCT".equals(d.getStatus())) {
@@ -360,8 +360,8 @@ public class ScarServiceImpl implements ScarService {
         if (deductionDao.updateById(d) == 0) {
             throw new ServiceException(409, "扣款单状态更新冲突");
         }
-        // 应付货款抵扣（2.7/8.3 未建 → TODO-NOTIFY 桩，D3）
-        log.info("[TODO-NOTIFY] deduction {} 供应商货款抵扣推送（2.7 应付桩，D3）", d.getDeductNo());
+        // 货款实际抵扣由付款单挂接完成（D3 已落地，spec payment-execution；原 TODO-NOTIFY 桩移除）
+        log.info("deduction {} 推送待抵扣，等待付款单挂接抵扣", d.getDeductNo());
         return d;
     }
 

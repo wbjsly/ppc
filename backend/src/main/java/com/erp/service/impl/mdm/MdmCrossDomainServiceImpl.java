@@ -102,15 +102,51 @@ public class MdmCrossDomainServiceImpl implements MdmCrossDomainService {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("event", e);
-        // 事件目录（spec：生产方/消费方/幂等键规则/Schema 版本登记）
-        result.put("catalog", Map.of(
-                "producer", "MDM（mdm-service）",
-                "consumers", "销售域 SO 信用与价格检查 / 财务域应收 / CRM（均未接入，桩）",
-                "idempotencyRule", "业务编码:vN（同键重放拒绝，C-0-06）",
-                "schemaVersion", "v1"));
+        // 事件目录（spec：生产方/消费方/幂等键规则/Schema 版本登记；按域分派）
+        result.put("catalog", catalogOf(e.getEventType()));
         result.put("deliveryStub", true);
         result.put("deliveryNote", "消息总线未接入，PENDING 为预期态");
         return result;
+    }
+
+    /** 事件目录登记：按事件类型分派生产方/消费方（7.2 事件契约 + add-sales-lead-to-cash 15.3） */
+    private Map<String, Object> catalogOf(String eventType) {
+        String type = eventType == null ? "" : eventType;
+        String producer;
+        String consumers;
+        if (type.startsWith("MDM.CUSTOMER")) {
+            producer = "MDM（mdm-service）";
+            consumers = "销售域 SO 信用与价格检查 / 财务域应收 / CRM（均未接入，桩）";
+        } else if (type.startsWith("MDM.SUPPLIER") || type.startsWith("MDM.RATE")) {
+            producer = "MDM（mdm-service）";
+            consumers = "采购域准入与寻源 / 财务域汇率（均未接入，桩）";
+        } else if (type.startsWith("PROC.") || type.startsWith("VMI.")) {
+            producer = "采购域（proc-service / vmi-service）";
+            consumers = "供应商门户协同（经接口推送通道，真实投递）";
+        } else if (type.startsWith("SO.")) {
+            producer = "销售域订单（sd-service）";
+            consumers = "库存域批次预留 / 信用与交付口径（未接入，桩）";
+        } else if (type.startsWith("AR.CONFIRMED")) {
+            producer = "销售域发货（sd-service）";
+            consumers = "财务域应收台账 / BI 收入口径（未接入，桩）";
+        } else if (type.startsWith("SHIP.")) {
+            producer = "销售域发货（sd-service）";
+            consumers = "库存域在途 / BI 发货口径（未接入，桩）";
+        } else if (type.startsWith("INV.")) {
+            producer = "财务域开票（fin-service）";
+            consumers = "销售域 SO 开票回写 / 应收台账（未接入，桩）";
+        } else if (type.startsWith("CREDIT.")) {
+            producer = "销售域信用控制（sd-service）";
+            consumers = "库存域预留占用提示 / BI 冻结口径（未接入，桩）";
+        } else {
+            producer = "未知生产方（未登记）";
+            consumers = "—";
+        }
+        return Map.of(
+                "producer", producer,
+                "consumers", consumers,
+                "idempotencyRule", "业务编码:vN（同键重放拒绝，C-0-06）",
+                "schemaVersion", "v1");
     }
 
     // ---------- 协议列表（含懒过期） ----------
@@ -386,9 +422,12 @@ public class MdmCrossDomainServiceImpl implements MdmCrossDomainService {
         hit.put("attachLevel", viewId != null && viewId.equals(pa.getCustomerViewId())
                 ? "法人视图" : "客户集团");
         hit.put("itemCode", line.getItemCode());
-        hit.put("unitPrice", line.getMinQty() != null
-                ? line.getMinQty() + " ≤ qty ≤ " + line.getMaxQty() + " → " + line.getUnitPrice()
-                : line.getUnitPrice());
+        // unitPrice 恒为数字：消费方（SO 建单取价 dec()/报价/时间层 parsePrice）需可解析；
+        // 区间说明另给 interval 键（原拼接串使 SO 建单与 TIME 层取价解析失败）
+        hit.put("unitPrice", line.getUnitPrice());
+        if (line.getMinQty() != null) {
+            hit.put("interval", line.getMinQty() + " ≤ qty ≤ " + line.getMaxQty());
+        }
         hit.put("effectiveDate", pa.getEffectiveDate());
         hit.put("expireDate", pa.getExpireDate());
         return hit;

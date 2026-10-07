@@ -46,4 +46,7 @@ public class GoodsReceipt extends BaseEntity {
     /** 入库凭证号（过账生成：IV + yyyyMM + - + 6 位） */
     private String postingDocNo;
     private LocalDateTime postingDate;
+
+    /** 关联 ASN（到货带出/过账核销，spec asn-collaboration design D8） */
+    private String asnId;
 }

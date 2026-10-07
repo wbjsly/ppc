@@ -67,6 +67,9 @@ public interface GoodsReceiptService {
     /** 入库过账（单事务五步，spec receipt-posting） */
     Map<String, Object> posting(String grId);
 
+    /** 入库过账（携带请求体：confirmWaterLevel 寄售水位放行标记，spec vmi-consignment BR-4.2-36） */
+    Map<String, Object> posting(String grId, Map<String, Object> body);
+
     // ---------- 供前端选择器复用 ----------
 
     /** 物料风险等级编辑入口（4.3，默认 C）——委托 MdmItem，此处仅暴露读 */

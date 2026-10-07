@@ -47,7 +47,10 @@ const handleLogin = async () => {
   loading.value = true
   try {
     await userStore.login(form.username, form.password)
-    const redirect = route.query.redirect || '/dashboard'
+    await userStore.getUserInfo().catch(() => {})
+    const roles = (userStore.userInfo && userStore.userInfo.roles) || []
+    const fallback = roles.includes('ROLE_SUPPLIER') ? '/portal' : '/dashboard'
+    const redirect = route.query.redirect || fallback
     router.push(redirect)
     ElMessage.success('登录成功')
   } catch {

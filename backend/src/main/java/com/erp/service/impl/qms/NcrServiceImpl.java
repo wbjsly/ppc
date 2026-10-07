@@ -789,6 +789,7 @@ public class NcrServiceImpl implements NcrService {
             return null;
         }
         return stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
                 .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
                 .last("LIMIT 1"));

@@ -21,7 +21,19 @@ public interface ReturnService {
     ReturnOrder createFromNcr(Ncr ncr);
 
     /** 手工发起（已入库须关联原入库单 ORIGIN_DOC_NO + 原入库单价，缺失 422） */
+    /** 非质量退货创建（spec other-return）：PO 关联 + 后端反查计价 + 结构化原因 */
     ReturnOrder createManual(Map<String, Object> body);
+
+    /** PO 可退入库带出：POSTED 收货行聚合（入库凭证/批次/原入库单价/可退库存量），空 422 */
+    java.util.List<Map<String, Object>> poReturnables(String poId);
+
+    /**
+     * 红字凭证台账（2.6.3，spec red-receipt-voucher）：只读聚合 OUT_DONE 退货的红字入库凭证，
+     * 过滤凭证号/退货单号/供应商/来源类型/出库日期区间；行内嵌退货行明细与 PO/入库凭证/NCR 关联链。
+     */
+    com.baomidou.mybatisplus.extension.plugins.pagination.Page<Map<String, Object>> redVouchers(
+            long current, long size, String redDocNo, String returnNo, String supplierId,
+            String sourceType, String dateFrom, String dateTo);
 
     /** 提交采购经理审批（底座 Return，单签 ROLE_PM）；驳回 → DRAFT 可重提 */
     ReturnOrder submit(String id);

@@ -42,7 +42,28 @@ public class ReturnController {
         return R.ok(service.detail(id));
     }
 
-    @Operation(summary = "手工发起（已入库须关联原入库单 + 原入库单价）")
+    @Operation(summary = "红字凭证台账（2.6.3 只读：凭证号/退货单/供应商/来源/出库日期过滤）")
+    @GetMapping("/red-vouchers")
+    public R<Page<Map<String, Object>>> redVouchers(
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String redDocNo,
+            @RequestParam(required = false) String returnNo,
+            @RequestParam(required = false) String supplierId,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo) {
+        return R.ok(service.redVouchers(current, size, redDocNo, returnNo, supplierId,
+                sourceType, dateFrom, dateTo));
+    }
+
+    @Operation(summary = "PO 可退入库带出（入库凭证/批次/原入库单价/可退量，BR-4.2-32）")
+    @GetMapping("/po-returnables")
+    public R<java.util.List<Map<String, Object>>> poReturnables(@RequestParam(required = false) String poId) {
+        return R.ok(service.poReturnables(poId));
+    }
+
+    @Operation(summary = "非质量退货创建（PO 关联 + 后端反查自动计价 + 结构化原因，spec other-return）")
     @PostMapping
     public R<ReturnOrder> createManual(@RequestBody Map<String, Object> body) {
         return R.ok(service.createManual(body));

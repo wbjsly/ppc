@@ -86,6 +86,21 @@ public class PriceControlServiceImpl implements PriceControlService {
         boolean anyLevel2 = false;      // 存在 L1 未命中的行
         List<String> blocks = new ArrayList<>();
 
+        // 寄售 PO（CONSIGN）价控与预算豁免（add-consignment-procurement design D13）：
+        // 行价在创建时已按 VMI 协议价回填，C-4.2-09 于领用物权转移时点校验协议有效性；
+        // 物权未转移不构成采购成本，L3 预算亦不在此占用。逐行留痕 PASS 放行。
+        if ("CONSIGN".equals(po.getPoType())) {
+            for (PurchaseOrderLine l : lines) {
+                written.add(writeLog(po, l, "CONTRACT", l.getUnitPrice(), l.getUnitPrice(),
+                        "PASS", "寄售 PO 价控豁免（价格由 VMI 协议管控，design D13）"));
+                l.setPriceCtrlResult("PASS");
+                lineDao.updateById(l);
+            }
+            log.info("PO {} consignment PO, price control/budget skipped ({} lines PASS)",
+                    po.getPoNo(), lines.size());
+            return toRows(written);
+        }
+
         // ---- L1/L2 逐行 ----
         for (PurchaseOrderLine l : lines) {
             BigDecimal agreementPrice = activeAgreementPrice(l, po.getSupplierId());
