@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -64,9 +65,19 @@ class FreezeRulesUnitTest {
         engine = mock(ApprovalEngine.class);
         reservationService = mock(ReservationService.class);
         noticeService = mock(NoticeService.class);
-        service = new FreezeServiceImpl(freezeDao, stockDao, engine, reservationService);
+        var poLineDao = mock(com.erp.dao.proc.PurchaseOrderLineDao.class);
+        var poDao = mock(com.erp.dao.proc.PurchaseOrderDao.class);
+        var sysParamService = mock(com.erp.service.SysParamService.class);
+        when(sysParamService.getInt(eq("FREEZE_IMPACT_RATIO"), anyInt())).thenReturn(50);
+        service = new FreezeServiceImpl(freezeDao, stockDao, engine, reservationService,
+                reservationDao, sysParamService);
+        var pauseService = mock(com.erp.service.inv.FreezePauseService.class);
         callback = new FreezeCallback(freezeDao, stockDao, reservationDao,
-                reservationService, noticeService, new com.fasterxml.jackson.databind.ObjectMapper());
+                reservationService, noticeService, poLineDao, poDao, pauseService,
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        // 影响面快照 PO 查询：单测无 PO 夹具，返回空表即 pos=[]
+        when(poLineDao.selectList(any())).thenReturn(java.util.Collections.emptyList());
+        when(poDao.selectBatchIds(any())).thenReturn(java.util.Collections.emptyList());
         when(freezeDao.selectCount(any())).thenReturn(0L);
         when(freezeDao.updateById(any())).thenReturn(1);
         org.mockito.Mockito.doAnswer(inv -> {

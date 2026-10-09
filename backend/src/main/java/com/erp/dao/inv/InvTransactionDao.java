@@ -21,6 +21,14 @@ public interface InvTransactionDao extends BaseMapper<InvTransaction> {
     long countByPrefix(@Param("prefix") String prefix);
 
     /**
+     * 当日最大流水序号（TXN_NO 抗空洞取号：COUNT+1 在历史行被删/回滚留洞时会撞号，
+     * MAX+1 跳过空洞；无可匹配行时 SUM 返回 NULL → 0）。
+     */
+    @Select("SELECT COALESCE(MAX(CAST(SUBSTRING(TXN_NO, LENGTH(#{prefix}) + 1) AS UNSIGNED)), 0) "
+            + "FROM erp_inv_transaction WHERE TXN_NO LIKE CONCAT(#{prefix}, '%')")
+    long maxSeqByPrefix(@Param("prefix") String prefix);
+
+    /**
      * 单据流水（作业台详情抽屉按 BIZ_DOC_TYPE+BIZ_DOC_NO 下钻）。
      */
     @Select("SELECT * FROM erp_inv_transaction WHERE BIZ_DOC_TYPE = #{bizDocType} "

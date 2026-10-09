@@ -29,6 +29,8 @@ public class InvFreeze extends BaseEntity {
 
     public static final String SRC_MANUAL = "MANUAL";
     public static final String SRC_NCR = "NCR";
+    /** 拣货复核外观异常自动发起（picking-review design D4；SOURCE VARCHAR(8) 故用短值） */
+    public static final String SRC_REVIEW = "REVIEW";
 
     /** 影响范围：全部库存 / 指定批次 / 指定仓位（FR-4.4-5-1） */
     public static final String SCOPE_ALL = "ALL";
@@ -60,4 +62,11 @@ public class InvFreeze extends BaseEntity {
     private String remark;
     /** 行级平移明细 JSON [{binCode, qty}]（change add-bin-assignment design D7：解冻原路回补） */
     private String detailJson;
+    /**
+     * 影响面快照 JSON（迁移 112，FR-4.4-5-4/5.5，4.9.4 展开）：
+     * {sos:[{soNo,lineId,qty,precision}], pos:[{poNo,lineNo,qty,precision}],
+     *  mos:[], moDataSource:false}
+     * SO=预留反查精确到批次；PO=未清 PO 行物料级；工单数据源未落地（proposal D1）
+     */
+    private String impactJson;
 }

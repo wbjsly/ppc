@@ -53,13 +53,18 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
     private final StockPostingEngine engine;
     private final GlVoucherService voucherService;
 
+    private final com.erp.service.inv.PickTaskGate pickTaskGate;
+    private final com.erp.service.inv.PickTaskService pickTaskService;
+
     public ScrapOrderServiceImpl(ScrapOrderDao scrapDao,
                                  ScrapOrderLineDao lineDao,
                                  InvStockDao stockDao,
                                  NcrDao ncrDao,
                                  ApprovalEngine approvalEngine,
                                  StockPostingEngine engine,
-                                 GlVoucherService voucherService) {
+                                 GlVoucherService voucherService,
+                                 com.erp.service.inv.PickTaskGate pickTaskGate,
+                                 com.erp.service.inv.PickTaskService pickTaskService) {
         this.scrapDao = scrapDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -67,6 +72,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         this.approvalEngine = approvalEngine;
         this.engine = engine;
         this.voucherService = voucherService;
+        this.pickTaskGate = pickTaskGate;
+        this.pickTaskService = pickTaskService;
     }
 
     // ---------- 创建 / 编辑 / 作废（4.1） ----------
@@ -75,6 +82,16 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> create(InvScrapOrder head, List<InvScrapOrderLine> lines) {
         requireWrite("创建报废单");
+        return doCreate(head, lines);
+    }
+
+    @Override
+    public Map<String, Object> createFromEval(InvScrapOrder head, List<InvScrapOrderLine> lines) {
+        // 效期评估链内部通道：质量角色判定触发，跳过 WAREHOUSE 校验（design D4）
+        return doCreate(head, lines);
+    }
+
+    private Map<String, Object> doCreate(InvScrapOrder head, List<InvScrapOrderLine> lines) {
         InvScrapOrder o = prepare(head, lines);
         o.setScrapNo(nextNo());
         o.setStatus(InvScrapOrder.ST_DRAFT);
@@ -273,6 +290,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
             }
             throw new ServiceException(422, "仅已批准状态可过账（当前 " + o.getStatus() + "）");
         }
+        // 拣货差异过账门闩（spec picking-review，BR-4.4-29）
+        pickTaskGate.assertClear("SCRAP_OUT", o.getScrapNo());
         // 门槛分流（S1）
         if (InvScrapOrder.R_STALE.equals(o.getReason())) {
             requireJointApproved(o);
@@ -292,6 +311,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
             ln.itemCode = l.getItemCode();
             ln.itemName = l.getItemName();
             ln.batchNo = l.getBatchNo();
+            // 拣货推荐回写仓位（4.6.3）：有值则引擎按指定仓位扣减
+            ln.binCode = l.getBinCode();
             ln.qty = l.getQty();
             ln.serials = parseSerials(l.getSerials());
             el.add(ln);
@@ -311,6 +332,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
                 new LambdaUpdateWrapper<InvScrapOrder>()
                         .set(InvScrapOrder::getPostBy, SecurityUtils.getCurrentUserId())
                         .set(InvScrapOrder::getPostAt, LocalDateTime.now()));
+        // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
+        pickTaskService.markCompleted("SCRAP_OUT", o.getScrapNo());
         log.info("scrap {} posted, txn={}, voucher 1901/1403={}", o.getScrapNo(),
                 res.txnNos.size(), o.getTotalAmount());
         return detail(id);

@@ -5,9 +5,13 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.inv.InvFreezeDao;
 import com.erp.dao.inv.InvStockDao;
+import com.erp.dao.proc.PurchaseOrderDao;
+import com.erp.dao.proc.PurchaseOrderLineDao;
 import com.erp.dao.sd.ReservationDao;
 import com.erp.entity.inv.InvFreeze;
 import com.erp.entity.inv.InvStock;
+import com.erp.entity.proc.PurchaseOrder;
+import com.erp.entity.proc.PurchaseOrderLine;
 import com.erp.entity.sd.Reservation;
 import com.erp.entity.system.ApprovalInstance;
 import com.erp.service.approval.ApprovalCallback;
@@ -43,17 +47,25 @@ public class FreezeCallback implements ApprovalCallback {
     private final ReservationDao reservationDao;
     private final ReservationService reservationService;
     private final NoticeService noticeService;
+    private final PurchaseOrderLineDao poLineDao;
+    private final PurchaseOrderDao poDao;
+    private final com.erp.service.inv.FreezePauseService freezePauseService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
 
     public FreezeCallback(InvFreezeDao freezeDao, InvStockDao stockDao,
                           ReservationDao reservationDao, ReservationService reservationService,
                           NoticeService noticeService,
+                          PurchaseOrderLineDao poLineDao, PurchaseOrderDao poDao,
+                          com.erp.service.inv.FreezePauseService freezePauseService,
                           com.fasterxml.jackson.databind.ObjectMapper jsonMapper) {
         this.freezeDao = freezeDao;
         this.stockDao = stockDao;
         this.reservationDao = reservationDao;
         this.reservationService = reservationService;
         this.noticeService = noticeService;
+        this.poLineDao = poLineDao;
+        this.poDao = poDao;
+        this.freezePauseService = freezePauseService;
         this.jsonMapper = jsonMapper;
     }
 
@@ -142,6 +154,8 @@ public class FreezeCallback implements ApprovalCallback {
         }
         // 行级明细（解冻原路回补依据）
         f.setDetailJson(toJson(detail));
+        // 影响面快照（FR-4.4-5-4/5.5，4.9.4 展开）：SO 预留反查 + PO 未清行 + 工单占位
+        f.setImpactJson(buildImpactJson(f));
         reservationService.releaseByBatch(f.getWarehouseCode(), f.getItemCode(),
                 InvFreeze.SCOPE_ALL.equals(f.getScope())
                         ? null : (f.getBatchNo() == null ? "" : f.getBatchNo()),
@@ -151,6 +165,8 @@ public class FreezeCallback implements ApprovalCallback {
         if (freezeDao.updateById(f) == 0) {
             throw new ServiceException(409, "冻结单状态更新冲突");
         }
+        // 挂起关联拣货任务/波次（BR-4.4-32，同事务；解冻不自动恢复）
+        freezePauseService.pauseOutbound(f);
 
         // 影响通知落表（FR-4.4-5-4；前端无展示 → 偏差 D1）
         noticeService.push("ROLE_WAREHOUSE", null,
@@ -286,9 +302,64 @@ public class FreezeCallback implements ApprovalCallback {
         }
     }
 
-    /** 冻结维度上 ACTIVE 预留关联的 SO 编号（通知影响面，FR-4.4-5-4） */
-    private List<String> affectedSoNos(InvFreeze f) {
-        List<String> soNos = new ArrayList<>();
+    /**
+     * 影响面快照（FR-4.4-5-4/5.5，spec freeze-management ADDED 需求 ②）：
+     * SO=冻结维度 ACTIVE 预留反查（精确到批次，冻结执行前取样——预留随后被释放，
+     * 快照保留受影响瞬间）；PO=该物料未清 PO 行（物料级）；工单数据源未落地
+     * （proposal 偏差 D1：mos 恒空 + moDataSource=false）。序列化失败 422 阻断冻结。
+     */
+    private String buildImpactJson(InvFreeze f) {
+        // SO：预留反查（与 affectedSoNos 同口径，扩展为含行号/数量的明细）
+        List<Map<String, Object>> sos = new ArrayList<>();
+        for (Reservation r : reservationDao.selectList(reservationQw(f))) {
+            Map<String, Object> so = new LinkedHashMap<>();
+            so.put("soNo", r.getSoNo());
+            so.put("lineNo", r.getLineNo());
+            so.put("qty", r.getQty());
+            so.put("precision", "BATCH");
+            sos.add(so);
+        }
+        // PO：该物料未清行（lineStatus=OPEN 且头未关闭），物料级
+        List<Map<String, Object>> pos = new ArrayList<>();
+        List<PurchaseOrderLine> openLines = poLineDao.selectList(
+                new LambdaQueryWrapper<PurchaseOrderLine>()
+                        .eq(PurchaseOrderLine::getItemCode, f.getItemCode())
+                        .eq(PurchaseOrderLine::getLineStatus, "OPEN"));
+        if (!openLines.isEmpty()) {
+            Map<String, PurchaseOrder> heads = new LinkedHashMap<>();
+            for (PurchaseOrder po : poDao.selectBatchIds(
+                    openLines.stream().map(PurchaseOrderLine::getPoId).distinct().toList())) {
+                heads.put(po.getId(), po);
+            }
+            for (PurchaseOrderLine l : openLines) {
+                PurchaseOrder head = heads.get(l.getPoId());
+                // 未清 PO = 已批准下达（APPROVED），草稿/审批中/已关闭不算影响面
+                if (head == null || !"APPROVED".equals(head.getStatus())) {
+                    continue;
+                }
+                Map<String, Object> po = new LinkedHashMap<>();
+                po.put("poNo", head.getPoNo());
+                po.put("lineNo", l.getLineNo());
+                po.put("qty", l.getQty() == null ? null
+                        : l.getQty().subtract(l.getReceivedQty() == null
+                                ? java.math.BigDecimal.ZERO : l.getReceivedQty()));
+                po.put("precision", "ITEM");
+                pos.add(po);
+            }
+        }
+        Map<String, Object> snap = new LinkedHashMap<>();
+        snap.put("sos", sos);
+        snap.put("pos", pos);
+        snap.put("mos", List.of());
+        snap.put("moDataSource", false);   // proposal 偏差 D1：生产工单域未落地
+        try {
+            return jsonMapper.writeValueAsString(snap);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new ServiceException(422, "影响面快照序列化失败：" + e.getMessage());
+        }
+    }
+
+    private LambdaQueryWrapper<Reservation> reservationQw(InvFreeze f) {
         LambdaQueryWrapper<Reservation> qw = new LambdaQueryWrapper<Reservation>()
                 .eq(Reservation::getStatus, Reservation.ST_ACTIVE)
                 .eq(Reservation::getWarehouseCode, f.getWarehouseCode())
@@ -296,7 +367,13 @@ public class FreezeCallback implements ApprovalCallback {
         if (!InvFreeze.SCOPE_ALL.equals(f.getScope())) {
             qw.eq(Reservation::getBatchNo, f.getBatchNo() == null ? "" : f.getBatchNo());
         }
-        for (Reservation r : reservationDao.selectList(qw)) {
+        return qw;
+    }
+
+    /** 冻结维度上 ACTIVE 预留关联的 SO 编号（通知影响面，FR-4.4-5-4） */
+    private List<String> affectedSoNos(InvFreeze f) {
+        List<String> soNos = new ArrayList<>();
+        for (Reservation r : reservationDao.selectList(reservationQw(f))) {
             if (r.getSoNo() != null && !soNos.contains(r.getSoNo())) {
                 soNos.add(r.getSoNo());
             }

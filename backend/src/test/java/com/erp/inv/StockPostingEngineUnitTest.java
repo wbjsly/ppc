@@ -43,7 +43,8 @@ class StockPostingEngineUnitTest {
         engine = new StockPostingEngineImpl(docTypeDao, stockDao,
                 mock(InvBatchDao.class), mock(InvTransactionDao.class),
                 mock(InvSerialDao.class), mock(ReservationDao.class),
-                mock(MdmItemDao.class), mock(OutboxPublisher.class));
+                mock(MdmItemDao.class), mock(OutboxPublisher.class),
+                sysParamForEngine());
     }
 
     private InvDocType type(String code, int enabled) {
@@ -105,5 +106,14 @@ class StockPostingEngineUnitTest {
         assertTrue(ex.getMessage().contains("大于 0"), ex.getMessage());
         verify(stockDao, never()).selectOne(any());
         verify(stockDao, never()).insert(any(com.erp.entity.inv.InvStock.class));
+    }
+
+    /** 引擎④效期锁定实时判定需 EXPIRY_LOCK_RATIO（mock 固定 0.5，与默认一致） */
+    private static com.erp.service.SysParamService sysParamForEngine() {
+        com.erp.service.SysParamService p = org.mockito.Mockito.mock(com.erp.service.SysParamService.class);
+        org.mockito.Mockito.when(p.getRate(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(java.math.BigDecimal.class)))
+                .thenReturn(new java.math.BigDecimal("0.5"));
+        return p;
     }
 }

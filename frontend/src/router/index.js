@@ -750,6 +750,146 @@ const routes = [
         meta: { title: '在途跟踪', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
       },
       {
+        // 4.6.1 先进先出（add-outbound-strategy：试算 + 偏离监控）
+        path: '/m/4.6.1',
+        name: 'FifoStrategy',
+        component: () => import('@/views/inv/fifo-strategy/index.vue'),
+        meta: { title: '先进先出', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.6.2 效期优先（add-outbound-strategy：预警清单 + 锁定标识）
+        path: '/m/4.6.2',
+        name: 'ExpiryPriority',
+        component: () => import('@/views/inv/expiry-priority/index.vue'),
+        meta: { title: '效期优先', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.6.3 拣货推荐（add-outbound-strategy：队列A → 推荐 → 确认回写）
+        path: '/m/4.6.3',
+        name: 'PickRecommend',
+        component: () => import('@/views/inv/pick-recommend/index.vue'),
+        meta: { title: '拣货推荐', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.1 拣货任务（add-picking-review：确认即生成 + 改派/作废）
+        path: '/m/4.7.1',
+        name: 'PickTask',
+        component: () => import('@/views/inv/pick-task/index.vue'),
+        meta: { title: '拣货任务', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.2 扫码确认（add-picking-review：行级三码校验 + 实拣确认）
+        path: '/m/4.7.2',
+        name: 'PickScan',
+        component: () => import('@/views/inv/pick-scan/index.vue'),
+        meta: { title: '扫码确认', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.3 出库复核（add-picking-review：三分支复核）
+        path: '/m/4.7.3',
+        name: 'PickReview',
+        component: () => import('@/views/inv/pick-review/index.vue'),
+        meta: { title: '出库复核', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.4 差异处理（add-picking-review：差异闭环解锁过账门闩）
+        path: '/m/4.7.4',
+        name: 'PickDiff',
+        component: () => import('@/views/inv/pick-diff/index.vue'),
+        meta: { title: '差异处理', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.8.1 波次拣货（add-wave-management：聚类生成 + 分配 + 改批审批 + 线路 Tab）
+        path: '/m/4.8.1',
+        name: 'WavePick',
+        component: () => import('@/views/inv/wave-pick/index.vue'),
+        meta: { title: '波次拣货', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.8.2 集货发运（add-wave-management：分播 → 装车 → 逐单发运）
+        path: '/m/4.8.2',
+        name: 'WaveShip',
+        component: () => import('@/views/inv/wave-ship/index.vue'),
+        meta: { title: '集货发运', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.9.1 质量冻结（add-freeze-management-menus：FreezePanel type 分流）
+        path: '/m/4.9.1',
+        name: 'FreezeQuality',
+        component: () => import('@/views/inv/freeze-quality/index.vue'),
+        meta: { title: '质量冻结', group: '库存管理', perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 4.9.2 财务冻结（add-freeze-management-menus：FreezePanel type 分流）
+        path: '/m/4.9.2',
+        name: 'FreezeFinance',
+        component: () => import('@/views/inv/freeze-finance/index.vue'),
+        meta: { title: '财务冻结', group: '库存管理', perm: 'ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 4.9.3 解冻审批（add-freeze-management-menus：todo 过滤 Unfreeze + 页内签署）
+        path: '/m/4.9.3',
+        name: 'FreezeApprove',
+        component: () => import('@/views/inv/freeze-approve/index.vue'),
+        meta: { title: '解冻审批', group: '库存管理', perm: 'ROLE_QUALITY_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 4.9.4 影响通知（add-freeze-management-menus：影响面快照三类清单 + 通知记录）
+        path: '/m/4.9.4',
+        name: 'FreezeImpact',
+        component: () => import('@/views/inv/freeze-impact/index.vue'),
+        meta: { title: '影响通知', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.10.1 效期预警（add-expiry-management-menus：每日报告留痕+实时清单）
+        path: '/m/4.10.1',
+        name: 'ExpiryWarning',
+        component: () => import('@/views/inv/expiry-warning/index.vue'),
+        meta: { title: '效期预警', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.10.2 临期锁定（add-expiry-management-menus：台账+历史+人工锁定）
+        path: '/m/4.10.2',
+        name: 'ExpiryLock',
+        component: () => import('@/views/inv/expiry-lock/index.vue'),
+        meta: { title: '临期锁定', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.10.3 质量评估（add-expiry-management-menus：三分支处置链）
+        path: '/m/4.10.3',
+        name: 'ExpiryEval',
+        component: () => import('@/views/inv/expiry-eval/index.vue'),
+        meta: { title: '质量评估', group: '库存管理', perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.1 拣货任务（add-picking-review：确认即生成 + 改派/作废）
+        path: '/m/4.7.1',
+        name: 'PickTask',
+        component: () => import('@/views/inv/pick-task/index.vue'),
+        meta: { title: '拣货任务', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.2 扫码确认（add-picking-review：行级三码校验 + 实拣确认）
+        path: '/m/4.7.2',
+        name: 'PickScan',
+        component: () => import('@/views/inv/pick-scan/index.vue'),
+        meta: { title: '扫码确认', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.3 出库复核（add-picking-review：三分支复核）
+        path: '/m/4.7.3',
+        name: 'PickReview',
+        component: () => import('@/views/inv/pick-review/index.vue'),
+        meta: { title: '出库复核', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.7.4 差异处理（add-picking-review：差异闭环解锁过账门闩）
+        path: '/m/4.7.4',
+        name: 'PickDiff',
+        component: () => import('@/views/inv/pick-diff/index.vue'),
+        meta: { title: '差异处理', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
         path: '/m/2.5.2',
         name: 'ConcessionPurchase',
         component: () => import('@/views/qms/concession/index.vue'),

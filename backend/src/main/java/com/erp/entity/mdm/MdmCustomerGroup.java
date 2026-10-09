@@ -53,6 +53,9 @@ public class MdmCustomerGroup extends BaseEntity {
     /** 名称查重「确认非重复」差异说明 */
     private String dupNote;
 
+    /** 客户默认配送线路 ID（erp_inv_route.ID，可空；wave-management：发货单生成时快照到 ROUTE_ID） */
+    private String routeId;
+
     /** 变更原因（UPDATE/状态操作时必填），非持久化，写入版本记录 */
     @com.baomidou.mybatisplus.annotation.TableField(exist = false)
     private transient String changeReason;

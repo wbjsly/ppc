@@ -171,6 +171,7 @@ public class MdmCustomerServiceImpl implements MdmCustomerService {
         patch.setUscc(group.getUscc());
         patch.setCreditRating(group.getCreditRating());
         patch.setCreditLimitTotal(group.getCreditLimitTotal());
+        patch.setRouteId(group.getRouteId());
         patch.setVerNo(stored.getVerNo());
         if (groupDao.updateById(patch) == 0) {
             throw new ServiceException(409, "数据已被他人修改，请刷新后重试");
@@ -620,6 +621,7 @@ public class MdmCustomerServiceImpl implements MdmCustomerService {
         appendDiff(sb, "uscc", oldRow.getUscc(), newRow.getUscc());
         appendDiff(sb, "creditRating", oldRow.getCreditRating(), newRow.getCreditRating());
         appendDiff(sb, "creditLimitTotal", oldRow.getCreditLimitTotal(), newRow.getCreditLimitTotal());
+        appendDiff(sb, "routeId", oldRow.getRouteId(), newRow.getRouteId());
         return sb.toString();
     }
 

@@ -15,5 +15,10 @@ export function applyUnfreezeApi(id, data) {
   return request.post(`/inv/freeze/${id}/unfreeze`, data)
 }
 
+/** 影响评估预估（FR-4.4-5-3 异常列：scope=ALL 或占比 ≥ 阈值 → needConfirm） */
+export function estimateFreezeApi(params) {
+  return request.get('/inv/freeze/estimate', { params })
+}
+
 // 审批签署复用通用底座 API（@/api/qms/approval：passQmsApprovalApi / rejectQmsApprovalApi /
 // getQmsApprovalTodoApi / getQmsApprovalLogsApi），底座按节点角色校验（C-4.4-05）。

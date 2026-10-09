@@ -47,6 +47,10 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
     private final VmiAlertService alertService;
     private final AccrualService accrualService;
     private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+    private final com.erp.service.inv.FifoStrategyService fifoStrategyService;
+
+    private final com.erp.service.inv.PickTaskGate pickTaskGate;
+    private final com.erp.service.inv.PickTaskService pickTaskService;
 
     public MaterialIssueServiceImpl(MaterialIssueDao issueDao,
                                     MaterialIssueLineDao lineDao,
@@ -56,7 +60,10 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                                     VmiAgreementService agreementService,
                                     VmiAlertService alertService,
                                     AccrualService accrualService,
-                                    com.erp.service.inv.StockPostingEngine stockPostingEngine) {
+                                    com.erp.service.inv.StockPostingEngine stockPostingEngine,
+                                    com.erp.service.inv.FifoStrategyService fifoStrategyService,
+                                    com.erp.service.inv.PickTaskGate pickTaskGate,
+                                    com.erp.service.inv.PickTaskService pickTaskService) {
         this.issueDao = issueDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -66,6 +73,9 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         this.alertService = alertService;
         this.accrualService = accrualService;
         this.stockPostingEngine = stockPostingEngine;
+        this.fifoStrategyService = fifoStrategyService;
+        this.pickTaskGate = pickTaskGate;
+        this.pickTaskService = pickTaskService;
     }
 
     // ---------- 创建（DRAFT，FIFO 配批固化） ----------
@@ -166,6 +176,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         if (!MaterialIssue.ST_DRAFT.equals(h.getStatus())) {
             throw new ServiceException(422, "仅草稿领料单可过账，当前 " + h.getStatus());
         }
+        // 拣货差异过账门闩（spec picking-review，BR-4.4-29）
+        pickTaskGate.assertClear("MATERIAL_OUT", h.getIssueNo());
         List<MaterialIssueLine> lines = lineDao.selectList(new LambdaQueryWrapper<MaterialIssueLine>()
                 .eq(MaterialIssueLine::getIssueId, h.getId())
                 .orderByAsc(MaterialIssueLine::getLineNo));
@@ -186,6 +198,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             // 低于最低水位补货建议扫描（BR-4.2-8-1 / design D4，领用后即时触发）
             alertService.scanReplenish();
         }
+        // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
+        pickTaskService.markCompleted("MATERIAL_OUT", h.getIssueNo());
         log.info("领料单 {} posted type={} lines={} transfer={}", h.getIssueNo(),
                 h.getIssueType(), lines.size(), h.getTransferDocNo());
         Map<String, Object> out = new LinkedHashMap<>();
@@ -206,6 +220,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             el.itemCode = l.getItemCode();
             el.itemName = l.getItemName();
             el.batchNo = l.getBatchNo();
+            // 拣货推荐回写仓位（4.6.3）：有值则引擎按指定仓位扣减，空保持位级 FIFO
+            el.binCode = l.getBinCode();
             el.qty = l.getQty();
             el.batchSpecified = true;
             els.add(el);
@@ -326,6 +342,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             row.put("qty", qty);
             // 行级指定批次可选（material-issue MODIFIED）：透传 batchNo 覆盖配批结果
             row.put("batchNo", m.get("batchNo"));
+            // 改批偏离原因（outbound-strategy：改写推荐值时必填，空则 422）
+            row.put("deviationReason", m.get("deviationReason"));
             out.add(row);
         }
         return out;
@@ -363,6 +381,25 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                             + item + " 需要 " + need.stripTrailingZeros().toPlainString()
                             + "，可配 " + basis.stripTrailingZeros().toPlainString()
                             + "，缺口 " + need.subtract(basis).stripTrailingZeros().toPlainString());
+                }
+                // 改批偏离留痕（spec outbound-strategy，C-4.4-08 非波次首期仅留痕）：
+                // 推荐值 = 缺省 FIFO 分配的首批次（只读试算，异常时视为无推荐值）；
+                // create（issueNo 已生成）落台账，preview 不落账；原因必填由 recordDeviation 强制
+                if (head.getIssueNo() != null) {
+                    String recommended = null;
+                    try {
+                        List<com.erp.service.inv.StockPostingEngine.Alloc> rec =
+                                stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, need);
+                        if (!rec.isEmpty()) {
+                            recommended = rec.get(0).batchNo;
+                        }
+                    } catch (RuntimeException ignore) {
+                        // 推荐失败（如缺省池不足）→ 无推荐值，仍按实际指定批次留痕
+                    }
+                    String reason = r.get("deviationReason") == null ? null
+                            : String.valueOf(r.get("deviationReason"));
+                    fifoStrategyService.recordDeviation("MATERIAL_ISSUE", head.getIssueNo(),
+                            no, item, InvStock.DEFAULT_WH, recommended, overrideBatch, reason);
                 }
                 MaterialIssueLine ol = new MaterialIssueLine();
                 ol.setLineNo(no);

@@ -73,6 +73,12 @@ public class ShipmentServiceImpl implements ShipmentService {
     private final InvoiceService invoiceService;
     private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
 
+    private final com.erp.service.inv.PickTaskGate pickTaskGate;
+    private final com.erp.service.inv.PickTaskService pickTaskService;
+    private final com.erp.dao.mdm.MdmCustomerGroupDao customerGroupDao;
+    private final com.erp.dao.inv.InvWaveLineDao waveLineDao;
+    private final com.erp.dao.inv.InvWaveDao waveDao;
+
     public ShipmentServiceImpl(ShipmentDao shipDao,
                                ShipmentLineDao shipLineDao,
                                SoDao soDao,
@@ -85,7 +91,12 @@ public class ShipmentServiceImpl implements ShipmentService {
                                NoticeService noticeService,
                                SysParamService paramService,
                                InvoiceService invoiceService,
-                               com.erp.service.inv.StockPostingEngine stockPostingEngine) {
+                               com.erp.service.inv.StockPostingEngine stockPostingEngine,
+                               com.erp.service.inv.PickTaskGate pickTaskGate,
+                               com.erp.service.inv.PickTaskService pickTaskService,
+                               com.erp.dao.mdm.MdmCustomerGroupDao customerGroupDao,
+                               com.erp.dao.inv.InvWaveLineDao waveLineDao,
+                               com.erp.dao.inv.InvWaveDao waveDao) {
         this.shipDao = shipDao;
         this.shipLineDao = shipLineDao;
         this.soDao = soDao;
@@ -99,6 +110,11 @@ public class ShipmentServiceImpl implements ShipmentService {
         this.paramService = paramService;
         this.invoiceService = invoiceService;
         this.stockPostingEngine = stockPostingEngine;
+        this.pickTaskGate = pickTaskGate;
+        this.pickTaskService = pickTaskService;
+        this.customerGroupDao = customerGroupDao;
+        this.waveLineDao = waveLineDao;
+        this.waveDao = waveDao;
     }
 
     // ---------- 9.2 部分发货 ----------
@@ -230,6 +246,8 @@ public class ShipmentServiceImpl implements ShipmentService {
 
     /** 出库过账主体（9.6）：FIFO 选批扣库存 + 消耗预留（换货单除外）+ 事件（可关） */
     private Shipment doPost(Shipment ship, boolean emitArEvent) {
+        // 拣货差异过账门闩（spec picking-review，BR-4.4-29；design D2 挂 doPost 覆盖全部过账路径）
+        pickTaskGate.assertClear("SALES_OUT", ship.getShipNo());
         List<ShipmentLine> lines = shipLines(ship.getId());
         LocalDateTime now = LocalDateTime.now();
         for (ShipmentLine l : lines) {
@@ -273,6 +291,8 @@ public class ShipmentServiceImpl implements ShipmentService {
             outboxPublisher.publishSourced("AR.CONFIRMED", ship.getShipNo(), 1, null,
                     "出库过账确认应收：" + ship.getTotalAmt(), extra, "sd-service");
         }
+        // 过账成功联动：任务 DONE → COMPLETED（无任务/未 DONE 跳过）
+        pickTaskService.markCompleted("SALES_OUT", ship.getShipNo());
         log.info("shipment {} posted ({} lines, amt={}, exchange={})", ship.getShipNo(),
                 lines.size(), ship.getTotalAmt(), "EXCHANGE".equals(ship.getShipType()));
         return ship;
@@ -302,6 +322,7 @@ public class ShipmentServiceImpl implements ShipmentService {
         ship.setShipType("EXCHANGE");
         ship.setCustomerId(so.getCustomerId());
         ship.setCustomerCode(so.getCustomerCode());
+        applyRouteSnapshot(ship);
         ship.setCustomerName(so.getCustomerName());
         ship.setWarehouseCode(defaultWh);
         ship.setStatus(Shipment.ST_DRAFT);
@@ -379,6 +400,7 @@ public class ShipmentServiceImpl implements ShipmentService {
         ship.setShipType(Shipment.TYPE_FRAMEWORK);
         ship.setCustomerId(fw.getCustomerId());
         ship.setCustomerCode(fw.getCustomerCode());
+        applyRouteSnapshot(ship);
         ship.setCustomerName(fw.getCustomerName());
         ship.setWarehouseCode(wh);
         ship.setStatus(Shipment.ST_DRAFT);
@@ -764,6 +786,7 @@ public class ShipmentServiceImpl implements ShipmentService {
         ship.setShipType(type);
         ship.setCustomerId(so.getCustomerId());
         ship.setCustomerCode(so.getCustomerCode());
+        applyRouteSnapshot(ship);
         ship.setCustomerName(so.getCustomerName());
         ship.setWarehouseCode(wh);
         ship.setStatus(Shipment.ST_DRAFT);
@@ -813,16 +836,59 @@ public class ShipmentServiceImpl implements ShipmentService {
 
     /** FIFO 选批 + 原子扣减（9.6）：同仓同 SKU 按入储时间先老先出，返回 [{batchNo, qty}] */
     private List<Map<String, Object>> allocAndDeduct(ShipmentLine l) {
-        // 选批与扣减统一经通用引擎（add-stock-posting-engine，sales-shipment MODIFIED：
-        // FIFO+效期分配、AVAILABLE/QTY 双列原子扣减、行级恒等、SALES_OUT 流水；
-        // 库存行锁移交引擎统一持有，域侧不再自行 FOR UPDATE（design D4 锁序））
+        // 波次分配段过账（spec wave-management 波次级分配，design D1 双写过账侧）：
+        // 该行存在活跃波次的分配段 → 按段逐次引擎过账（精确兑现分配批次/仓位，
+        // 跨批行不依赖单值回写）；无段 → 原单行逻辑（4.6.3 回写值或缺省 FIFO）
+        List<com.erp.entity.inv.InvWaveLine> segs = activeWaveSegs(l);
+        if (!segs.isEmpty()) {
+            List<Map<String, Object>> alloc = new ArrayList<>();
+            for (com.erp.entity.inv.InvWaveLine seg : segs) {
+                alloc.addAll(enginePost(l, seg.getBatchNo(), seg.getBinCode(), seg.getQty()));
+            }
+            return alloc;
+        }
+        return enginePost(l, l.getBatchNo(),
+                l.getBatchNo() == null || l.getBatchNo().trim().isEmpty() ? null : l.getBinCode(),
+                l.getQty());
+    }
+
+    /** 行的活跃波次分配段（波次 ALLOCATED~SHIPPING 且归属 BOUND；无 → 空） */
+    private List<com.erp.entity.inv.InvWaveLine> activeWaveSegs(ShipmentLine l) {
+        List<com.erp.entity.inv.InvWaveLine> segs = waveLineDao.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                        com.erp.entity.inv.InvWaveLine>()
+                        .eq(com.erp.entity.inv.InvWaveLine::getShipLineId, l.getId()));
+        if (segs.isEmpty()) {
+            return List.of();
+        }
+        com.erp.entity.inv.InvWave w = waveDao.selectById(segs.get(0).getWaveId());
+        if (w == null) {
+            return List.of();
+        }
+        String st = w.getStatus();
+        boolean active = com.erp.entity.inv.InvWave.ST_ALLOCATED.equals(st)
+                || com.erp.entity.inv.InvWave.ST_PICKING.equals(st)
+                || com.erp.entity.inv.InvWave.ST_SORTING.equals(st)
+                || com.erp.entity.inv.InvWave.ST_STAGING.equals(st)
+                || com.erp.entity.inv.InvWave.ST_SHIPPING.equals(st);
+        return active ? segs : List.of();
+    }
+
+    /** 引擎过账（单行口径）：批次/仓位可空（空=缺省 FIFO+效期），返回 allocations */
+    private List<Map<String, Object>> enginePost(ShipmentLine l, String batchNo,
+                                                 String binCode, java.math.BigDecimal qty) {
         String shipNo = shipNoOf(l.getShipId());
         com.erp.service.inv.StockPostingEngine.Line el =
                 new com.erp.service.inv.StockPostingEngine.Line();
         el.warehouseCode = l.getWarehouseCode();
         el.itemCode = l.getItemCode();
         el.itemName = l.getItemName();
-        el.qty = l.getQty();
+        el.qty = qty;
+        // 行值优先（4.6.3 回写，design D6）：行带批次/仓位时按指定值过账，
+        // 空则保持现「重走 ATP FIFO 选批」行为（BATCH_ALLOC 口径不变）
+        el.batchNo = batchNo;
+        el.batchSpecified = batchNo != null && !batchNo.trim().isEmpty();
+        el.binCode = binCode;
         com.erp.service.inv.StockPostingEngine.Result res = stockPostingEngine.post(
                 com.erp.service.inv.StockPostingEngine.Request.of(
                         "SALES_OUT", "SHIPMENT", shipNo, List.of(el)));
@@ -1102,6 +1168,19 @@ public class ShipmentServiceImpl implements ShipmentService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * 配送线路快照（wave-management 需求 配送线路主数据与线路挂载）：
+     * 建单时从客户默认线路带出，聚类只读发货单快照——客户改线不影响已开单据。
+     * 客户未挂线/查不到 → 快照为空，聚类按承运商>客户降级，不报错。
+     */
+    private void applyRouteSnapshot(Shipment ship) {
+        if (ship.getCustomerId() == null || ship.getCustomerId().trim().isEmpty()) {
+            return;
+        }
+        var cg = customerGroupDao.selectById(ship.getCustomerId());
+        ship.setRouteId(cg == null ? null : cg.getRouteId());
     }
 
     private static String uuid() {

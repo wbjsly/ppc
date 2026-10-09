@@ -44,6 +44,9 @@ public class Shipment extends BaseEntity {
     private BigDecimal totalQty;
     /** 应收事件金额 = Σ 行数量×单价（AR.CONFIRMED 口径） */
     private BigDecimal totalAmt;
+    /** 配送线路快照（生成时从客户默认线带出；波次聚类只读本列，客户改线不影响已开单据） */
+    private String routeId;
+
     private String logisticsCo;
     private String logisticsNo;
     private LocalDateTime shipAt;

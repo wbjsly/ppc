@@ -36,6 +36,12 @@ public class ShipmentLine extends BaseEntity {
     private BigDecimal unitPrice;
     private BigDecimal amount;
     private String warehouseCode;
+
+    /** 拣货推荐回写批次（4.6.3；空=过账时按 FIFO 选批） */
+    private String batchNo;
+
+    /** 拣货推荐回写仓位（4.6.3；空=过账时引擎位级 FIFO 分配） */
+    private String binCode;
     /** 分批交期（9.4 行级带出） */
     private LocalDate planShipDate;
     private String lineStatus;

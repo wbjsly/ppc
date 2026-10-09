@@ -56,11 +56,13 @@ public class StockPostingEngineImpl implements StockPostingEngine {
     private final ReservationDao reservationDao;
     private final MdmItemDao itemDao;
     private final OutboxPublisher outboxPublisher;
+    private final com.erp.service.SysParamService sysParamService;
 
     public StockPostingEngineImpl(InvDocTypeDao docTypeDao, InvStockDao stockDao,
                                   InvBatchDao batchDao, InvTransactionDao txnDao,
                                   InvSerialDao serialDao, ReservationDao reservationDao,
-                                  MdmItemDao itemDao, OutboxPublisher outboxPublisher) {
+                                  MdmItemDao itemDao, OutboxPublisher outboxPublisher,
+                                  com.erp.service.SysParamService sysParamService) {
         this.docTypeDao = docTypeDao;
         this.stockDao = stockDao;
         this.batchDao = batchDao;
@@ -69,6 +71,7 @@ public class StockPostingEngineImpl implements StockPostingEngine {
         this.reservationDao = reservationDao;
         this.itemDao = itemDao;
         this.outboxPublisher = outboxPublisher;
+        this.sysParamService = sysParamService;
     }
 
     // ================= 过账入口 =================
@@ -321,6 +324,8 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             // FEFO 挑选序：inbound → 效期桶 → create；平局保持锁序（batch,bin 升序——
             // 稳定排序，DB 端为锁序、单测 mock 为返回序，不引入额外字母序决胜）
             Map<String, LocalDate> expiryByBatch = loadExpiry(first.itemCode, locked);
+            // 效期锁定（spec 校验链 ④ / BR-4.4-20）：指定批次硬拦截、缺省分配剔池
+            Map<String, Boolean> lockByBatch = loadExpiryLock(first.itemCode, locked);
             List<RowState> pickOrder = new ArrayList<>();
             for (InvStock r : locked) {
                 pickOrder.add(state.get(r.getId()));
@@ -358,21 +363,46 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                 String specified = line.batchNo == null || line.batchNo.trim().isEmpty()
                         ? null : line.batchNo.trim();
                 if (specified != null) {
+                    // 校验链 ④：指定批次已效期锁定 → 422 硬阻断（C-4.4-03，无库存与流水变动）
+                    if (Boolean.TRUE.equals(lockByBatch.get(specified))) {
+                        throw new ServiceException(422, "批次已效期锁定，禁止正常出库："
+                                + line.itemCode + " / " + specified);
+                    }
                     // 指定批次：组内该批次全部位行按挑序逐行扣减（跨位拆行）
                     List<RowState> batchRows = rowsOfBatch(pickOrder, specified);
                     if (batchRows.isEmpty()) {
                         throw new ServiceException(422, "库存批次不存在："
                                 + line.itemCode + " / " + specified);
                     }
+                    // 指定仓位（line.binCode 非空，4.6.3 回写/行级人工指定，design D3）：
+                    // 收窄到单个位行——不足 422，不静默跨位补（spec OUT 批次分配 指定仓位场景）
+                    String wantBin = line.binCode == null ? "" : line.binCode.trim();
+                    if (!wantBin.isEmpty()) {
+                        List<RowState> binRows = new ArrayList<>();
+                        for (RowState st : batchRows) {
+                            if (wantBin.equals(str(st.row.getBinCode()))) {
+                                binRows.add(st);
+                            }
+                        }
+                        if (binRows.isEmpty()) {
+                            throw new ServiceException(422, "指定仓位无库存行："
+                                    + line.itemCode + " 批次 " + specified + " 仓位 " + wantBin);
+                        }
+                        batchRows = binRows;
+                    }
                     out.allocations.addAll(deductBatch(req, type, line, il.index,
                             batchRows, specified, line.qty));
                 } else if (line.qcFirst) {
                     throw new ServiceException(422, "核销锁定量的出库须指定批次");
                 } else {
-                    // 缺省分配：FIFO+效期（位行序），扣减可用=AVAILABLE−ACTIVE预留（批次预算）
+                    // 缺省分配：FIFO+效期（位行序），扣减可用=AVAILABLE−ACTIVE预留（批次预算）；
+                    // 效期锁定批次剔池（不参与分配、不计入可用，BR-4.4-20）
                     BigDecimal need = line.qty;
                     BigDecimal totalBasis = BigDecimal.ZERO;
                     for (RowState st : pickOrder) {
+                        if (Boolean.TRUE.equals(lockByBatch.get(st.batchKey))) {
+                            continue;
+                        }
                         BigDecimal basis = st.basis();
                         totalBasis = totalBasis.add(basis.max(BigDecimal.ZERO));
                         if (need.signum() <= 0 || basis.signum() <= 0) {
@@ -558,6 +588,8 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                 .orderByAsc(InvStock::getInboundDate)
                 .orderByAsc(InvStock::getCreateDate)));
         Map<String, LocalDate> expiryByBatch = loadExpiry(itemCode, rows);
+        // 效期锁定剔池（BR-4.4-20）：配批/试算与过账缺省分配同口径剔除锁定批次
+        Map<String, Boolean> lockByBatch = loadExpiryLock(itemCode, rows);
         rows.sort(Comparator
                 .comparing((InvStock r) -> r.getInboundDate() == null
                         ? LocalDate.of(1970, 1, 1) : r.getInboundDate())
@@ -582,6 +614,9 @@ public class StockPostingEngineImpl implements StockPostingEngine {
         Map<String, BigDecimal> assigned = new HashMap<>();
         for (InvStock r : rows) {
             String b = str(r.getBatchNo());
+            if (Boolean.TRUE.equals(lockByBatch.get(b))) {
+                continue;   // 锁定批次不参与配批、不计入可用（缺口口径同步剔除）
+            }
             BigDecimal budget = batchAvail.get(b).subtract(batchReserved.get(b));
             BigDecimal remain = budget.subtract(assigned.getOrDefault(b, BigDecimal.ZERO));
             BigDecimal basis = nvl(r.getAvailableQty()).min(
@@ -663,6 +698,55 @@ public class StockPostingEngineImpl implements StockPostingEngine {
         return map;
     }
 
+    /** 批次效期锁定标记（spec 校验链 ④）：EXPIRY_LOCK_FLAG='1' 的批次 → true */
+    /**
+     * 校验链 ④ 锁定判定（spec expiry-management 需求⑤ / C-4.4-03，design D3 实时口径）：
+     * 拦截 = （flag=1 或 实时计算到线）且 非有效豁免。
+     * 豁免（EVAL_EXEMPT_UNTIL ≥ 今日）优先放行——即使 flag 未刷新；
+     * 豁免过期即拦——即使次日扫描尚未把 flag 刷回 1（关闭 D2 的 24h 窗口）。
+     */
+    private Map<String, Boolean> loadExpiryLock(String itemCode, List<InvStock> rows) {
+        Map<String, Boolean> map = new HashMap<>();
+        List<String> batches = new ArrayList<>();
+        for (InvStock r : rows) {
+            String b = str(r.getBatchNo());
+            if (!b.isEmpty() && !batches.contains(b)) {
+                batches.add(b);
+            }
+        }
+        if (batches.isEmpty()) {
+            return map;
+        }
+        List<InvBatch> ledgers = batchDao.selectList(new LambdaQueryWrapper<InvBatch>()
+                .eq(InvBatch::getItemCode, itemCode)
+                .in(InvBatch::getBatchNo, batches));
+        java.time.LocalDate today = java.time.LocalDate.now();
+        BigDecimal lockRatio = sysParamService.getRate("EXPIRY_LOCK_RATIO", new BigDecimal("0.5"));
+        for (InvBatch b : ledgers) {
+            // 1) 有效豁免 → 放行（让步放行生效，扫描标记位可能尚未刷新）
+            if (b.getEvalExemptUntil() != null && !b.getEvalExemptUntil().isBefore(today)) {
+                map.put(b.getBatchNo(), false);
+                continue;
+            }
+            // 2) 标记位（扫描落位，含 MANUAL 锁）
+            boolean locked = "1".equals(str(b.getExpiryLockFlag()));
+            // 3) 实时到线计算兜底（豁免过期后 flag 未刷新也即拦）
+            if (!locked && b.getProductionDate() != null && b.getExpiryDate() != null) {
+                long total = java.time.temporal.ChronoUnit.DAYS
+                        .between(b.getProductionDate(), b.getExpiryDate());
+                long remaining = java.time.temporal.ChronoUnit.DAYS
+                        .between(today, b.getExpiryDate());
+                if (total > 0) {
+                    BigDecimal threshold = BigDecimal.valueOf(total).multiply(lockRatio)
+                            .setScale(0, java.math.RoundingMode.DOWN);
+                    locked = BigDecimal.valueOf(remaining).compareTo(threshold) < 0;
+                }
+            }
+            map.put(b.getBatchNo(), locked);
+        }
+        return map;
+    }
+
     /**
      * 流水写入（TX+yyMMdd+6位，唯一冲突重试 ≤5）。
      * 位级一维一条：batch/bin/qty 为本条实际变动维度（拆批/跨位拆行逐条），before/after 为位行余额。
@@ -671,9 +755,11 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                             StockPostingEngine.Line line, String batch, String bin,
                             BigDecimal qty, BigDecimal before, BigDecimal after) {
         String prefix = "TX" + LocalDate.now().format(TXN_DAY) + "-";
+        // MAX+1 抗空洞（COUNT+1 在历史行缺失时撞已存在号，5 次重试耗尽即失败；
+        // 并发下仍靠唯一键+重试兜底）
+        long base = txnDao.maxSeqByPrefix(prefix);
         for (int attempt = 0; attempt < 5; attempt++) {
-            long seq = txnDao.countByPrefix(prefix) + 1 + attempt;
-            String no = prefix + String.format("%06d", seq);
+            String no = prefix + String.format("%06d", base + 1 + attempt);
             InvTransaction t = new InvTransaction();
             t.setTxnNo(no);
             t.setDirection(direction);

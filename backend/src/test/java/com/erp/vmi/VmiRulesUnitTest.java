@@ -277,11 +277,13 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.inv.InvSerialDao.class),
                         mock(com.erp.dao.sd.ReservationDao.class),
                         mock(com.erp.dao.mdm.MdmItemDao.class),
-                        mock(com.erp.ops.OutboxPublisher.class));
+                        mock(com.erp.ops.OutboxPublisher.class),
+                        sysParamMock());
         return new MaterialIssueServiceImpl(mock(MaterialIssueDao.class),
                 mock(MaterialIssueLineDao.class), stockDao, mock(VmiStockDao.class),
                 mock(MdmSupplierDao.class), mock(VmiAgreementService.class),
-                mock(VmiAlertService.class), mock(AccrualService.class), engine);
+                mock(VmiAlertService.class), mock(AccrualService.class), engine,
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
     }
 
     private InvStock stockRow(String id, String batch, String avail, LocalDateTime create) {
@@ -346,12 +348,14 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.inv.InvSerialDao.class),
                         mock(com.erp.dao.sd.ReservationDao.class),
                         mock(com.erp.dao.mdm.MdmItemDao.class),
-                        mock(com.erp.ops.OutboxPublisher.class));
+                        mock(com.erp.ops.OutboxPublisher.class),
+                        sysParamMock());
         MaterialIssueServiceImpl svc = new MaterialIssueServiceImpl(
                 mock(MaterialIssueDao.class), mock(MaterialIssueLineDao.class), stockDao,
                 mock(VmiStockDao.class), mock(MdmSupplierDao.class),
                 mock(VmiAgreementService.class), mock(VmiAlertService.class),
-                mock(AccrualService.class), engine);
+                mock(AccrualService.class), engine,
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("issueType", "OWN");
@@ -383,5 +387,13 @@ class VmiRulesUnitTest {
         ServiceException e = assertThrows(ServiceException.class, () -> svc.preview(payload));
         assertTrue(e.getMessage().contains("不足"), e.getMessage());
         assertTrue(e.getMessage().contains("缺口"), e.getMessage());
+    }
+
+    /** 引擎④效期锁定实时判定需 EXPIRY_LOCK_RATIO（mock 固定 0.5，与默认一致） */
+    private static com.erp.service.SysParamService sysParamMock() {
+        com.erp.service.SysParamService p = mock(com.erp.service.SysParamService.class);
+        when(p.getRate(anyString(), any(java.math.BigDecimal.class)))
+                .thenReturn(new java.math.BigDecimal("0.5"));
+        return p;
     }
 }

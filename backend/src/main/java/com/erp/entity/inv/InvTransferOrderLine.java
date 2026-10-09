@@ -21,6 +21,9 @@ public class InvTransferOrderLine extends BaseEntity {
     private String itemCode;
     private String itemName;
     private String batchNo;
+
+    /** 拣货推荐回写仓位（4.6.3；空=过账时引擎位级 FIFO 分配） */
+    private String binCode;
     private BigDecimal qty;
     /** 内部转移价（必填 >0，跨法人凭证/发票金额依据） */
     private BigDecimal internalPrice;

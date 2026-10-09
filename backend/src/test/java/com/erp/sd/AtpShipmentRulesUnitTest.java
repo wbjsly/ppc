@@ -191,11 +191,12 @@ class AtpShipmentRulesUnitTest {
                         docTypeDao, stockDao, mock(com.erp.dao.inv.InvBatchDao.class),
                         mock(com.erp.dao.inv.InvTransactionDao.class),
                         mock(com.erp.dao.inv.InvSerialDao.class), reservationDao,
-                        mock(com.erp.dao.mdm.MdmItemDao.class), mock(OutboxPublisher.class));
+                        mock(com.erp.dao.mdm.MdmItemDao.class), mock(OutboxPublisher.class),
+                        sysParamForEngine());
         shipment = new ShipmentServiceImpl(shipDao, shipLineDao, soDao, soLineDao,
                 mock(SdReturnDao.class), mock(SdReturnLineDao.class), stockDao, reservationDao,
                 mock(OutboxPublisher.class), mock(NoticeService.class),
-                mock(SysParamService.class), mock(InvoiceService.class), realEngine);
+                mock(SysParamService.class), mock(InvoiceService.class), realEngine, mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class), mock(com.erp.dao.mdm.MdmCustomerGroupDao.class), mock(com.erp.dao.inv.InvWaveLineDao.class), mock(com.erp.dao.inv.InvWaveDao.class) );
     }
 
     private InvStock stock(String id, String batch, String qty) {
@@ -332,5 +333,14 @@ class AtpShipmentRulesUnitTest {
         assertTrue(e.getMessage().contains("超出可发"), e.getMessage());
         // 合规量（≤ 剩余可发）放行的正向路径由端到端冒烟覆盖——
         // 单测直调成功路径需 MP TableInfo 元数据（TableInfoHelper 初始化），此处不做
+    }
+
+    /** 引擎④效期锁定实时判定需 EXPIRY_LOCK_RATIO（mock 固定 0.5，与默认一致） */
+    private static com.erp.service.SysParamService sysParamForEngine() {
+        com.erp.service.SysParamService p = org.mockito.Mockito.mock(com.erp.service.SysParamService.class);
+        org.mockito.Mockito.when(p.getRate(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(java.math.BigDecimal.class)))
+                .thenReturn(new java.math.BigDecimal("0.5"));
+        return p;
     }
 }

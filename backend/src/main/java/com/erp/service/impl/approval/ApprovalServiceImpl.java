@@ -130,6 +130,7 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         ApprovalInstance inst = requireInstance(task.getApprId());
         requireSignable(task, inst);
         requireNodeRole(task);
+        rejectSelfSign(inst, "通过");
 
         task.setStatus("PASSED");
         task.setSigner(SecurityUtils.getCurrentUserId());
@@ -159,6 +160,7 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         ApprovalInstance inst = requireInstance(task.getApprId());
         requireSignable(task, inst);
         requireNodeRole(task);
+        rejectSelfSign(inst, "驳回");
 
         task.setStatus("REJECTED");
         task.setSigner(SecurityUtils.getCurrentUserId());
@@ -369,6 +371,24 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         }
         if (!"PENDING".equals(inst.getStatus())) {
             throw new ServiceException(422, "审批实例已办结");
+        }
+    }
+
+    /**
+     * 同人闭环拦截（C-0-03，spec wave-management C-4.4-08 改批审批 design D4 第二道；
+     * spec expiry-management 需求④ 评估单同人防闭环沿用）：
+     * WaveAdjust / ExpiryEval 实例的发起人不可签署自己的发起任务（提交时已排除
+     * 「角色无他人」场景，此处兜底发起人自签；其余 bizType 行为不变）。
+     */
+    private void rejectSelfSign(ApprovalInstance inst, String action) {
+        if (!"WaveAdjust".equals(inst.getBizType())
+                && !"ExpiryEval".equals(inst.getBizType())) {
+            return;
+        }
+        String me = SecurityUtils.getCurrentUserId();
+        if (me != null && me.equals(inst.getApplyBy())) {
+            throw new ServiceException(422, "禁止同人闭环：发起人不可"
+                    + action + "自己提交的审批（C-0-03），请由另一名有权限的成员签署");
         }
     }
 

@@ -23,6 +23,13 @@ public interface FreezeService {
     InvFreeze apply(InvFreeze req);
 
     /**
+     * 拣货复核外观异常自动发起（spec picking-review BR-4.4-30，design D4）：
+     * 跳过发起角色校验（WAREHOUSE 复核触发），审批照挂 ROLE_QUALITY_MGR 不省，
+     * source=REVIEW。仅供复核服务内部调用，不暴露 HTTP 直建口。
+     */
+    InvFreeze applyFromReview(InvFreeze req);
+
+    /**
      * 解冻申请（FR-4.4-5-6/7）：仅原发起人（403）、仅生效中 MANUAL 冻结（422）、
      * 处理结果与依据必填（422）、独立审批（同类型审批角色）。
      */
@@ -31,6 +38,14 @@ public interface FreezeService {
     /** 冻结库存查询（4.3.2）：类型/状态/物料/批次/关键字筛选，NCR 来源只读标识 */
     List<Map<String, Object>> query(String freezeType, String status, String itemCode,
                                     String batchNo, String keyword);
+
+    /**
+     * 影响评估预估（FR-4.4-5-3 异常列，spec freeze-management ADDED 需求 ③）：
+     * 返回维度可用量、受影响可用量、关联 SO 数与是否需二次确认
+     * （scope=ALL 或 qty ≥ FREEZE_IMPACT_RATIO% × 可用量）；维度不存在 422。
+     */
+    Map<String, Object> estimate(String warehouseCode, String itemCode, String batchNo,
+                                 String scope, java.math.BigDecimal qty);
 
     /**
      * NCR 流程冻结/解冻的台账归集（spec ncr-management MODIFIED，来源=NCR 立即生效无审批）。

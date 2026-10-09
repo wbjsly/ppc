@@ -104,6 +104,12 @@ const PERM = {
   contract: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN',
   // 4.1.1 仓库档案
   warehouse: 'ROLE_WAREHOUSE,ROLE_ADMIN',
+  // 4.9 冻结管理（change add-freeze-management-menus）
+  freezeQuality: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN',
+  freezeFinance: 'ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN',
+  unfreezeApprove: 'ROLE_QUALITY_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN',
+  // 4.10 效期管理 4.10.3 质量评估（change add-expiry-management-menus；4.10.1/4.10.2 用 warehouse）
+  expiryEval: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN',
   // 一级域 M3：取其下各组权限并集，避免非授权角色看到空的销售管理域
   domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
 }
@@ -140,7 +146,21 @@ const EXTRA_PERM = {
   // M4-5 出库管理 4.5.1~4.5.4（change add-outbound-workbench，出库作业台四路由）
   ...leaf(['M4-5-1', 'M4-5-2', 'M4-5-3', 'M4-5-4'], PERM.warehouse),
   // M4-12 调拨管理 4.12.1 仓间调拨 / 4.12.2 在途跟踪（change add-outbound-workbench P1）
-  ...leaf(['M4-12-1', 'M4-12-2'], PERM.warehouse)
+  ...leaf(['M4-12-1', 'M4-12-2'], PERM.warehouse),
+  // M4-6 出库策略 4.6.1 先进先出 / 4.6.2 效期优先 / 4.6.3 拣货推荐（change add-outbound-strategy）
+  ...leaf(['M4-6-1', 'M4-6-2', 'M4-6-3'], PERM.warehouse),
+  // M4-7 拣货复核 4.7.1 拣货任务 / 4.7.2 扫码确认 / 4.7.3 出库复核 / 4.7.4 差异处理（change add-picking-review）
+  ...leaf(['M4-7-1', 'M4-7-2', 'M4-7-3', 'M4-7-4'], PERM.warehouse),
+  // M4-8 波次管理 4.8.1 波次拣货 / 4.8.2 集货发运（change add-wave-management）
+  ...leaf(['M4-8-1', 'M4-8-2'], PERM.warehouse),
+  // M4-9 冻结管理 4.9.1 质量冻结 / 4.9.2 财务冻结 / 4.9.3 解冻审批 / 4.9.4 影响通知（change add-freeze-management-menus）
+  ...leaf(['M4-9-1'], PERM.freezeQuality),
+  ...leaf(['M4-9-2'], PERM.freezeFinance),
+  ...leaf(['M4-9-3'], PERM.unfreezeApprove),
+  ...leaf(['M4-9-4'], PERM.warehouse),
+  // M4-10 效期管理 4.10.1 效期预警 / 4.10.2 临期锁定（仓库） / 4.10.3 质量评估（质量链）
+  ...leaf(['M4-10-1', 'M4-10-2'], PERM.warehouse),
+  ...leaf(['M4-10-3'], PERM.expiryEval)
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

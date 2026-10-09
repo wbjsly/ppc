@@ -20,6 +20,9 @@ public class InvScrapOrderLine extends BaseEntity {
     private String itemCode;
     private String itemName;
     private String batchNo;
+
+    /** 拣货推荐回写仓位（4.6.3；空=过账时引擎位级 FIFO 分配） */
+    private String binCode;
     private BigDecimal qty;
     /** 库龄快照（创建时按该仓库该批次位行 MIN(INBOUND_DATE) 距今天数固化） */
     private Integer stockAgeDays;

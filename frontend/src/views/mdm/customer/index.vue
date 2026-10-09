@@ -100,6 +100,13 @@
         <el-form-item v-if="form.id" label="变更原因" required>
           <el-input v-model="form.changeReason" maxlength="255" placeholder="必填（≥2 字）" />
         </el-form-item>
+        <el-form-item label="默认配送线路">
+          <el-select v-model="form.routeId" clearable style="width: 100%;"
+                     placeholder="波次聚类第一优先级键（BR-4.4-42）；可空=按承运商>客户降级">
+            <el-option v-for="r in routes" :key="r.id" :label="`${r.routeCode} ${r.routeName}`" :value="r.id" />
+          </el-select>
+          <div class="form-tip">发货单生成时快照线路；客户改线不影响已开发货单</div>
+        </el-form-item>
         <el-form-item v-if="!form.id && similarHits.length" label="差异说明">
           <el-input v-model="form.dupNote" maxlength="255" placeholder="确认非重复时必填" />
         </el-form-item>
@@ -314,6 +321,7 @@ import {
   getViewsApi, saveViewApi
 } from '@/api/mdm/customer'
 import { getLegalEntityPageApi } from '@/api/mdm/legal-entity'
+import { getActiveRoutesApi } from '@/api/inv/route'
 
 const opMap = { CREATE: '新建', UPDATE: '变更', DISABLE: '停用', FREEZE: '冻结/解冻', MERGE: '合并' }
 
@@ -324,6 +332,7 @@ const total = ref(0)
 const query = ref({ keyword: '', status: '', current: 1, size: 10 })
 const viewCounts = ref({})
 const legalEntities = ref([])
+const routes = ref([])   // 配送线路（wave-management：客户默认线，波次聚类第一键）
 
 async function loadData(page) {
   if (page) query.value.current = page
@@ -592,6 +601,10 @@ onMounted(async () => {
   loadData()
   const le = await getLegalEntityPageApi({ current: 1, size: 100 })
   legalEntities.value = le.data.records
+  try {
+    const rt = await getActiveRoutesApi()
+    routes.value = rt.data || []
+  } catch (e) { /* 线路未建时下拉为空，不阻断客户页 */ }
 })
 </script>
 

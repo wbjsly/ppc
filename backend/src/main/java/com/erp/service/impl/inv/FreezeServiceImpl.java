@@ -4,8 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.inv.InvFreezeDao;
 import com.erp.dao.inv.InvStockDao;
+import com.erp.dao.sd.ReservationDao;
 import com.erp.entity.inv.InvFreeze;
 import com.erp.entity.inv.InvStock;
+import com.erp.entity.sd.Reservation;
+import com.erp.service.SysParamService;
 import com.erp.service.approval.ApprovalEngine;
 import com.erp.service.approval.ApprovalNodeSpec;
 import com.erp.service.inv.FreezeService;
@@ -42,13 +45,18 @@ public class FreezeServiceImpl implements FreezeService {
     private final InvStockDao stockDao;
     private final ApprovalEngine approvalEngine;
     private final ReservationService reservationService;
+    private final ReservationDao reservationDao;
+    private final SysParamService sysParamService;
 
     public FreezeServiceImpl(InvFreezeDao freezeDao, InvStockDao stockDao,
-                             ApprovalEngine approvalEngine, ReservationService reservationService) {
+                             ApprovalEngine approvalEngine, ReservationService reservationService,
+                             ReservationDao reservationDao, SysParamService sysParamService) {
         this.freezeDao = freezeDao;
         this.stockDao = stockDao;
         this.approvalEngine = approvalEngine;
         this.reservationService = reservationService;
+        this.reservationDao = reservationDao;
+        this.sysParamService = sysParamService;
     }
 
     // ---------- 冻结申请 ----------
@@ -56,6 +64,20 @@ public class FreezeServiceImpl implements FreezeService {
     @Override
     @Transactional
     public InvFreeze apply(InvFreeze req) {
+        return doApply(req, true);
+    }
+
+    @Override
+    @Transactional
+    public InvFreeze applyFromReview(InvFreeze req) {
+        // picking-review design D4：自动发起跳过发起角色校验，审批链不省
+        if (req != null && isBlank(req.getSource())) {
+            req.setSource(InvFreeze.SRC_REVIEW);
+        }
+        return doApply(req, false);
+    }
+
+    private InvFreeze doApply(InvFreeze req, boolean enforceInitiatorRole) {
         if (req == null) {
             throw new ServiceException(422, "冻结申请必填");
         }
@@ -84,11 +106,15 @@ public class FreezeServiceImpl implements FreezeService {
             throw new ServiceException(422, "指定批次范围须选择批次（无批次物料传空串）");
         }
 
-        // 发起角色分流（接口管可为）
-        if (InvFreeze.T_QUALITY.equals(type)) {
-            requireAny("发起质量冻结", "ROLE_QUALITY_ENG", "ROLE_ADMIN");
-        } else {
-            requireAny("发起财务冻结", "ROLE_FINANCE", "ROLE_ADMIN");
+        // 发起角色分流（接口管可为）；自动发起路径跳过（design D4）
+        if (enforceInitiatorRole) {
+            if (InvFreeze.T_QUALITY.equals(type)) {
+                requireAny("发起质量冻结", "ROLE_QUALITY_ENG", "ROLE_ADMIN");
+            } else {
+                requireAny("发起财务冻结", "ROLE_FINANCE", "ROLE_ADMIN");
+            }
+        } else if (!InvFreeze.T_QUALITY.equals(type)) {
+            throw new ServiceException(422, "复核自动发起仅支持质量冻结");
         }
 
         // 库存存在性（审批通过后执行仍会二次校验，此处避免批入虚空）
@@ -104,7 +130,7 @@ public class FreezeServiceImpl implements FreezeService {
         f.setReason(req.getReason().trim());
         f.setScope(scope);
         f.setStatus(InvFreeze.ST_PENDING);
-        f.setSource(InvFreeze.SRC_MANUAL);
+        f.setSource(isBlank(req.getSource()) ? InvFreeze.SRC_MANUAL : req.getSource());
         f.setRemark(req.getRemark());
         f.setApplyBy(currentUser());
         f.setFreezeNo(nextFreezeNo());
@@ -174,6 +200,60 @@ public class FreezeServiceImpl implements FreezeService {
         return f;
     }
 
+    // ---------- 影响评估预估（FR-4.4-5-3 异常列） ----------
+
+    @Override
+    public Map<String, Object> estimate(String warehouseCode, String itemCode, String batchNo,
+                                        String scope, BigDecimal qty) {
+        if (isBlank(warehouseCode) || isBlank(itemCode)) {
+            throw new ServiceException(422, "仓库与物料必填");
+        }
+        String sc = isBlank(scope) ? InvFreeze.SCOPE_BATCH : scope;
+        if (!InvFreeze.SCOPE_ALL.equals(sc) && !InvFreeze.SCOPE_BATCH.equals(sc)
+                && !InvFreeze.SCOPE_BIN.equals(sc)) {
+            throw new ServiceException(422, "影响范围仅支持全部库存/指定批次/指定仓位");
+        }
+        LambdaQueryWrapper<InvStock> qw = new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, warehouseCode)
+                .eq(InvStock::getItemCode, itemCode);
+        if (!InvFreeze.SCOPE_ALL.equals(sc)) {
+            if (batchNo == null) {
+                throw new ServiceException(422, "指定批次范围须选择批次（无批次物料传空串）");
+            }
+            qw.eq(InvStock::getBatchNo, batchNo);
+        }
+        List<InvStock> rows = stockDao.selectList(qw);
+        if (rows.isEmpty()) {
+            throw new ServiceException(422, "库存维度不存在");
+        }
+        BigDecimal available = rows.stream()
+                .map(s -> s.getAvailableQty() == null ? BigDecimal.ZERO : s.getAvailableQty())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // 关联 SO 数（ACTIVE 预留反查，同冻结执行口径）
+        LambdaQueryWrapper<Reservation> rq = new LambdaQueryWrapper<Reservation>()
+                .eq(Reservation::getStatus, Reservation.ST_ACTIVE)
+                .eq(Reservation::getWarehouseCode, warehouseCode)
+                .eq(Reservation::getItemCode, itemCode);
+        if (!InvFreeze.SCOPE_ALL.equals(sc)) {
+            rq.eq(Reservation::getBatchNo, batchNo == null ? "" : batchNo);
+        }
+        long soCount = reservationDao.selectList(rq).stream()
+                .map(Reservation::getSoNo).filter(java.util.Objects::nonNull).distinct().count();
+        // 阈值：FREEZE_IMPACT_RATIO（百分比，默认 50）
+        int ratioPct = sysParamService.getInt("FREEZE_IMPACT_RATIO", 50);
+        boolean needConfirm = InvFreeze.SCOPE_ALL.equals(sc)
+                || (qty != null && available.signum() > 0
+                    && qty.compareTo(available.multiply(BigDecimal.valueOf(ratioPct))
+                            .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)) >= 0);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("availableQty", available);
+        out.put("affectedQty", available);
+        out.put("affectedSoCount", soCount);
+        out.put("ratioPct", ratioPct);
+        out.put("needConfirm", needConfirm);
+        return out;
+    }
+
     // ---------- 查询（4.3.2） ----------
 
     @Override
@@ -209,8 +289,10 @@ public class FreezeServiceImpl implements FreezeService {
             m.put("applyBy", f.getApplyBy());
             m.put("releaseResult", f.getReleaseResult());
             m.put("releaseBasis", f.getReleaseBasis());
-            m.put("createDate", f.getCreateDate());
-            m.put("releasedAt", f.getReleasedAt());
+                m.put("createDate", f.getCreateDate());
+                m.put("releasedAt", f.getReleasedAt());
+                // 影响面快照（4.9.4 展开；未执行的冻结单为 null）
+                m.put("impactJson", f.getImpactJson());
             // NCR 来源行只读（解冻走 NCR 流程）；解冻入口仅原发起人
             m.put("readonly", InvFreeze.SRC_NCR.equals(f.getSource()));
             m.put("canUnfreeze", InvFreeze.ST_ACTIVE.equals(f.getStatus())

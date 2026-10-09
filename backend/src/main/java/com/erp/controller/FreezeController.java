@@ -45,6 +45,17 @@ public class FreezeController {
         return R.ok(service.applyUnfreeze(id, body.getReleaseResult(), body.getReleaseBasis()));
     }
 
+    @GetMapping("/estimate")
+    @Operation(summary = "影响评估预估（FR-4.4-5-3 异常列）",
+            description = "scope=ALL 或 冻结量 ≥ FREEZE_IMPACT_RATIO%×可用量 时 needConfirm=true；维度不存在 422")
+    public R<Map<String, Object>> estimate(@RequestParam String warehouseCode,
+                                           @RequestParam String itemCode,
+                                           @RequestParam(required = false) String batchNo,
+                                           @RequestParam(required = false, defaultValue = "BATCH") String scope,
+                                           @RequestParam(required = false) java.math.BigDecimal qty) {
+        return R.ok(service.estimate(warehouseCode, itemCode, batchNo, scope, qty));
+    }
+
     @GetMapping
     @Operation(summary = "冻结库存查询（类型/状态/物料/批次/关键字；NCR 来源只读）")
     public R<List<Map<String, Object>>> query(

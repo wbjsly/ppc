@@ -197,6 +197,19 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.PUT, "/api/inv/scrap-orders/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 出库作业台（add-outbound-workbench，spec outbound-workbench）：动作限 ADMIN/WAREHOUSE，队列查询认证
                 .antMatchers(HttpMethod.POST, "/api/inv/outbound/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 出库策略（add-outbound-strategy，spec outbound-strategy）：4.6.3 推荐确认写口限 ADMIN/WAREHOUSE，
+                // 4.6.1 试算/偏离与 4.6.2 预警为查询（/api/** 兜底 authenticated）
+                .antMatchers(HttpMethod.POST, "/api/inv/pick-recommend/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 拣货复核（add-picking-review，spec picking-review）：任务/扫码/复核/差异写口限 ADMIN/WAREHOUSE
+                .antMatchers(HttpMethod.POST, "/api/inv/pick-tasks/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/inv/pick-diffs/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/inv/pick-scans/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/inv/pick-reviews/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 波次管理（add-wave-management，spec wave-management）：写口限 ADMIN/WAREHOUSE
+                .antMatchers(HttpMethod.POST, "/api/inv/waves/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.PUT, "/api/inv/waves/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.POST, "/api/inv/routes/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.PUT, "/api/inv/routes/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 供应商门户（add-supplier-portal-collaboration D2）：门户 API 仅 ROLE_SUPPLIER，
                 // 且必须先于 /api/** 兜底；反向（门户账号打内部端点）由 PortalGuardInterceptor 403
                 // 销售发货（add-sales-lead-to-cash，spec sales-shipment tasks 9.10）

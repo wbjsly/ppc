@@ -14,6 +14,13 @@ public interface ScrapOrderService {
     /** 创建（DRAFT）：原因枚举、QUALITY 必填 NCR、行超在手 422、库龄快照固化 */
     Map<String, Object> create(InvScrapOrder head, List<InvScrapOrderLine> lines);
 
+    /**
+     * 效期评估链内部创建（spec expiry-management 需求④ SCRAP 分支，design D4）：
+     * 跳过 WAREHOUSE 角色校验（质量角色判定触发），其余校验同 create；
+     * 仅供 ExpiryEvalService 内部调用，不暴露 HTTP 口。reason=OTHER（免会签直批语义）。
+     */
+    Map<String, Object> createFromEval(InvScrapOrder head, List<InvScrapOrderLine> lines);
+
     /** 编辑（仅 DRAFT，整单行重建） */
     Map<String, Object> update(String id, InvScrapOrder head, List<InvScrapOrderLine> lines);
 

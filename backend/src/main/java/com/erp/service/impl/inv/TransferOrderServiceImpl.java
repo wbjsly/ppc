@@ -49,6 +49,9 @@ public class TransferOrderServiceImpl implements TransferOrderService {
     private final NoticeService noticeService;
     private final SysParamService sysParamService;
 
+    private final com.erp.service.inv.PickTaskGate pickTaskGate;
+    private final com.erp.service.inv.PickTaskService pickTaskService;
+
     public TransferOrderServiceImpl(TransferOrderDao orderDao,
                                     TransferOrderLineDao lineDao,
                                     InvWarehouseDao warehouseDao,
@@ -56,7 +59,9 @@ public class TransferOrderServiceImpl implements TransferOrderService {
                                     ObjectMapper jsonMapper,
                                     InternalTransferAccountingService accounting,
                                     NoticeService noticeService,
-                                    SysParamService sysParamService) {
+                                    SysParamService sysParamService,
+                                    com.erp.service.inv.PickTaskGate pickTaskGate,
+                                    com.erp.service.inv.PickTaskService pickTaskService) {
         this.orderDao = orderDao;
         this.lineDao = lineDao;
         this.warehouseDao = warehouseDao;
@@ -65,6 +70,8 @@ public class TransferOrderServiceImpl implements TransferOrderService {
         this.accounting = accounting;
         this.noticeService = noticeService;
         this.sysParamService = sysParamService;
+        this.pickTaskGate = pickTaskGate;
+        this.pickTaskService = pickTaskService;
     }
 
     // ---------- 创建 / 编辑 / 作废 ----------
@@ -197,6 +204,8 @@ public class TransferOrderServiceImpl implements TransferOrderService {
         if (!InvTransferOrder.ST_DRAFT.equals(o.getStatus())) {
             throw new ServiceException(422, "仅草稿状态可执行出库过账（当前 " + o.getStatus() + "）");
         }
+        // 拣货差异过账门闩（spec picking-review，BR-4.4-29）
+        pickTaskGate.assertClear("TRANSFER_OUT", o.getTransferNo());
         // L1 税务资质校验前置（跨法人；须在引擎过账前阻断保证无残留，spec internal-transfer-accounting）
         accounting.checkTaxQualified(o);
         List<InvTransferOrderLine> lines = listLines(id);
@@ -207,6 +216,8 @@ public class TransferOrderServiceImpl implements TransferOrderService {
             ln.itemCode = l.getItemCode();
             ln.itemName = l.getItemName();
             ln.batchNo = l.getBatchNo();
+            // 拣货推荐回写仓位（4.6.3）：有值则引擎按指定仓位扣减
+            ln.binCode = l.getBinCode();
             ln.qty = l.getQty();
             el.add(ln);
         }
@@ -220,6 +231,8 @@ public class TransferOrderServiceImpl implements TransferOrderService {
                 new LambdaUpdateWrapper<InvTransferOrder>()
                         .set(InvTransferOrder::getOutPostAt, LocalDateTime.now())
                         .set(InvTransferOrder::getSuspendedFlag, "0"));
+        // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
+        pickTaskService.markCompleted("TRANSFER_OUT", o.getTransferNo());
         log.info("transfer {} out-posted, txn={}, crossLe={}", o.getTransferNo(),
                 res.txnNos.size(), o.getCrossLe());
         return detail(id);

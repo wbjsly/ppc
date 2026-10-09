@@ -135,9 +135,21 @@
         </el-row>
       </el-form>
       <el-table v-if="preview.length" :data="preview" size="mini" border style="margin-bottom: 8px;" max-height="200">
-        <el-table-column prop="itemCode" label="物料" width="150" />
-        <el-table-column prop="batchNo" label="FIFO 批次" width="150" />
-        <el-table-column prop="qty" label="本批数量" width="100" />
+        <el-table-column prop="itemCode" label="物料" width="140" />
+        <el-table-column prop="batchNo" label="FIFO 推荐批次" width="140" />
+        <el-table-column prop="qty" label="本批数量" width="90" />
+        <el-table-column label="指定批次（可改）" width="150">
+          <template #default="{ row }">
+            <el-input v-model="row.overrideBatchNo" size="small" placeholder="默认=推荐批次"
+              clearable />
+          </template>
+        </el-table-column>
+        <el-table-column label="改批原因（改批必填）" min-width="160">
+          <template #default="{ row }">
+            <el-input v-model="row.deviationReason" size="small" placeholder="指定批次≠推荐时必填"
+              clearable />
+          </template>
+        </el-table-column>
       </el-table>
       <el-alert v-if="previewErr" type="error" :closable="false" :title="previewErr" style="margin-bottom: 8px;" />
       <template #footer>
@@ -219,13 +231,29 @@ async function doPreview() {
 }
 
 async function create() {
+  // 改批前置校验（spec outbound-strategy：指定≠推荐须填原因，后端 422 兜底）
+  const lines = []
+  for (const p of preview.value) {
+    const override = (p.overrideBatchNo || '').trim()
+    const reason = (p.deviationReason || '').trim()
+    const changed = override && override !== p.batchNo
+    if (changed && !reason) {
+      ElMessage.error(`批次 ${p.batchNo} 被改写为 ${override}，请填写改批原因`)
+      return
+    }
+    lines.push({
+      itemCode: p.itemCode, qty: p.qty,
+      batchNo: override || undefined,
+      deviationReason: changed ? reason : undefined
+    })
+  }
   submitting.value = true
   try {
     const res = await createIssueApi({
       issueType: form.issueType,
       supplierId: form.issueType === 'VMI' ? form.supplierId : undefined,
       workOrderNo: form.workOrderNo, dept: form.dept, purpose: form.purpose,
-      lines: [{ itemCode: form.itemCode, qty: form.qty }]
+      lines
     })
     ElMessage.success(`领料单 ${res.data.issue.issueNo} 已创建（DRAFT）`)
     dialog.value = false

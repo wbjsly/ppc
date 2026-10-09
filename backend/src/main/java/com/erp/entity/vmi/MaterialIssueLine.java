@@ -18,6 +18,9 @@ public class MaterialIssueLine extends BaseEntity {
     private String itemCode;
     private String itemName;
     private String batchNo;
+
+    /** 拣货推荐回写仓位（4.6.3；空=过账时引擎位级 FIFO 分配） */
+    private String binCode;
     /** 本批领用数量 */
     private BigDecimal qty;
     /** OWN / VMI（头冗余便于检索） */
