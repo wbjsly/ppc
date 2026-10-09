@@ -1,5 +1,6 @@
 package com.erp.schedule;
 
+import com.erp.service.inv.InvReportService;
 import com.erp.service.inv.StockSnapshotService;
 import com.erp.service.system.NoticeService;
 import lombok.extern.slf4j.Slf4j;
@@ -21,13 +22,16 @@ public class StockDayCloseScheduler {
 
     private final StockSnapshotService stockSnapshotService;
     private final NoticeService noticeService;
+    private final InvReportService reportService;
     private final int retryMax;
 
     public StockDayCloseScheduler(StockSnapshotService stockSnapshotService,
                                   NoticeService noticeService,
+                                  InvReportService reportService,
                                   @Value("${app.inv.dayclose-retry-max:3}") int retryMax) {
         this.stockSnapshotService = stockSnapshotService;
         this.noticeService = noticeService;
+        this.reportService = reportService;
         this.retryMax = retryMax;
     }
 
@@ -38,6 +42,12 @@ public class StockDayCloseScheduler {
         for (int attempt = 1; attempt <= Math.max(1, retryMax); attempt++) {
             try {
                 stockSnapshotService.runDayClose();
+                // 呆滞每日推送（spec：随日结尾部执行；独立 try——扫描异常不进日结重试、不阻断）
+                try {
+                    reportService.dailySlowMovingScan();
+                } catch (Exception se) {
+                    log.warn("slow-moving scan after day close failed: {}", se.getMessage());
+                }
                 return;
             } catch (Exception e) {
                 last = e;

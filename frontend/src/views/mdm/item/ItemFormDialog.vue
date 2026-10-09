@@ -93,6 +93,16 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="ABC 分类">
+            <el-select v-model="form.abcClass" clearable placeholder="未分类（留空）" style="width: 100%;">
+              <el-option label="A（高值/高频）" value="A" />
+              <el-option label="B（中值）" value="B" />
+              <el-option label="C（低值）" value="C" />
+            </el-select>
+            <div class="form-tip">库存报表库龄/周转分组维度（4.14），留空=未分类</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="批次管理">
             <el-switch v-model="form.batchFlag" active-value="1" inactive-value="0" />
           </el-form-item>
@@ -219,6 +229,7 @@ const fieldLabels = {
   itemName: '物料名称', categoryCode: '物料分类', baseUnit: '计量单位',
   materialGroup: '物料组', purchaseType: '采购类型', storageCondition: '存储条件',
   tempLevel: '温湿度等级', hazardLevel: '危化品等级', cleanLevel: '洁净等级',
+  abcClass: 'ABC 分类',
   riskGrade: '风险等级',
   batchFlag: '批次管理', serialFlag: '序列管理', shelfLifeDays: '保质期', safetyStock: '安全库存',
   leadTimeDays: '采购提前期', altItemCode: '替代物料', packingSpec: '包装规格',
@@ -254,7 +265,7 @@ function initForm() {
         purchaseType: 'BUY', storageCondition: 'NORMAL', batchFlag: '0',
         serialFlag: '0',
         riskGrade: 'C',
-        tempLevel: null, hazardLevel: null, cleanLevel: null,
+        tempLevel: null, hazardLevel: null, cleanLevel: null, abcClass: null,
         shelfLifeDays: null, safetyStock: null, leadTimeDays: null,
         altItemCode: '', packingSpec: '', barcode: '', bomVersion: ''
       })
@@ -338,6 +349,7 @@ async function submitForm() {
           baseUnit: inherit.baseUnit, materialGroup: inherit.materialGroup,
           purchaseType: inherit.purchaseType, storageCondition: inherit.storageCondition,
           tempLevel: inherit.tempLevel, hazardLevel: inherit.hazardLevel, cleanLevel: inherit.cleanLevel,
+          abcClass: inherit.abcClass || null,
           batchFlag: inherit.batchFlag, serialFlag: inherit.serialFlag, shelfLifeDays: inherit.shelfLifeDays,
           packingSpec: inherit.packingSpec, barcode: inherit.barcode,
           altItemCode: inherit.itemCode, safetyStock: inherit.safetyStock,

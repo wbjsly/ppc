@@ -34,7 +34,7 @@ public class MdmItemServiceImpl implements MdmItemService {
 
     private static final String SNAPSHOT_FIELDS =
             "itemCode,itemName,categoryCode,baseUnit,materialGroup,purchaseType,storageCondition," +
-            "tempLevel,hazardLevel,cleanLevel," +
+            "tempLevel,hazardLevel,cleanLevel,abcClass," +
             "altItemCode,safetyStock,leadTimeDays,batchFlag,shelfLifeDays,packingSpec,barcode,bomVersion,status";
 
     private static final String ILLEGAL_CHARS = "<>&";
@@ -644,6 +644,24 @@ public class MdmItemServiceImpl implements MdmItemService {
         requireDictIfPresent("TEMP_LEVEL", item.getTempLevel());
         requireDictIfPresent("HAZARD_LEVEL", item.getHazardLevel());
         requireDictIfPresent("CLEAN_LEVEL", item.getCleanLevel());
+        requireAbcClass(item);
+    }
+
+    /**
+     * ABC 分类取值域校验（change add-inventory-reports，spec item-master-creation MODIFIED）：
+     * A/B/C 或空（NULL=未分类，报表汇总归入「未分类」），非法 422。
+     */
+    private void requireAbcClass(MdmItem item) {
+        String v = item.getAbcClass();
+        if (!isNotBlank(v)) {
+            item.setAbcClass(null);   // 归一化：空串 → NULL（未分类）
+            return;
+        }
+        v = v.trim();
+        if (!List.of("A", "B", "C").contains(v)) {
+            throw new ServiceException(422, "ABC 分类仅支持 A/B/C 或留空（当前：" + v + "）");
+        }
+        item.setAbcClass(v);
     }
 
     private void requireDictIfPresent(String dictType, String code) {
@@ -736,6 +754,7 @@ public class MdmItemServiceImpl implements MdmItemService {
         appendDiff(sb, "tempLevel", oldRow.getTempLevel(), newRow.getTempLevel());
         appendDiff(sb, "hazardLevel", oldRow.getHazardLevel(), newRow.getHazardLevel());
         appendDiff(sb, "cleanLevel", oldRow.getCleanLevel(), newRow.getCleanLevel());
+        appendDiff(sb, "abcClass", oldRow.getAbcClass(), newRow.getAbcClass());
         appendDiff(sb, "altItemCode", oldRow.getAltItemCode(), newRow.getAltItemCode());
         appendDiff(sb, "safetyStock", str(oldRow.getSafetyStock()), str(newRow.getSafetyStock()));
         appendDiff(sb, "leadTimeDays", str(oldRow.getLeadTimeDays()), str(newRow.getLeadTimeDays()));
@@ -832,6 +851,7 @@ public class MdmItemServiceImpl implements MdmItemService {
             case "packingSpec": return i.getPackingSpec();
             case "barcode": return i.getBarcode();
             case "bomVersion": return i.getBomVersion();
+            case "abcClass": return i.getAbcClass();
             case "status": return i.getStatus();
             default: return null;
         }

@@ -187,7 +187,7 @@ class AnalysisRulesUnitTest {
         BiPriceAlertDao alert = mock(BiPriceAlertDao.class);
         when(export.countActiveExports(anyString())).thenReturn(0);
         when(export.insert(any())).thenAnswer(inv -> 1);
-        ExportServiceImpl svc = new ExportServiceImpl(export, snap, alert);
+        ExportServiceImpl svc = new ExportServiceImpl(export, snap, alert, mock(com.erp.service.inv.InvReportService.class));
         ReflectionTestUtils.setField(svc, "exportRowLimit", 10000L);
         ReflectionTestUtils.setField(svc, "exportParallelMax", 3);
         asUser("u1", "PM");
@@ -206,7 +206,7 @@ class AnalysisRulesUnitTest {
         BiCostSnapshotDao snap = mock(BiCostSnapshotDao.class);
         BiPriceAlertDao alert = mock(BiPriceAlertDao.class);
         when(export.countActiveExports("u1")).thenReturn(3);
-        ExportServiceImpl svc = new ExportServiceImpl(export, snap, alert);
+        ExportServiceImpl svc = new ExportServiceImpl(export, snap, alert, mock(com.erp.service.inv.InvReportService.class));
         ReflectionTestUtils.setField(svc, "exportRowLimit", 10000L);
         ReflectionTestUtils.setField(svc, "exportParallelMax", 3);
         asUser("u1", "PM");

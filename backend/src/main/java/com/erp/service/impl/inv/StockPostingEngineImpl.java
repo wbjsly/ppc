@@ -57,12 +57,20 @@ public class StockPostingEngineImpl implements StockPostingEngine {
     private final MdmItemDao itemDao;
     private final OutboxPublisher outboxPublisher;
     private final com.erp.service.SysParamService sysParamService;
+    private final com.erp.dao.inv.InvCountTaskDao countTaskDao;
+    private final com.erp.dao.inv.InvCountLineDao countLineDao;
+
+    /** 盘点调整类型（spec count-management：豁免盘点锁校验——调整自身必须能过） */
+    private static final java.util.Set<String> COUNT_ADJUST_TYPES =
+            java.util.Set.of("ADJUST_IN", "ADJUST_OUT");
 
     public StockPostingEngineImpl(InvDocTypeDao docTypeDao, InvStockDao stockDao,
                                   InvBatchDao batchDao, InvTransactionDao txnDao,
                                   InvSerialDao serialDao, ReservationDao reservationDao,
                                   MdmItemDao itemDao, OutboxPublisher outboxPublisher,
-                                  com.erp.service.SysParamService sysParamService) {
+                                  com.erp.service.SysParamService sysParamService,
+                                  com.erp.dao.inv.InvCountTaskDao countTaskDao,
+                                  com.erp.dao.inv.InvCountLineDao countLineDao) {
         this.docTypeDao = docTypeDao;
         this.stockDao = stockDao;
         this.batchDao = batchDao;
@@ -72,6 +80,8 @@ public class StockPostingEngineImpl implements StockPostingEngine {
         this.itemDao = itemDao;
         this.outboxPublisher = outboxPublisher;
         this.sysParamService = sysParamService;
+        this.countTaskDao = countTaskDao;
+        this.countLineDao = countLineDao;
     }
 
     // ================= 过账入口 =================
@@ -83,6 +93,9 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             throw new ServiceException(422, "过账行不能为空");
         }
         InvDocType type = requireEnabledType(req.typeCode);
+        // 校验链 ⑤（count-management BR-4.4-36）：行目标仓位在盘点锁中 → 422；
+        // ADJUST_IN/ADJUST_OUT 豁免（调整自身必须能过）。按请求全部行的仓位集合一次查询防 N+1。
+        checkCountLock(req);
         boolean isIn = InvDocType.DIR_IN.equals(type.getDirection());
         Result out = new Result();
         out.allocations = new ArrayList<>();
@@ -108,6 +121,68 @@ public class StockPostingEngineImpl implements StockPostingEngine {
     }
 
     // ================= IN =================
+
+    /**
+     * 校验链 ⑤：行显式目标仓位（IN 落位 / OUT 指定仓位）存在 COUNTING 盘点任务 → 422
+     * 「仓位盘点冻结中」（BR-4.4-36）；ADJUST 类型豁免（入口已过滤，本方法只查一次集合）。
+     * 缺省分配行（bin 空）不在本环拦——由 postOut 挑序剔除锁位行兜底。
+     */
+    private void checkCountLock(Request req) {
+        if (COUNT_ADJUST_TYPES.contains(req.typeCode)) {
+            return;
+        }
+        // 仓库 → 显式仓位集合
+        Map<String, java.util.Set<String>> binsByWh = new LinkedHashMap<>();
+        for (Line line : req.lines) {
+            String bin = str(line.binCode).trim();
+            if (bin.isEmpty()) {
+                continue;
+            }
+            binsByWh.computeIfAbsent(str(line.warehouseCode), k -> new java.util.LinkedHashSet<>())
+                    .add(bin);
+        }
+        for (Map.Entry<String, java.util.Set<String>> e : binsByWh.entrySet()) {
+            java.util.Set<String> locked = loadCountLockedBins(e.getKey());
+            if (locked.isEmpty()) {
+                continue;
+            }
+            for (String bin : e.getValue()) {
+                if (locked.contains(bin)) {
+                    throw new ServiceException(422, "仓位盘点冻结中：" + e.getKey()
+                            + " / " + bin + "（盘点任务进行中，紧急出入库请联系仓库主管申请临时解冻）");
+                }
+            }
+        }
+    }
+
+    /**
+     * 某仓库 COUNTING 盘点任务的锁仓位集合（每仓 2 次查询：任务→行；'' 未分配位永不锁）。
+     * postOut 挑序与显式校验共用。
+     */
+    private java.util.Set<String> loadCountLockedBins(String warehouseCode) {
+        List<com.erp.entity.inv.InvCountTask> tasks = countTaskDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.inv.InvCountTask>()
+                        .eq(com.erp.entity.inv.InvCountTask::getWarehouseCode, warehouseCode)
+                        .eq(com.erp.entity.inv.InvCountTask::getStatus,
+                                com.erp.entity.inv.InvCountTask.ST_COUNTING));
+        if (tasks.isEmpty()) {
+            return java.util.Set.of();
+        }
+        List<String> taskIds = new ArrayList<>();
+        for (com.erp.entity.inv.InvCountTask t : tasks) {
+            taskIds.add(t.getId());
+        }
+        java.util.Set<String> bins = new java.util.HashSet<>();
+        for (com.erp.entity.inv.InvCountLine l : countLineDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.inv.InvCountLine>()
+                        .in(com.erp.entity.inv.InvCountLine::getTaskId, taskIds))) {
+            String bin = str(l.getBinCode());
+            if (!bin.isEmpty()) {
+                bins.add(bin);
+            }
+        }
+        return bins;
+    }
 
     private void postIn(Request req, InvDocType type, Result out) {
         List<IndexedLine> ordered = new ArrayList<>();
@@ -303,6 +378,22 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                     .orderByAsc(InvStock::getBatchNo)
                     .orderByAsc(InvStock::getBinCode)
                     .last("FOR UPDATE"));
+            // 挑序剔除被盘点仓位位行（count-management design D2）：分配阶段即避开，
+            // 不落"分配成功后才 422 盘点锁"；ADJUST 类型豁免。'' 未分配位永不锁。
+            boolean countLockExcluded = false;
+            if (!COUNT_ADJUST_TYPES.contains(type.getTypeCode())) {
+                java.util.Set<String> countLockedBins = loadCountLockedBins(first.warehouseCode);
+                if (!countLockedBins.isEmpty()) {
+                    java.util.Iterator<InvStock> it = locked.iterator();
+                    while (it.hasNext()) {
+                        InvStock r = it.next();
+                        if (countLockedBins.contains(str(r.getBinCode()))) {
+                            it.remove();
+                            countLockExcluded = true;
+                        }
+                    }
+                }
+            }
             // 行状态（列值 + 锁后读取的批次级 ACTIVE 预留；预留不落位行——按批次预算统一封顶，
             // 跨位多行合计只扣一次，避免批次预留被重复减）
             Map<String, RowState> state = new HashMap<>();
@@ -371,8 +462,11 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                     // 指定批次：组内该批次全部位行按挑序逐行扣减（跨位拆行）
                     List<RowState> batchRows = rowsOfBatch(pickOrder, specified);
                     if (batchRows.isEmpty()) {
-                        throw new ServiceException(422, "库存批次不存在："
-                                + line.itemCode + " / " + specified);
+                        // 指定批次全部位行都在被盘点锁仓位（挑序已剔除）→ 盘点锁文案而非"批次不存在"
+                        throw new ServiceException(422, countLockExcluded
+                                ? "仓位盘点冻结中，可用未锁库存不足：" + line.itemCode
+                                    + " 批次 " + specified
+                                : "库存批次不存在：" + line.itemCode + " / " + specified);
                     }
                     // 指定仓位（line.binCode 非空，4.6.3 回写/行级人工指定，design D3）：
                     // 收窄到单个位行——不足 422，不静默跨位补（spec OUT 批次分配 指定仓位场景）
@@ -414,10 +508,16 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                         need = need.subtract(take);
                     }
                     if (need.signum() > 0) {
-                        throw new ServiceException(422, "库存不足，当前可用量为 "
-                                + strip(totalBasis.max(BigDecimal.ZERO)) + "："
-                                + line.itemCode + "（仓库 " + line.warehouseCode
-                                + "，需求 " + strip(line.qty) + "）");
+                        // 有位行因盘点锁被剔除且未锁库存不够 → 盘点锁文案细化（design D2）
+                        throw new ServiceException(422, countLockExcluded
+                                ? "仓位盘点冻结中，可用未锁库存不足，当前可用量为 "
+                                    + strip(totalBasis.max(BigDecimal.ZERO)) + "："
+                                    + line.itemCode + "（仓库 " + line.warehouseCode
+                                    + "，需求 " + strip(line.qty) + "）"
+                                : "库存不足，当前可用量为 "
+                                    + strip(totalBasis.max(BigDecimal.ZERO)) + "："
+                                    + line.itemCode + "（仓库 " + line.warehouseCode
+                                    + "，需求 " + strip(line.qty) + "）");
                     }
                 }
             }

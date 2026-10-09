@@ -29,6 +29,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 /**
@@ -55,6 +56,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
 
     private final com.erp.service.inv.PickTaskGate pickTaskGate;
     private final com.erp.service.inv.PickTaskService pickTaskService;
+    /** 召回处置回调（spec trace-recall：带 TR 关联的报废过账后置流向行 DISPOSED） */
+    private final com.erp.service.inv.RecallService recallService;
 
     public ScrapOrderServiceImpl(ScrapOrderDao scrapDao,
                                  ScrapOrderLineDao lineDao,
@@ -64,7 +67,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
                                  StockPostingEngine engine,
                                  GlVoucherService voucherService,
                                  com.erp.service.inv.PickTaskGate pickTaskGate,
-                                 com.erp.service.inv.PickTaskService pickTaskService) {
+                                 com.erp.service.inv.PickTaskService pickTaskService,
+                                 com.erp.service.inv.RecallService recallService) {
         this.scrapDao = scrapDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -74,6 +78,7 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         this.voucherService = voucherService;
         this.pickTaskGate = pickTaskGate;
         this.pickTaskService = pickTaskService;
+        this.recallService = recallService;
     }
 
     // ---------- 创建 / 编辑 / 作废（4.1） ----------
@@ -116,6 +121,7 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         upd.setVerNo(o.getVerNo());
         upd.setReason(prep.getReason());
         upd.setNcrNo(prep.getNcrNo());
+        upd.setTraceNo(prep.getTraceNo());
         upd.setWarehouseCode(prep.getWarehouseCode());
         upd.setTotalQty(prep.getTotalQty());
         upd.setTotalAmount(prep.getTotalAmount());
@@ -206,6 +212,7 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         InvScrapOrder o = new InvScrapOrder();
         o.setReason(reason);
         o.setNcrNo(isBlank(head.getNcrNo()) ? null : head.getNcrNo().trim());
+        o.setTraceNo(isBlank(head.getTraceNo()) ? null : head.getTraceNo().trim());
         o.setWarehouseCode(head.getWarehouseCode());
         o.setTotalQty(totalQty);
         o.setTotalAmount(totalAmount);
@@ -305,6 +312,7 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         }
         List<InvScrapOrderLine> lines = listLines(id);
         List<StockPostingEngine.Line> el = new ArrayList<>();
+        Set<String> traceBatches = new java.util.LinkedHashSet<>();
         for (InvScrapOrderLine l : lines) {
             StockPostingEngine.Line ln = new StockPostingEngine.Line();
             ln.warehouseCode = o.getWarehouseCode();
@@ -315,6 +323,14 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
             ln.binCode = l.getBinCode();
             ln.qty = l.getQty();
             ln.serials = parseSerials(l.getSerials());
+            // qcFirst（spec scrap-order MODIFIED / trace-recall 处置闭环）：
+            // 批次 QC 冻结列有量则先核销 QC_QTY、不足再扣 AVAILABLE；合计不足由引擎 422 兜底
+            if (batchQcQty(o.getWarehouseCode(), l.getItemCode(), l.getBatchNo()).signum() > 0) {
+                ln.qcFirst = true;
+            }
+            if (!isBlank(o.getTraceNo())) {
+                traceBatches.add(l.getBatchNo());
+            }
             el.add(ln);
         }
         StockPostingEngine.Result res = engine.post(StockPostingEngine.Request.of(
@@ -334,6 +350,10 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
                         .set(InvScrapOrder::getPostAt, LocalDateTime.now()));
         // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
         pickTaskService.markCompleted("SCRAP_OUT", o.getScrapNo());
+        // 召回处置回调（design D6）：带 TR 关联的报废把 FROZEN/RECEIVED 流向行置 DISPOSED
+        if (!isBlank(o.getTraceNo())) {
+            recallService.markDisposed(o.getTraceNo(), traceBatches);
+        }
         log.info("scrap {} posted, txn={}, voucher 1901/1403={}", o.getScrapNo(),
                 res.txnNos.size(), o.getTotalAmount());
         return detail(id);
@@ -510,6 +530,16 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
             }
         }
         return prefix + String.format("%04d", max + 1);
+    }
+
+    /** 批次 QC 冻结列余量（qcFirst 判定用；维度不存在按 0） */
+    private BigDecimal batchQcQty(String warehouseCode, String itemCode, String batchNo) {
+        InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, warehouseCode)
+                .eq(InvStock::getItemCode, itemCode)
+                .eq(InvStock::getBatchNo, batchNo)
+                .last("LIMIT 1"));
+        return s == null || s.getQcQty() == null ? BigDecimal.ZERO : s.getQcQty();
     }
 
     private void requireWrite(String action) {

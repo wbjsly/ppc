@@ -40,6 +40,8 @@ public class ExportServiceImpl implements ExportService {
     private final BiExportTaskDao exportTaskDao;
     private final BiCostSnapshotDao snapshotDao;
     private final BiPriceAlertDao alertDao;
+    /** inv-report 数据集（change add-inventory-reports，spec 报表双路径导出） */
+    private final com.erp.service.inv.InvReportService reportService;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     @Value("${app.bi.export-row-limit:10000}")
@@ -52,10 +54,12 @@ public class ExportServiceImpl implements ExportService {
     private int queryTimeoutSeconds;
 
     public ExportServiceImpl(BiExportTaskDao exportTaskDao, BiCostSnapshotDao snapshotDao,
-                             BiPriceAlertDao alertDao) {
+                             BiPriceAlertDao alertDao,
+                             com.erp.service.inv.InvReportService reportService) {
         this.exportTaskDao = exportTaskDao;
         this.snapshotDao = snapshotDao;
         this.alertDao = alertDao;
+        this.reportService = reportService;
     }
 
     @Override
@@ -168,7 +172,22 @@ public class ExportServiceImpl implements ExportService {
         long rows = 0;
         try (PrintWriter w = new PrintWriter(Files.newBufferedWriter(file, StandardCharsets.UTF_8))) {
             w.println("# watermark: " + watermark);   // 水印行（C-4.10-05）
-            if ("alerts".equals(dataset)) {
+            if ("inv-report".equals(dataset)) {
+                // 库存报表数据集（design D7：复用三查询方法写 CSV，治理语义不变）
+                String rtype = String.valueOf(p.getOrDefault("type", "realtime"));
+                Map<String, Object> rp = new LinkedHashMap<>(p);
+                rp.put("maxRows", exportRowLimit + 1);
+                Map<String, Object> data = reportService.exportRows(rtype, rp);
+                @SuppressWarnings("unchecked")
+                List<String> headers = (List<String>) data.get("headers");
+                @SuppressWarnings("unchecked")
+                List<List<Object>> rrows = (List<List<Object>>) data.get("rows");
+                w.println(csvLine(headers));
+                for (List<Object> r : rrows) {
+                    w.println(csvLine(r));
+                    rows++;
+                }
+            } else if ("alerts".equals(dataset)) {
                 w.println("月份,物料,品类,环比%,阈值%,状态,处置人");
                 for (BiPriceAlert a : alertDao.selectForManage(
                         p.get("monthTag") == null ? null : String.valueOf(p.get("monthTag")),
@@ -226,5 +245,22 @@ public class ExportServiceImpl implements ExportService {
 
     private static String nvl(Object v) {
         return v == null ? "" : String.valueOf(v);
+    }
+
+    /** CSV 行转义（inv-report 数据集） */
+    private static String csvLine(List<?> row) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < row.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            String v = row.get(i) == null ? "" : String.valueOf(row.get(i));
+            if (v.contains(",") || v.contains("\"") || v.contains("\n")) {
+                sb.append('"').append(v.replace("\"", "\"\"")).append('"');
+            } else {
+                sb.append(v);
+            }
+        }
+        return sb.toString();
     }
 }

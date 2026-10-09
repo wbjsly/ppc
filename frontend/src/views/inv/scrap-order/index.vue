@@ -86,7 +86,11 @@
         </el-row>
         <el-row :gutter="16">
           <el-col :span="14">
-            <el-form-item label="报废仓库" required>
+            <el-form-item label="追溯单号">
+        <el-input v-model="form.traceNo" placeholder="召回处置关联追溯单号（可空，4.13 联动带入）"
+          clearable />
+      </el-form-item>
+      <el-form-item label="报废仓库" required>
               <el-select v-model="form.warehouseCode" placeholder="选择仓库" style="width: 100%">
                 <el-option v-for="w in warehouses" :key="w.whCode" :label="`${w.whName}（${w.whCode}）`"
                   :value="w.whCode" />
@@ -158,6 +162,7 @@
           <el-tag :type="reasonTag(current.reason)" size="small">{{ reasonText(current.reason) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="NCR">{{ current.ncrNo || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="追溯单号">{{ current.traceNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="仓库">{{ current.warehouseCode }}</el-descriptions-item>
         <el-descriptions-item label="数量">{{ current.totalQty }}</el-descriptions-item>
         <el-descriptions-item label="金额">{{ current.totalAmount }}</el-descriptions-item>
@@ -230,6 +235,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createScrapApi, cancelScrapApi, submitScrapApprovalApi, approveScrapApi,
@@ -252,7 +258,16 @@ const warehouses = ref([])
 const itemOptions = ref([])
 
 const createVisible = ref(false)
-const form = ref({ reason: 'STALE', ncrNo: '', warehouseCode: '', remark: '', lines: [] })
+const route = useRoute()
+// 4.13.2 召回处置联动：/inv/scrap-order?traceNo=&batchNo=&itemCode=&warehouseCode=
+const prefill = computed(() => ({
+  reason: route.query.reason || '',
+  traceNo: route.query.traceNo || '',
+  batchNo: route.query.batchNo || '',
+  itemCode: route.query.itemCode || '',
+  warehouseCode: route.query.warehouseCode || ''
+}))
+const form = ref({ reason: 'STALE', ncrNo: '', traceNo: '', warehouseCode: '', remark: '', lines: [] })
 
 const detailVisible = ref(false)
 const current = ref({})
@@ -323,7 +338,9 @@ async function loadRefs() {
 }
 
 function openCreate() {
-  form.value = { reason: 'STALE', ncrNo: '', warehouseCode: '', remark: '', lines: [blankLine()] }
+  form.value = { reason: prefill.value.reason || 'STALE', ncrNo: '', traceNo: prefill.value.traceNo || '', warehouseCode: prefill.value.warehouseCode || '', remark: '', lines: [blankLine()] }
+    if (prefill.value.batchNo) { form.value.lines[0].batchNo = prefill.value.batchNo }
+    if (prefill.value.itemCode) { form.value.lines[0].itemCode = prefill.value.itemCode }
   createVisible.value = true
 }
 async function doCreate() {

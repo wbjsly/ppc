@@ -37,6 +37,8 @@ public class InvScrapOrder extends BaseEntity {
     private String reason;
     /** NCR 关联号（QUALITY 必填） */
     private String ncrNo;
+    /** 关联追溯单号（召回处置闭环，可空；迁移 115，spec trace-recall 报废处置需求） */
+    private String traceNo;
     private String warehouseCode;
     private String status;
     /** 三方会签审批实例 ID（仅 STALE） */

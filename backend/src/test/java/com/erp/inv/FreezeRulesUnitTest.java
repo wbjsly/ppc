@@ -70,7 +70,8 @@ class FreezeRulesUnitTest {
         var sysParamService = mock(com.erp.service.SysParamService.class);
         when(sysParamService.getInt(eq("FREEZE_IMPACT_RATIO"), anyInt())).thenReturn(50);
         service = new FreezeServiceImpl(freezeDao, stockDao, engine, reservationService,
-                reservationDao, sysParamService);
+                reservationDao, sysParamService,
+                mock(com.erp.dao.inv.TraceOrderDao.class), mock(com.erp.dao.inv.TraceFlowDao.class));
         var pauseService = mock(com.erp.service.inv.FreezePauseService.class);
         callback = new FreezeCallback(freezeDao, stockDao, reservationDao,
                 reservationService, noticeService, poLineDao, poDao, pauseService,

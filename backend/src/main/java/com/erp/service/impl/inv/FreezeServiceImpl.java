@@ -47,16 +47,23 @@ public class FreezeServiceImpl implements FreezeService {
     private final ReservationService reservationService;
     private final ReservationDao reservationDao;
     private final SysParamService sysParamService;
+    /** C-4.4-07 召回未结案解冻拦截（spec trace-recall / freeze-management MODIFIED） */
+    private final com.erp.dao.inv.TraceOrderDao traceOrderDao;
+    private final com.erp.dao.inv.TraceFlowDao traceFlowDao;
 
     public FreezeServiceImpl(InvFreezeDao freezeDao, InvStockDao stockDao,
                              ApprovalEngine approvalEngine, ReservationService reservationService,
-                             ReservationDao reservationDao, SysParamService sysParamService) {
+                             ReservationDao reservationDao, SysParamService sysParamService,
+                             com.erp.dao.inv.TraceOrderDao traceOrderDao,
+                             com.erp.dao.inv.TraceFlowDao traceFlowDao) {
         this.freezeDao = freezeDao;
         this.stockDao = stockDao;
         this.approvalEngine = approvalEngine;
         this.reservationService = reservationService;
         this.reservationDao = reservationDao;
         this.sysParamService = sysParamService;
+        this.traceOrderDao = traceOrderDao;
+        this.traceFlowDao = traceFlowDao;
     }
 
     // ---------- 冻结申请 ----------
@@ -164,6 +171,8 @@ public class FreezeServiceImpl implements FreezeService {
         if (InvFreeze.SRC_NCR.equals(f.getSource())) {
             throw new ServiceException(422, "NCR 来源冻结请在 NCR 流程解冻（双入口隔离）");
         }
+        // C-4.4-07/BR-4.4-51 L1：召回未结案拦截（NCR 双入口隔离保持不变——上一行先抛）
+        assertTraceClosed(f.getBatchNo());
         if (!InvFreeze.ST_ACTIVE.equals(f.getStatus())) {
             throw new ServiceException(422, "仅生效中的冻结可解冻（当前：" + f.getStatus() + "）");
         }
@@ -198,6 +207,32 @@ public class FreezeServiceImpl implements FreezeService {
         log.info("unfreeze {} submitted by {}: approver={}", f.getFreezeNo(),
                 currentUser(), approverRole);
         return f;
+    }
+
+    /** C-4.4-07：批次存在非 CLOSED 追溯单 → 422「召回未结案」+ 未闭环流向清单（一次查询） */
+    private void assertTraceClosed(String batchNo) {
+        if (batchNo == null || batchNo.trim().isEmpty()) {
+            return;   // 全部库存范围冻结无批次维度，无法按批拦截
+        }
+        var open = traceOrderDao.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.erp.entity.inv.TraceOrder>()
+                .eq(com.erp.entity.inv.TraceOrder::getBatchNo, batchNo)
+                .ne(com.erp.entity.inv.TraceOrder::getStatus, "CLOSED")
+                .last("LIMIT 1"));
+        if (open == null) {
+            return;
+        }
+        var pending = traceFlowDao.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.erp.entity.inv.TraceFlow>()
+                .eq(com.erp.entity.inv.TraceFlow::getTraceId, open.getId())
+                .notIn(com.erp.entity.inv.TraceFlow::getStatus,
+                        "DISPOSED", "LINKED", "INTERCEPTED", "RECEIVED", "REJECTED", "FAILED"));
+        List<String> summary = new ArrayList<>();
+        for (var fl : pending) {
+            summary.add(fl.getFlowType() + "/" + fl.getStatus()
+                    + (fl.getCustomerName() == null ? "" : "@" + fl.getCustomerName()));
+        }
+        throw new ServiceException(422, "召回未结案：批次 " + batchNo + " 存在未结案追溯单 "
+                + open.getTraceNo() + "，结案后方可解冻（C-4.4-07）。未闭环召回清单："
+                + (summary.isEmpty() ? "（无）" : summary));
     }
 
     // ---------- 影响评估预估（FR-4.4-5-3 异常列） ----------

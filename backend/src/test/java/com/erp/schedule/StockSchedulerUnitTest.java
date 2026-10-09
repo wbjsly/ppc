@@ -34,7 +34,8 @@ class StockSchedulerUnitTest {
     void dayCloseSuccessNoNotice() {
         when(snapshotService.runDayClose()).thenReturn(Map.of("inserted", 3, "skipped", false));
         StockDayCloseScheduler scheduler =
-                new StockDayCloseScheduler(snapshotService, noticeService, 3);
+                new StockDayCloseScheduler(snapshotService, noticeService,
+                mock(com.erp.service.inv.InvReportService.class), 3);
 
         scheduler.dailyDayClose();
 
@@ -49,7 +50,8 @@ class StockSchedulerUnitTest {
         when(snapshotService.runDayClose())
                 .thenThrow(new RuntimeException("连接超时"));
         StockDayCloseScheduler scheduler =
-                new StockDayCloseScheduler(snapshotService, noticeService, 3);
+                new StockDayCloseScheduler(snapshotService, noticeService,
+                mock(com.erp.service.inv.InvReportService.class), 3);
 
         assertDoesNotThrow(scheduler::dailyDayClose);
 

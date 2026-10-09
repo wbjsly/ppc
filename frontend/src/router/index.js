@@ -736,6 +736,94 @@ const routes = [
         meta: { title: '报废单', group: '库存管理' }
       },
       {
+        // 4.13.1 批次追溯（add-trace-recall：三索引发起 + 五类流向 + 冻结/拦截/召回登记）
+        path: '/m/4.13.1',
+        name: 'TraceAnalyze',
+        component: () => import('@/views/inv/trace-analyze/index.vue'),
+        meta: {
+          title: '批次追溯', group: '库存管理',
+          perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+        }
+      },
+      {
+        // 4.13.2 召回处理（add-trace-recall：受限区入库 + 报废处置 + 结案报告）
+        path: '/m/4.13.2',
+        name: 'TraceRecall',
+        component: () => import('@/views/inv/trace-recall/index.vue'),
+        meta: {
+          title: '召回处理', group: '库存管理',
+          perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+        }
+      },
+      {
+        // 4.13.1 批次追溯（add-trace-recall：三索引发起 + 五类流向 + 冻结/拦截/召回登记）
+        path: '/m/4.13.1',
+        name: 'TraceAnalyze',
+        component: () => import('@/views/inv/trace-analyze/index.vue'),
+        meta: {
+          title: '批次追溯', group: '库存管理',
+          perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+        }
+      },
+      {
+        // 4.13.2 召回处理（add-trace-recall：受限区入库 + 报废处置 + 结案报告）
+        path: '/m/4.13.2',
+        name: 'TraceRecall',
+        component: () => import('@/views/inv/trace-recall/index.vue'),
+        meta: {
+          title: '召回处理', group: '库存管理',
+          perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+        }
+      },
+      {
+        // 4.14.1 实时查询（add-inventory-reports：位行明细 + 库龄列）
+        path: '/m/4.14.1',
+        name: 'ReportRealtime',
+        component: () => import('@/views/inv/report-realtime/index.vue'),
+        meta: { title: '实时查询', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.14.2 周转分析（add-inventory-reports：M-WMS-001，财务口径多两财务角色）
+        path: '/m/4.14.2',
+        name: 'ReportTurnover',
+        component: () => import('@/views/inv/report-turnover/index.vue'),
+        meta: {
+          title: '周转分析', group: '库存管理',
+          perm: 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR'
+        }
+      },
+      {
+        // 4.14.3 库龄分析（add-inventory-reports：分桶 + 呆滞清单 + 报废联动）
+        path: '/m/4.14.3',
+        name: 'ReportAging',
+        component: () => import('@/views/inv/report-aging/index.vue'),
+        meta: { title: '库龄分析', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.14.1 实时查询（add-inventory-reports：位行明细 + 库龄列）
+        path: '/m/4.14.1',
+        name: 'ReportRealtime',
+        component: () => import('@/views/inv/report-realtime/index.vue'),
+        meta: { title: '实时查询', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.14.2 周转分析（add-inventory-reports：M-WMS-001，财务口径多两财务角色）
+        path: '/m/4.14.2',
+        name: 'ReportTurnover',
+        component: () => import('@/views/inv/report-turnover/index.vue'),
+        meta: {
+          title: '周转分析', group: '库存管理',
+          perm: 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR'
+        }
+      },
+      {
+        // 4.14.3 库龄分析（add-inventory-reports：分桶 + 呆滞清单 + 报废联动）
+        path: '/m/4.14.3',
+        name: 'ReportAging',
+        component: () => import('@/views/inv/report-aging/index.vue'),
+        meta: { title: '库龄分析', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
         // 4.12.1 仓间调拨（调拨单全生命周期 + 内部往来，spec transfer-order P1）
         path: '/m/4.12.1',
         name: 'TransferOrder',
@@ -853,6 +941,48 @@ const routes = [
         name: 'ExpiryLock',
         component: () => import('@/views/inv/expiry-lock/index.vue'),
         meta: { title: '临期锁定', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.1 周期盘点（add-count-management：手工选范围，生成即锁仓）
+        path: '/m/4.11.1',
+        name: 'CountCycle',
+        component: () => import('@/views/inv/count-cycle/index.vue'),
+        meta: { title: '周期盘点', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.2 全面盘点（add-count-management：一键全仓）
+        path: '/m/4.11.2',
+        name: 'CountFull',
+        component: () => import('@/views/inv/count-full/index.vue'),
+        meta: { title: '全面盘点', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.3 差异审批（add-count-management：CountDiff 页内审批 + COUNT 台账）
+        path: '/m/4.11.3',
+        name: 'CountApprove',
+        component: () => import('@/views/inv/count-approve/index.vue'),
+        meta: { title: '差异审批', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.1 周期盘点（add-count-management：手工选范围，生成即锁仓）
+        path: '/m/4.11.1',
+        name: 'CountCycle',
+        component: () => import('@/views/inv/count-cycle/index.vue'),
+        meta: { title: '周期盘点', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.2 全面盘点（add-count-management：一键全仓）
+        path: '/m/4.11.2',
+        name: 'CountFull',
+        component: () => import('@/views/inv/count-full/index.vue'),
+        meta: { title: '全面盘点', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.11.3 差异审批（add-count-management：CountDiff 页内审批 + COUNT 台账）
+        path: '/m/4.11.3',
+        name: 'CountApprove',
+        component: () => import('@/views/inv/count-approve/index.vue'),
+        meta: { title: '差异审批', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
       },
       {
         // 4.10.3 质量评估（add-expiry-management-menus：三分支处置链）

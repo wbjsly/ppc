@@ -47,6 +47,8 @@ public class MdmItem extends BaseEntity {
 
     /** 洁净等级（4.1.3 字典 CLEAN_LEVEL；NULL=无要求） */
     private String cleanLevel;
+    /** ABC 分类（A/B/C，NULL=未分类；spec item-master-creation MODIFIED / 迁移 116） */
+    private String abcClass;
 
     private String altItemCode;
 

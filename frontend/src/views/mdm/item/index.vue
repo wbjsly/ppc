@@ -47,6 +47,33 @@
         <el-table-column label="存储属性" width="150">
           <template #default="{ row }">{{ storageAttrText(row) }}</template>
         </el-table-column>
+        <el-table-column label="ABC" width="72" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.abcClass" size="small"
+              :type="row.abcClass === 'A' ? 'danger' : row.abcClass === 'B' ? 'warning' : 'info'">
+              {{ row.abcClass }}
+            </el-tag>
+            <span v-else style="color: #909399; font-size: 12px;">未分类</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="ABC" width="72" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.abcClass" size="small"
+              :type="row.abcClass === 'A' ? 'danger' : row.abcClass === 'B' ? 'warning' : 'info'">
+              {{ row.abcClass }}
+            </el-tag>
+            <span v-else style="color: #909399; font-size: 12px;">未分类</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="ABC" width="72" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.abcClass" size="small"
+              :type="row.abcClass === 'A' ? 'danger' : row.abcClass === 'B' ? 'warning' : 'info'">
+              {{ row.abcClass }}
+            </el-tag>
+            <span v-else style="color: #909399; font-size: 12px;">未分类</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="85">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status)" size="small">{{ statusName(row.status) }}</el-tag>

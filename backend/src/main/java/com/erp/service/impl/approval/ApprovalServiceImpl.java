@@ -382,7 +382,8 @@ public class ApprovalServiceImpl implements ApprovalEngine {
      */
     private void rejectSelfSign(ApprovalInstance inst, String action) {
         if (!"WaveAdjust".equals(inst.getBizType())
-                && !"ExpiryEval".equals(inst.getBizType())) {
+                && !"ExpiryEval".equals(inst.getBizType())
+                && !"CountDiff".equals(inst.getBizType())) {
             return;
         }
         String me = SecurityUtils.getCurrentUserId();

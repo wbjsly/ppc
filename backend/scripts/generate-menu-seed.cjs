@@ -160,7 +160,14 @@ const EXTRA_PERM = {
   ...leaf(['M4-9-4'], PERM.warehouse),
   // M4-10 效期管理 4.10.1 效期预警 / 4.10.2 临期锁定（仓库） / 4.10.3 质量评估（质量链）
   ...leaf(['M4-10-1', 'M4-10-2'], PERM.warehouse),
-  ...leaf(['M4-10-3'], PERM.expiryEval)
+  ...leaf(['M4-10-3'], PERM.expiryEval),
+  // M4-11 盘点管理 4.11.1~4.11.3（change add-count-management：单一仓库主管域同 PERM）
+  ...leaf(['M4-11-1', 'M4-11-2', 'M4-11-3'], PERM.warehouse),
+  // M4-13 追溯召回 4.13.1/4.13.2（change add-trace-recall：四角色联合可见，服务层动作级分权）
+  ...leaf(['M4-13-1', 'M4-13-2'], 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'),
+  // M4-14 库存报表（change add-inventory-reports：周转为财务口径指标多两财务角色）
+  ...leaf(['M4-14-1', 'M4-14-3'], 'ROLE_WAREHOUSE,ROLE_ADMIN'),
+  ...leaf(['M4-14-2'], 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])
