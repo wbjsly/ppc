@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Java / Maven
+backend/target/
+*.class
+*.jar
+*.lst
+
+# Node / 前端
+node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+
+# 本地工具配置
+.qoder/
+.workbuddy/
+.agents/
+.claude/
+.codebuddy/
+.codegraph/
+
+# 需求与文档
+docs/
+openspec/
+
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 日志与临时文件
+*.log
+*.tmp
+
+# Vite 运行时时间戳产物
+frontend/vite.config.js.timestamp-*

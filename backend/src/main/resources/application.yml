@@ -1,0 +1,123 @@
+server:
+  port: 8090
+
+spring:
+  profiles:
+    active: mysql
+  application:
+    name: erp-system
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.erp.entity
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: delFlag
+      logic-delete-value: '1'
+      logic-not-delete-value: '0'
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+app:
+  jwt:
+    secret: ErpSecretKey2026ForJwtTokenGenerationAndValidation0123456789
+    expiration: 86400000
+  proc:
+    # 招标参数（design D9：走 yml + @Value，不建参数表；与 min-quote-count 同范式）
+    tender-threshold-amount: 1000000  # 招标门槛金额（BR-4.2-44，默认 100 万）
+    publicity-days: 3            # 公示期（BR-4.2-48，默认 3 个工作日）
+    agreement-valid-months: 12   # 框架协议有效期（BR-4.2-05，默认 12 个月）
+    # 框架协议执行 + 订单域参数（change add-framework-agreement-order，design D4/D6/D7）
+    expiry-remind-days: 30       # 协议临期提醒阈值（L1059：到期前 30 天提醒续签）
+    price-tolerance: 0.05        # 合同/协议价上浮容差（PRICE_TOLERANCE，默认 5%，BR-4.2-15）
+    history-price-tolerance: 0.005  # 历史均价偏差容差（TOLERANCE_DEFAULT，默认 0.5%，BR-4.2-16）
+    purchase-budget-trigger: 1.10   # 预算升级阈值（PURCHASE_BUDGET_TRIGGER，默认 110%，BR-4.2-17）
+    # 收货管理参数（change add-goods-receipt，design D2/D6；同源自 §4.0.3）
+    receipt-tolerance: 0.005     # 收货容差（TOLERANCE_DEFAULT，默认 0.5%，C-4.2-04）
+    # 付款管理参数（change add-payment-management，design D8）
+    prepay-ratio: 0.30           # 预付比例默认值（PO.PREPAY_RATIO 为空时使用，C-4.2-13）
+    # 门户协同参数（change add-supplier-portal-collaboration，design D4）
+    po-confirm-hours: 48         # PO 交期确认时限（超时催办，S-4.9-02）
+    po-escalate-hours: 72        # PO 确认升级时限（超时升级采购经理）
+    # 寄售采购参数（change add-consignment-procurement，design D10）
+    vmi-aging-limit-days: 180    # 寄售库存账龄处置阈值（VMI_AGING_LIMIT_DAYS，BR-4.2-39）
+    qc-hours-a: 24               # 待检时限：A 高风险（FR-4.2-4-2）
+    qc-hours-b: 48               # 待检时限：B 中风险
+    qc-hours-c: 72               # 待检时限：C 低风险
+  qms:
+    # 质量域参数（change add-quality-collaboration，同源自 §4.0.3；yml + 重启生效）
+    sample-rate-a: 1.0           # INSPECTION_SAMPLE_RATE A=100%
+    sample-rate-b: 0.5           # B=50%
+    sample-rate-c: 0.2           # C=20%
+    ncr-review-hours-critical: 4    # BR-4.12-25 Critical 评审时限
+    ncr-review-hours-major: 24      # Major
+    ncr-review-hours-minor: 48      # Minor
+    ncr-close-days: 30              # NCR_CLOSE_DAYS（BR-4.2-27 / BR-4.12-30）
+    ncr-overdue-remind-days: 7      # 超期后重复提醒周期（BR-4.2-27，每 7 天）
+    ncr-sweep-ms: 300000            # NCR 超时/超期扫描轮询（5 分钟）
+    scar-reply-days: 5              # SCAR 回复时限（BR-4.12-45）
+    approval-remind-hours: 72       # 审批节点提醒（C-4.12-01 72h）
+    approval-escalate-days: 7       # 审批节点升级（C-4.12-01 7 天）
+  intf:
+    # 接口对接参数（change add-interface-integration design D9，同源自 §4.0.3 权威清单）
+    sla-sync-threshold-minutes: 5   # SLA_SYNC_THRESHOLD 端到端延迟阈值（BR-4.9-27）
+    sla-target-availability: 99.9   # SLA_TARGET_AVAILABILITY API 月度可用率目标（%）
+    api-retry-max: 3                # API_RETRY_MAX 重试/重发上限，超即死信或转人工
+    rate-limit-strategic: 500       # RATE_LIMIT_QPS 战略伙伴（次/分钟）
+    rate-limit-normal: 100          # RATE_LIMIT_QPS 普通伙伴
+    rate-limit-new: 30              # RATE_LIMIT_QPS 新伙伴（自动降档目标档）
+    api-key-rotate-days: 90         # API_KEY_ROTATE_DAYS 凭证有效期（SOP-5.5-B）
+    circuit-break-error-rate: 0.50  # CIRCUIT_BREAK_ERROR_RATE 熔断失败率阈值
+    circuit-break-window-minutes: 5 # CIRCUIT_BREAK_WINDOW_MIN 滚动观察窗口
+    circuit-recover-minutes: 30     # C-5.5-09 熔断后进入半开探测的等待时长
+    escalation-response-minutes: 30 # ESCALATION_RESPONSE_MIN 升级响应计时
+    api-concurrency-strategic: 50   # API_CONCURRENCY_LIMIT 战略并发配额
+    api-concurrency-normal: 20      # API_CONCURRENCY_LIMIT 普通
+    api-concurrency-new: 5          # API_CONCURRENCY_LIMIT 新伙伴
+    api-daily-quota-strategic: 500000  # API_DAILY_QUOTA 战略（次/日）
+    api-daily-quota-normal: 100000     # API_DAILY_QUOTA 普通
+    api-daily-quota-new: 10000         # API_DAILY_QUOTA 新伙伴
+    api-sunset-notice-days: 30      # API_SUNSET_NOTICE_DAYS 版本废弃预告期
+    # 实现口径参数（design D2/D3/D4/D7）
+    audit-fail-closed: true         # 审计写失败是否阻断调用（C-5.5-03；测试可关，界面须明示）
+    delivery-sweep-ms: 5000         # 事件投递作业轮询间隔
+    sla-sweep-ms: 60000             # SLA 指标采集间隔（FR-4.9-5-2 每分钟）
+    staged-queue-limit: 10000       # 本地暂存队列上限（BR-4.9-16）
+    dead-letter-alert-threshold: 1000  # 死信积压紧急升级阈值（SOP-5.5-C 步骤7）
+    ticket-due-hours: 24            # 人工工单处置时限（1 个工作日）
+    link-expire-minutes: 10         # 凭证一次性分发链接有效期
+    deprecate-keep-days: 7          # DEPRECATED 旧凭证回滚窗口
+    gray-observe-hours: 24          # 双凭证灰度观察期
+    observe-days: 7                 # 上线观察期天数（SOP-5.5-A 步骤8）
+    contract-review-days: 3         # 契约评审时限（工作日）
+  bi:
+    # 采购分析参数（change add-procurement-analysis design D9，同源自 §4.0.3 权威清单）
+    price-trend-alert-pct: 10       # PRICE_TREND_ALERT_PCT 价格异动环比阈值（%）
+    export-row-limit: 10000         # EXPORT_ROW_LIMIT 超量转后台/审批行数（C-4.10-05）
+    extract-fluctuation-x: 10       # 抽取数据量波动倍数（>前日 10 倍暂停，bi-data-pipeline）
+    extract-retry-max: 3            # API_RETRY_MAX 抽取失败重试上限
+    extract-hour-start: 1           # 抽取窗口起（01:00）
+    extract-hour-end: 5             # 抽取窗口止（05:00）
+    export-parallel-max: 3          # 同一用户并行后台任务上限（C-4.10-05）
+    export-retain-days: 7           # 导出文件保留天数
+    audit-retain-days: 365          # 查询/导出审计保留天数（C-4.10-02）
+    query-timeout-seconds: 30       # 查询响应预估超此值转后台
+  scorecard:
+    # 记分卡参数（spec supplier-scorecard，4.9 流程七）
+    collect-cron-day: 1             # 每月 1 日采集
+    collect-cron-hour: 2            # 02:00 时点
+    po-confirm-hours: 48            # PO 确认及时率时限（FR-4.9-7-2 响应维度）
+    appeal-workdays: 7              # BR-4.9-07 申诉期（工作日）
+    rectify-days: 60                # 整改限期（天）
+    frozen-c-consecutive: 2         # 连续 C 级月数进整改（FR-4.9-7-3）
+  inv:
+    # 库存主数据参数（change add-warehouse-zone-management design D8）
+    bin-batch-max: 5000             # 批量规划单次生成仓位数上限（超限 422，须拆分区间）
+    dayclose-retry-max: 3           # 库存日结失败重试上限（spec stock-snapshot，BR-4.4-18 / API_RETRY_MAX）
+  db:
+    bootstrap:
+      enabled: true
+      location: classpath:db/mysql/
+      skip-scripts:

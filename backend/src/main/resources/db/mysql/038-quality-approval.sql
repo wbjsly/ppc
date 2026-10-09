@@ -1,0 +1,124 @@
+-- 038-quality-approval.sql
+-- 通用审批底座（change add-quality-collaboration，design D4）
+-- 两张表：审批实例 + 节点任务；支持串行链 / 并行双签 / 会签三形态
+-- 幂等：仅 CREATE TABLE IF NOT EXISTS + INSERT IGNORE（MySQL 无 ADD COLUMN IF NOT EXISTS）
+
+-- ---------- 1) 审批实例 ----------
+CREATE TABLE IF NOT EXISTS erp_sys_approval (
+    ID VARCHAR(64) NOT NULL,
+    -- AP + yyyyMMdd + - + 6 位流水
+    APPR_NO VARCHAR(32) NOT NULL,
+    -- StandardPublish / Exempt / Concession / NcrDisposition / Capa / Scar /
+    -- CopqFinance / Return / GaugCalib...（BIZ_TYPE 由业务侧注册）
+    BIZ_TYPE VARCHAR(64) NOT NULL,
+    BIZ_ID VARCHAR(64) NOT NULL,
+    TITLE VARCHAR(255) NOT NULL,
+    -- PENDING / APPROVED / REJECTED / CANCELLED
+    STATUS VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    -- 升级目标角色（超 approval-escalate-days 未签时生成升级待办）
+    ESCALATE_TO VARCHAR(64),
+    APPLY_BY VARCHAR(64),
+    APPLY_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FINISH_DATE DATETIME,
+    REMARK VARCHAR(500),
+    CREATE_BY VARCHAR(64),
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    -- 单号唯一；BIZ 对用普通索引 + 服务层「存在 PENDING 实例 422」
+    -- （驳回后须可重新提交，故 BIZ 对不设唯一约束）
+    UNIQUE KEY UK_APPROVAL_NO (APPR_NO),
+    KEY IDX_APPROVAL_BIZ (BIZ_TYPE, BIZ_ID),
+    KEY IDX_APPROVAL_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 2) 审批节点任务 ----------
+CREATE TABLE IF NOT EXISTS erp_sys_approval_task (
+    ID VARCHAR(64) NOT NULL,
+    APPR_ID VARCHAR(64) NOT NULL,
+    -- 同 SEQ 的多节点 = 并行（双签/会签），全部 PASSED 才推进下一 SEQ
+    SEQ INT NOT NULL DEFAULT 1,
+    -- SIGN（串行/双签签署）/ JOINT（会签）
+    NODE_TYPE VARCHAR(16) NOT NULL DEFAULT 'SIGN',
+    -- 需要的角色（不含 ROLE_ 前缀亦可，服务层统一比对 ROLE_ 形式）
+    ROLE_REQUIRED VARCHAR(64) NOT NULL,
+    -- 节点说明（如「质量经理签署」「技术负责人签署」）
+    NODE_NAME VARCHAR(128),
+    SIGNER VARCHAR(64),
+    SIGNER_NAME VARCHAR(128),
+    -- ACTIVE / PASSED / REJECTED / SKIPPED
+    STATUS VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    OPINION VARCHAR(500),
+    OP_TIME DATETIME,
+    -- 超时提醒计数（approval-remind-hours=72）
+    REMIND_COUNT INT NOT NULL DEFAULT 0,
+    -- 超时升级标记（approval-escalate-days=7）
+    ESCALATED VARCHAR(1) NOT NULL DEFAULT '0',
+    ESCALATE_TODO_ID VARCHAR(64),
+    CREATE_BY VARCHAR(64),
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    KEY IDX_APPROVAL_TASK_APPR (APPR_ID),
+    KEY IDX_APPROVAL_TASK_TODO (STATUS, ROLE_REQUIRED)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 3) 质量六角色种子（design：六角色是双签/升级链最小集） ----------
+INSERT IGNORE INTO erp_admin_role (ID, ROLE_CODE, ROLE_NAME, SORT_ORDER, STATUS, CREATE_BY, CREATE_DATE) VALUES
+('role-inspector',      'ROLE_INSPECTOR',      '质检员',       42, '1', 'system', NOW()),
+('role-quality-eng',    'ROLE_QUALITY_ENG',    '质量工程师',    43, '1', 'system', NOW()),
+('role-quality-mgr',    'ROLE_QUALITY_MGR',    '质量经理',      44, '1', 'system', NOW()),
+('role-tech-owner',     'ROLE_TECH_OWNER',     '技术负责人',    45, '1', 'system', NOW()),
+('role-quality-director','ROLE_QUALITY_DIRECTOR','质量总监',    46, '1', 'system', NOW()),
+('role-sqe',            'ROLE_SQE',            '供应商质量工程师', 47, '1', 'system', NOW());
+
+-- ---------- 4) 质量菜单按角色显隐（spec quality-permissions：PERM 逗号分隔角色，
+--     空 = 所有登录用户可见；ROLE_ADMIN 由 SysMenuServiceImpl 直通全部） ----------
+-- 2. 采购管理下的质量菜单
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR,ROLE_SQE'
+ WHERE ID = 'M2-5';
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR'
+ WHERE ID = 'M2-5-1';
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR'
+ WHERE ID = 'M2-5-2';
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR,ROLE_SQE'
+ WHERE ID = 'M2-5-3';
+UPDATE erp_admin_menu SET PERM = 'ROLE_PM,ROLE_WAREHOUSE,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'
+ WHERE ID = 'M2-6';
+UPDATE erp_admin_menu SET PERM = 'ROLE_PM,ROLE_WAREHOUSE,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'
+ WHERE ID = 'M2-6-1';
+-- 6. 质量管理（一级 = 六角色并集，否则父节点被过滤后子菜单成孤儿）
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR,ROLE_SQE'
+ WHERE ID = 'M6';
+-- 6.1 标准管理：质量工程师维护 + 管理层审批
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-1', 'M6-1-1', 'M6-1-2', 'M6-1-3', 'M6-1-4', 'M6-1-5');
+-- 6.2 检验任务 / 6.3 抽样检验 / 6.4 判定放行：质检员执行面
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_TECH_OWNER,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-2', 'M6-2-1', 'M6-2-2', 'M6-2-3',
+              'M6-3', 'M6-3-1', 'M6-3-2',
+              'M6-4', 'M6-4-1', 'M6-4-2');
+-- 6.5 不合格品 / 6.2.1 来料检验同步给 SQE（SCAR 触发面）
+UPDATE erp_admin_menu SET PERM = 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR,ROLE_SQE'
+ WHERE ID IN ('M6-5', 'M6-5-1', 'M6-5-2');
+-- 6.6 根因分析（CAPA）
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-6', 'M6-6-1', 'M6-6-2', 'M6-6-3');
+-- 6.7 质量成本（COPQ，财务确认由 ADMIN 代）
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-7', 'M6-7-1', 'M6-7-2');
+-- 6.8 供应质量（SCAR）
+UPDATE erp_admin_menu SET PERM = 'ROLE_SQE,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-8', 'M6-8-1', 'M6-8-2');
+-- 6.9 器具校准
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-9', 'M6-9-1', 'M6-9-2', 'M6-9-3');
+-- 6.10 过程控制（SPC）
+UPDATE erp_admin_menu SET PERM = 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_QUALITY_DIRECTOR'
+ WHERE ID IN ('M6-10', 'M6-10-1', 'M6-10-2');
