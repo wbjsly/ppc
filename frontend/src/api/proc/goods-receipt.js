@@ -87,3 +87,8 @@ export function getRiskGradeOptionsApi() {
 export function postingGrApi(id) {
   return request.post(`/proc/grs/${id}/postings`)
 }
+
+/** 入库确认（inbound-workbench FR-4.4-1-7：POSTED→CONFIRMED，WAREHOUSE/ADMIN） */
+export function confirmGrApi(id) {
+  return request.post(`/proc/grs/${id}/confirm`)
+}

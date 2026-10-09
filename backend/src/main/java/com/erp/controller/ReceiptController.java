@@ -160,6 +160,14 @@ public class ReceiptController {
         return R.ok(service.riskGradeOptions());
     }
 
+    // 入库确认（inbound-workbench，FR-4.4-1-7）
+
+    @Operation(summary = "入库确认", description = "POSTED→CONFIRMED，WAREHOUSE/ADMIN，确认人/时间留痕，不可逆")
+    @PostMapping("/grs/{id}/confirm")
+    public R<com.erp.entity.proc.GoodsReceipt> confirm(@PathVariable String id) {
+        return R.ok(service.confirm(id));
+    }
+
     // ---------- 2.4.4 过账 ----------
 
     @Operation(summary = "入库过账", description = "FR-4.2-6-1 单事务五步；BR-4.2-28 阻断；寄售超水位确认放行 confirmWaterLevel")

@@ -70,6 +70,7 @@ public class ReturnServiceImpl implements ReturnService {
     private final ShipmentService shipmentService;
     private final SysParamService paramService;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
 
     public ReturnServiceImpl(SdReturnDao returnDao,
                              SdReturnLineDao lineDao,
@@ -85,7 +86,8 @@ public class ReturnServiceImpl implements ReturnService {
                              InvoiceService invoiceService,
                              GlVoucherService voucherService,
                              ShipmentService shipmentService,
-                             SysParamService paramService) {
+                             SysParamService paramService,
+                                 com.erp.service.inv.StockPostingEngine stockPostingEngine) {
         this.returnDao = returnDao;
         this.lineDao = lineDao;
         this.logDao = logDao;
@@ -101,6 +103,7 @@ public class ReturnServiceImpl implements ReturnService {
         this.voucherService = voucherService;
         this.shipmentService = shipmentService;
         this.paramService = paramService;
+        this.stockPostingEngine = stockPostingEngine;
     }
 
     // ==================== 12.2 退货申请 ====================
@@ -639,32 +642,19 @@ public class ReturnServiceImpl implements ReturnService {
             }
             String wh = isBlank(line.getWarehouseCode()) ? "WH-MAIN" : line.getWarehouseCode();
 
-            // 按批次回补：qc=1 → QC_QTY（不计 ATP）；否则 AVAILABLE_QTY（可被预留占用）
-            InvStock stock = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
-                    .eq(InvStock::getWarehouseCode, wh)
-                    .eq(InvStock::getItemCode, line.getItemCode())
-                    .eq(InvStock::getBatchNo, batchNo)
-                    .last("LIMIT 1"));
-            if (stock == null) {
-                stock = new InvStock();
-                stock.setId(uuid());
-                stock.setWarehouseCode(wh);
-                stock.setItemCode(line.getItemCode());
-                stock.setItemName(line.getItemName());
-                stock.setBatchNo(batchNo);
-                stock.setQty(qty);
-                stock.setQcQty(qc ? qty : BigDecimal.ZERO);
-                stock.setAvailableQty(qc ? BigDecimal.ZERO : qty);
-                stock.setCreateBy(currentUser());
-                stockDao.insert(stock);
-            } else {
-                // 显式原子累加（qc 分支与可用分支分别追加）
-                stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                        .eq(InvStock::getId, stock.getId())
-                        .setSql("QTY = QTY + " + strip(qty))
-                        .setSql((qc ? "QC_QTY = QC_QTY + " : "AVAILABLE_QTY = AVAILABLE_QTY + ")
-                                + strip(qty)));
-            }
+            // 按批次回补经通用引擎（add-stock-posting-engine，sales-return MODIFIED：
+            // SALES_RETURN_IN 流水、首插记 INBOUND_DATE 当日补货不刷新、批次台账联动建档；
+            // qc=1 → QC_QTY（不计 ATP）；否则 AVAILABLE_QTY（可被预留占用）
+            com.erp.service.inv.StockPostingEngine.Line el =
+                    new com.erp.service.inv.StockPostingEngine.Line();
+            el.warehouseCode = wh;
+            el.itemCode = line.getItemCode();
+            el.itemName = line.getItemName();
+            el.batchNo = batchNo;
+            el.qty = qty;
+            el.intoQc = qc;
+            stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                    "SALES_RETURN_IN", "RETURN", ret.getReturnNo(), List.of(el)));
 
             line.setInQty(in.add(qty));
             line.setStockBatchNo(batchNo);

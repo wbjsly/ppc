@@ -83,13 +83,17 @@ public class QualityGateServiceImpl implements QualityGateService {
         out.put("concessions", matched);
 
         // 2) 库存锁定检查（QC_QTY > 0 → 待检/让步锁定）
-        InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+        // 位行粒度：同批次跨多仓位 → QC/可用取批次合计（LIMIT 1 只见单行会漏锁，A1 适配）
+        List<InvStock> rows = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
                 .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
-                .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
-                .last("LIMIT 1"));
-        BigDecimal qc = s == null || s.getQcQty() == null ? BigDecimal.ZERO : s.getQcQty();
-        BigDecimal available = s == null || s.getAvailableQty() == null ? BigDecimal.ZERO : s.getAvailableQty();
+                .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo));
+        BigDecimal qc = BigDecimal.ZERO;
+        BigDecimal available = BigDecimal.ZERO;
+        for (InvStock r : rows) {
+            qc = qc.add(r.getQcQty() == null ? BigDecimal.ZERO : r.getQcQty());
+            available = available.add(r.getAvailableQty() == null ? BigDecimal.ZERO : r.getAvailableQty());
+        }
         out.put("qcQty", qc);
         out.put("availableQty", available);
 

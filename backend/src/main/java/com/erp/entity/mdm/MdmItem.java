@@ -39,6 +39,15 @@ public class MdmItem extends BaseEntity {
     /** NORMAL/CHILL/FROZEN/HAZARD（字典 STORAGE） */
     private String storageCondition;
 
+    /** 温湿度等级（4.1.3 字典 TEMP_LEVEL；NULL=无要求，仓位分配合规跳过，change add-bin-assignment 偏差 D2） */
+    private String tempLevel;
+
+    /** 危化品等级（4.1.3 字典 HAZARD_LEVEL；NULL=无要求） */
+    private String hazardLevel;
+
+    /** 洁净等级（4.1.3 字典 CLEAN_LEVEL；NULL=无要求） */
+    private String cleanLevel;
+
     private String altItemCode;
 
     private BigDecimal safetyStock;
@@ -56,6 +65,9 @@ public class MdmItem extends BaseEntity {
 
     /** 批次管理标识 1/0（BR-4.1-08：为 1 时保质期必填） */
     private String batchFlag;
+
+    /** 序列管理标识 1/0（spec serial-master：为 1 时出入库强制逐件校验序列号的判定依据） */
+    private String serialFlag;
 
     /** 原材料差异化字段：保质期天数 */
     private Integer shelfLifeDays;

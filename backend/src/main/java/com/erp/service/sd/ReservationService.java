@@ -48,4 +48,13 @@ public interface ReservationService {
 
     /** SO 的 ACTIVE 预留行 */
     List<Reservation> activeBySo(String soId);
+
+    /**
+     * 冻结执行释放维度 ACTIVE 预留（spec freeze-management FR-4.4-5-3，缺它可用公式双重扣减）。
+     * batchNo 非空 → 释放该 SKU+仓+批次全部 ACTIVE；batchNo 为 null → 释放该 SKU+仓全部批次。
+     * 受影响行回写 RESERVED_QTY = SUM(ACTIVE)。
+     *
+     * @return 释放条数
+     */
+    int releaseByBatch(String warehouseCode, String itemCode, String batchNo, String reason);
 }

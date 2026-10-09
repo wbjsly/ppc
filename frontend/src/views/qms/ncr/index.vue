@@ -154,9 +154,14 @@
               :title="detail.ncr.regulatoryFlag === '1' ? '安全/法规 CTQ 禁止让步（BR-4.12-26）' : ''">
               让步接收
             </el-radio-button>
+            <el-radio-button value="SCRAP"
+              :disabled="detail.ncr.regulatoryFlag === '1'"
+              :title="detail.ncr.regulatoryFlag === '1' ? '安全/法规 CTQ 仅可退货或返工（BR-4.12-26）' : ''">
+              报废
+            </el-radio-button>
           </el-radio-group>
           <div v-if="detail.ncr.regulatoryFlag === '1'" style="color:#F56C6C;font-size:12px;margin:6px 0;">
-            安全/法规 CTQ 不合格：仅可退货或返工，禁止让步接收（BR-4.12-26）
+            安全/法规 CTQ 不合格：仅可退货或返工，禁止让步接收与报废（BR-4.12-26）
           </div>
           <el-input v-model="reviewForm.opinion" type="textarea" :rows="2" placeholder="评审意见（必填，至少 2 字）"
             style="margin-top:8px;" />
@@ -181,6 +186,16 @@
 
         <el-alert v-if="detail.ncr.status === 'CONCESSION'" type="info" :closable="false" style="margin-bottom:8px;"
           title="让步接收处置：在 2.5.2 发起申请，双签（质量经理 + 技术负责人）批准后方可确认处置" />
+
+        <el-alert v-if="detail.ncr.status === 'SCRAPPING'" type="warning" :closable="false" style="margin-bottom:8px;"
+          title="报废处置：先在 4.5.4 报废出库创建报废单（原因=质量、关联本 NCR）完成会签过账，再回填报废单号确认处置" />
+        <div v-if="canDispose && detail.ncr.status === 'SCRAPPING'" class="op-block">
+          <el-input v-model="planForm.result" type="textarea" :rows="2"
+            placeholder="报废执行凭证（必填：4.5.4 关联报废单号）" />
+          <el-button type="success" size="small" style="margin-top:8px;" @click="doConfirm">
+            确认处置完成（凭报废单号）
+          </el-button>
+        </div>
 
         <div v-if="canDispose && detail.ncr.status === 'DISPOSED'" class="op-block">
           <el-alert type="warning" :closable="false" style="margin-bottom:8px;"
@@ -261,7 +276,7 @@ const STATUS_TEXT = {
   CREATED: '待评审', REVIEWING: '评审中', RETURNING: '退货中', SORTING: '挑选中',
   REWORKING: '返工中', CONCESSION: '让步中', DISPOSED: '已处置', CLOSED: '已关闭', CANCELLED: '已作废'
 }
-const DISP_TEXT = { RETURN: '退货', SORT: '挑选', REWORK: '返工', CONCESSION: '让步接收' }
+const DISP_TEXT = { RETURN: '退货', SORT: '挑选', REWORK: '返工', CONCESSION: '让步接收', SCRAP: '报废' }
 const SCOPE_TEXT = { GR_LINE: 'GR 行', STOCK: '库存', BOTH: '双冻结', NONE: '无对象' }
 const ROLE_TEXT = {
   ROLE_QUALITY_MGR: '质量经理', ROLE_QUALITY_DIRECTOR: '质量总监', ROLE_PM: '采购经理',
@@ -375,11 +390,14 @@ async function doPlan() {
 
 async function doConfirm() {
   try {
-    await ElMessageBox.confirm('确认处置执行完成？挑选/返工将同事务生成复检批。', '处置确认', { type: 'warning' })
+    const isScrap = detail.value.ncr.disposition === 'SCRAP'
+    await ElMessageBox.confirm(
+      isScrap ? '确认报废处置完成？将凭报废单号归档本 NCR 处置。' : '确认处置执行完成？挑选/返工将同事务生成复检批。',
+      '处置确认', { type: 'warning' })
   } catch { return }
   try {
     await confirmNcrApi(detail.value.ncr.id, planForm.result)
-    ElMessage.success('处置已确认，复检批已生成')
+    ElMessage.success(detail.value.ncr.disposition === 'SCRAP' ? '处置已确认' : '处置已确认，复检批已生成')
     openDetail(detail.value.ncr)
     load()
   } catch { /* 拦截器已统一弹错 */ }

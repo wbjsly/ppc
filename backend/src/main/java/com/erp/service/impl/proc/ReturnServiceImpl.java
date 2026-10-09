@@ -65,6 +65,7 @@ public class ReturnServiceImpl implements ReturnService {
     private final com.erp.service.qms.CopqService copqService;
     /** 应付冲减（BR-4.2-34 落地，add-accrual-three-way-match D5） */
     private final com.erp.service.fin.AccrualService accrualService;
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
 
     public ReturnServiceImpl(ReturnOrderDao returnDao,
                              ReturnOrderLineDao lineReturnDao,
@@ -76,7 +77,8 @@ public class ReturnServiceImpl implements ReturnService {
                              ApprovalEngine approvalEngine,
                              @Lazy NcrService ncrService,
                              com.erp.service.qms.CopqService copqService,
-                             com.erp.service.fin.AccrualService accrualService) {
+                             com.erp.service.fin.AccrualService accrualService,
+                             com.erp.service.inv.StockPostingEngine stockPostingEngine) {
         this.returnDao = returnDao;
         this.lineReturnDao = lineReturnDao;
         this.grDao = grDao;
@@ -88,6 +90,7 @@ public class ReturnServiceImpl implements ReturnService {
         this.ncrService = ncrService;
         this.copqService = copqService;
         this.accrualService = accrualService;
+        this.stockPostingEngine = stockPostingEngine;
     }
 
     // ================= 8.1 NCR 自动带出 =================
@@ -219,8 +222,7 @@ public class ReturnServiceImpl implements ReturnService {
         }
 
         // ---------- 3) 可退库存校验（qty ≤ 可退量） ----------
-        InvStock stock = stockOf(itemCode, batchNo);
-        BigDecimal returnable = stock == null || stock.getQty() == null ? BigDecimal.ZERO : stock.getQty();
+        BigDecimal returnable = batchQty(itemCode, batchNo);
         if (returnable.signum() <= 0) {
             throw new ServiceException(422, "该物料批次无可退货库存（非质量退货仅支持已入库物料）");
         }
@@ -293,8 +295,7 @@ public class ReturnServiceImpl implements ReturnService {
             }
             String batch = gr.getBatchNo() == null ? "" : gr.getBatchNo();
             String key = line.getItemCode() + "|" + batch;
-            InvStock stock = stockOf(line.getItemCode(), batch);
-            BigDecimal returnable = stock == null || stock.getQty() == null ? BigDecimal.ZERO : stock.getQty();
+            BigDecimal returnable = batchQty(line.getItemCode(), batch);
             Map<String, Object> row = agg.get(key);
             if (row == null) {
                 row = new LinkedHashMap<>();
@@ -441,12 +442,20 @@ public class ReturnServiceImpl implements ReturnService {
                 grLineDao.updateById(gl);
                 continue;
             }
-            InvStock s = stockOf(l.getItemCode(), l.getBatchNo() == null ? "" : l.getBatchNo());
-            if (s != null && s.getQty() != null && s.getQty().signum() > 0) {
-                // 库存扣减：QC 锁定量优先，再扣 AVAILABLE，不足 422（tasks 8.3）
+            List<InvStock> batchRows = batchRows(l.getItemCode(),
+                    l.getBatchNo() == null ? "" : l.getBatchNo());
+            BigDecimal batchQtyTotal = BigDecimal.ZERO;
+            BigDecimal qc = BigDecimal.ZERO;
+            BigDecimal av = BigDecimal.ZERO;
+            for (InvStock br : batchRows) {
+                batchQtyTotal = batchQtyTotal.add(nvl(br.getQty()));
+                qc = qc.add(nvl(br.getQcQty()));
+                av = av.add(nvl(br.getAvailableQty()));
+            }
+            if (!batchRows.isEmpty() && batchQtyTotal.signum() > 0) {
+                // 库存扣减预检：批次级合计（位行粒度下同批次可多行，A1 适配）；
+                // 实扣经通用引擎 qcFirst 跨位行拆分（quality/other-return MODIFIED）
                 BigDecimal need = l.getQty();
-                BigDecimal qc = nvl(s.getQcQty());
-                BigDecimal av = nvl(s.getAvailableQty());
                 BigDecimal fromQc = need.min(qc);
                 BigDecimal fromAv = need.subtract(fromQc).min(av);
                 BigDecimal left = need.subtract(fromQc).subtract(fromAv);
@@ -456,15 +465,24 @@ public class ReturnServiceImpl implements ReturnService {
                             + " 可退 " + qc.add(av).stripTrailingZeros().toPlainString()
                             + "，本次 " + need.stripTrailingZeros().toPlainString());
                 }
-                int rows = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                        .eq(InvStock::getId, s.getId())
-                        .eq(InvStock::getVerNo, s.getVerNo())
-                        .setSql("QTY = QTY - " + need.toPlainString())
-                        .setSql("QC_QTY = QC_QTY - " + fromQc.toPlainString())
-                        .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + fromAv.toPlainString()));
-                if (rows == 0) {
-                    throw new ServiceException(409, "库存扣减并发冲突，请重试：" + l.getItemCode());
-                }
+                // 扣减执行经通用引擎（add-stock-posting-engine，quality/other-return MODIFIED：
+                // qcFirst 核销锁定量优先 + 双列/恒等 + 流水；上方预检保留「可退」文案）
+                InvStock s = batchRows.get(0);
+                com.erp.service.inv.StockPostingEngine.Line el =
+                        new com.erp.service.inv.StockPostingEngine.Line();
+                el.warehouseCode = hasText(s.getWarehouseCode())
+                        ? s.getWarehouseCode() : InvStock.DEFAULT_WH;
+                el.itemCode = l.getItemCode();
+                el.itemName = l.getItemName();
+                el.batchNo = l.getBatchNo() == null ? "" : l.getBatchNo();
+                el.qty = need;
+                el.qcFirst = true;
+                el.batchSpecified = true;
+                String typeCode = "MANUAL".equals(r.getSourceType())
+                        ? "OTHER_RETURN_OUT" : "QUALITY_RETURN_OUT";
+                stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                        typeCode, "RETURN", r.getReturnNo(),
+                        java.util.List.of(el)));
                 stockDeducted = true;
             } else if (gl != null) {
                 // 已过账但无库存可扣（他方已领用/盘点出清）→ 阻断
@@ -648,12 +666,23 @@ public class ReturnServiceImpl implements ReturnService {
         return pl == null || pl.getUnitPrice() == null ? BigDecimal.ZERO : pl.getUnitPrice();
     }
 
-    private InvStock stockOf(String itemCode, String batchNo) {
-        return stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+    /** 批次全部位行（inbound → bin 序；位行粒度下同批次可多行，A1 适配） */
+    private List<InvStock> batchRows(String itemCode, String batchNo) {
+        return stockDao.selectList(new LambdaQueryWrapper<InvStock>()
                 .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
                 .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
-                .last("LIMIT 1"));
+                .orderByAsc(InvStock::getInboundDate)
+                .orderByAsc(InvStock::getBinCode));
+    }
+
+    /** 批次在手合计（可退量口径 = 跨位行合计，A1 适配） */
+    private BigDecimal batchQty(String itemCode, String batchNo) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (InvStock r : batchRows(itemCode, batchNo)) {
+            total = total.add(nvl(r.getQty()));
+        }
+        return total;
     }
 
     private ReturnOrder require(String id) {

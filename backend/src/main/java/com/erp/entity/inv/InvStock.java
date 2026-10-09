@@ -26,12 +26,19 @@ public class InvStock extends BaseEntity {
     private String itemName;
     /** 无批次时为空串（唯一键组成） */
     private String batchNo;
+    /** 仓位编号（空串=未分配虚拟位；唯一键组成，change add-bin-assignment，迁移 105） */
+    private String binCode;
 
     private BigDecimal qty;
     /** 锁定量（让步接收限制锁定，B 口径） */
     private BigDecimal qcQty;
+    /** 财务冻结数量（与 QC_QTY 并列可叠加，spec freeze-management / C-4.4-05，迁移 103） */
+    private BigDecimal finQty;
     /** 可领用量 */
     private BigDecimal availableQty;
+
+    /** 入库日期（首插记录、补货不刷新，batch-master FIFO 排序依据；存量由迁移 102 回填） */
+    private java.time.LocalDate inboundDate;
 
     /** 1 = 让步接收锁定中（spec concession-acceptance，D8） */
     private String concessionFlag;

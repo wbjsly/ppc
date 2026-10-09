@@ -71,6 +71,7 @@ public class ShipmentServiceImpl implements ShipmentService {
     private final NoticeService noticeService;
     private final SysParamService paramService;
     private final InvoiceService invoiceService;
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
 
     public ShipmentServiceImpl(ShipmentDao shipDao,
                                ShipmentLineDao shipLineDao,
@@ -83,7 +84,8 @@ public class ShipmentServiceImpl implements ShipmentService {
                                OutboxPublisher outboxPublisher,
                                NoticeService noticeService,
                                SysParamService paramService,
-                               InvoiceService invoiceService) {
+                               InvoiceService invoiceService,
+                               com.erp.service.inv.StockPostingEngine stockPostingEngine) {
         this.shipDao = shipDao;
         this.shipLineDao = shipLineDao;
         this.soDao = soDao;
@@ -96,6 +98,7 @@ public class ShipmentServiceImpl implements ShipmentService {
         this.noticeService = noticeService;
         this.paramService = paramService;
         this.invoiceService = invoiceService;
+        this.stockPostingEngine = stockPostingEngine;
     }
 
     // ---------- 9.2 部分发货 ----------
@@ -810,39 +813,33 @@ public class ShipmentServiceImpl implements ShipmentService {
 
     /** FIFO 选批 + 原子扣减（9.6）：同仓同 SKU 按入储时间先老先出，返回 [{batchNo, qty}] */
     private List<Map<String, Object>> allocAndDeduct(ShipmentLine l) {
+        // 选批与扣减统一经通用引擎（add-stock-posting-engine，sales-shipment MODIFIED：
+        // FIFO+效期分配、AVAILABLE/QTY 双列原子扣减、行级恒等、SALES_OUT 流水；
+        // 库存行锁移交引擎统一持有，域侧不再自行 FOR UPDATE（design D4 锁序））
+        String shipNo = shipNoOf(l.getShipId());
+        com.erp.service.inv.StockPostingEngine.Line el =
+                new com.erp.service.inv.StockPostingEngine.Line();
+        el.warehouseCode = l.getWarehouseCode();
+        el.itemCode = l.getItemCode();
+        el.itemName = l.getItemName();
+        el.qty = l.getQty();
+        com.erp.service.inv.StockPostingEngine.Result res = stockPostingEngine.post(
+                com.erp.service.inv.StockPostingEngine.Request.of(
+                        "SALES_OUT", "SHIPMENT", shipNo, List.of(el)));
+
         List<Map<String, Object>> alloc = new ArrayList<>();
-        List<InvStock> stocks = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
-                .eq(InvStock::getWarehouseCode, l.getWarehouseCode())
-                .eq(InvStock::getItemCode, l.getItemCode())
-                .gt(InvStock::getAvailableQty, BigDecimal.ZERO)
-                .orderByAsc(InvStock::getCreateDate)
-                .last("FOR UPDATE"));
-        BigDecimal need = l.getQty();
-        for (InvStock s : stocks) {
-            if (need.signum() <= 0) {
-                break;
-            }
-            BigDecimal avail = nvl(s.getAvailableQty());
-            if (avail.signum() <= 0) {
-                continue;
-            }
-            BigDecimal take = avail.min(need);
-            // 原子扣减（影响行数 = 0 → 并发不足 → 422）
-            int updated = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                    .eq(InvStock::getId, s.getId())
-                    .ge(InvStock::getAvailableQty, take)
-                    .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + strip(take)));
-            if (updated == 0) {
-                throw new ServiceException(422, "库存并发不足：" + l.getItemCode()
-                        + " 批次 " + s.getBatchNo() + "，出库过账已阻断");
-            }
-            Map<String, Object> a = new LinkedHashMap<>();
-            a.put("batchNo", s.getBatchNo() == null ? "" : s.getBatchNo());
-            a.put("qty", take);
-            alloc.add(a);
-            need = need.subtract(take);
+        for (com.erp.service.inv.StockPostingEngine.Alloc a : res.allocations) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("batchNo", a.batchNo);
+            m.put("qty", a.qty);
+            alloc.add(m);
         }
         return alloc;
+    }
+
+    private String shipNoOf(String shipId) {
+        Shipment s = shipId == null ? null : shipDao.selectById(shipId);
+        return s == null || s.getShipNo() == null ? "SHIP-UNKNOWN" : s.getShipNo();
     }
 
     /** 消耗预留（批次优先，数量语义兜底；不足 → 422） */

@@ -27,8 +27,11 @@
       <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column prop="whCode" label="仓库编码" width="130" />
         <el-table-column prop="whName" label="名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="orgUnit" label="所属组织" width="140">
-          <template #default="{ row }">{{ row.orgUnit || '-' }}</template>
+        <el-table-column label="仓库类型" width="110">
+          <template #default="{ row }">{{ whTypeName(row.whType) }}</template>
+        </el-table-column>
+        <el-table-column label="所属组织" width="150">
+          <template #default="{ row }">{{ orgName(row.orgUnit) }}</template>
         </el-table-column>
         <el-table-column prop="capacityDesc" label="容量属性" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ row.capacityDesc || '-' }}</template>
@@ -63,8 +66,16 @@
         <el-form-item label="名称" prop="whName">
           <el-input v-model="form.whName" maxlength="128" />
         </el-form-item>
+        <el-form-item label="仓库类型" prop="whType">
+          <el-select v-model="form.whType" style="width: 100%;" placeholder="请选择仓库类型">
+            <el-option v-for="d in whTypeOptions" :key="d.dictCode" :label="d.dictName" :value="d.dictCode" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="所属组织">
-          <el-input v-model="form.orgUnit" maxlength="64" />
+          <el-select v-model="form.orgUnit" clearable filterable style="width: 100%;"
+                     placeholder="选择组织主数据（可空）">
+            <el-option v-for="o in orgOptions" :key="o.id" :label="`${o.ouName}（${o.ouCode}）`" :value="o.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="容量属性">
           <el-input v-model="form.capacityDesc" maxlength="255" placeholder="如：常温 500 托位" />
@@ -89,6 +100,8 @@ import {
   getWarehousesApi, createWarehouseApi, updateWarehouseApi,
   enableWarehouseApi, disableWarehouseApi
 } from '@/api/inv/warehouse'
+import { getDictActiveApi } from '@/api/inv/dict'
+import { getOrgUnitOptionsApi } from '@/api/mdm/org-unit'
 
 /** 默认仓（055 回填目标），页面禁用停用入口，服务端另有校验 */
 const DEFAULT_WH = 'WH-MAIN'
@@ -98,11 +111,37 @@ const saving = ref(false)
 const rows = ref([])
 const query = ref({ keyword: '', status: '' })
 
+// 仓库类型字典（4.1.1 补差距）与组织下拉（DC-02）
+const whTypeOptions = ref([])
+const orgOptions = ref([])
+
 const formVisible = ref(false)
 const formRef = ref(null)
 const form = ref({})
 const rules = {
-  whName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }]
+  whName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
+  whType: [{ required: true, message: '请选择仓库类型', trigger: 'change' }]
+}
+
+async function loadOptions() {
+  const [dictRes, orgRes] = await Promise.all([
+    getDictActiveApi('WAREHOUSE_TYPE'),
+    getOrgUnitOptionsApi()
+  ])
+  whTypeOptions.value = dictRes.data || []
+  orgOptions.value = orgRes.data || []
+}
+
+function whTypeName(code) {
+  if (!code) return '-'
+  const d = whTypeOptions.value.find(x => x.dictCode === code)
+  return d ? d.dictName : code
+}
+
+function orgName(id) {
+  if (!id) return '-'
+  const o = orgOptions.value.find(x => x.id === id)
+  return o ? o.ouName : id
 }
 
 async function loadData() {
@@ -119,7 +158,7 @@ async function loadData() {
 }
 
 function openForm(row) {
-  form.value = row ? { ...row } : { whName: '', orgUnit: '', capacityDesc: '', remark: '' }
+  form.value = row ? { ...row } : { whName: '', whType: '', orgUnit: '', capacityDesc: '', remark: '' }
   formVisible.value = true
 }
 
@@ -157,7 +196,10 @@ async function handleEnable(row) {
   loadData()
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  loadOptions()
+})
 </script>
 
 <style scoped>

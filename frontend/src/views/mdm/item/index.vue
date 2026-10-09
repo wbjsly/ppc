@@ -44,6 +44,9 @@
         <el-table-column label="采购类型" width="85">
           <template #default="{ row }">{{ purchaseMap[row.purchaseType] || row.purchaseType || '-' }}</template>
         </el-table-column>
+        <el-table-column label="存储属性" width="150">
+          <template #default="{ row }">{{ storageAttrText(row) }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="85">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.status)" size="small">{{ statusName(row.status) }}</el-tag>
@@ -131,7 +134,14 @@
         <el-descriptions-item label="单位/物料组">{{ detail.baseUnit }} / {{ dictName('MATERIAL_GROUP', detail.materialGroup) }}</el-descriptions-item>
         <el-descriptions-item label="采购类型">{{ purchaseMap[detail.purchaseType] }}</el-descriptions-item>
         <el-descriptions-item label="存储条件">{{ dictName('STORAGE', detail.storageCondition) }}</el-descriptions-item>
+        <el-descriptions-item label="存储属性">
+          温湿度 {{ detail.tempLevel ? dictName('TEMP_LEVEL', detail.tempLevel) : '无要求' }} /
+          危化 {{ detail.hazardLevel ? dictName('HAZARD_LEVEL', detail.hazardLevel) : '无要求' }} /
+          洁净 {{ detail.cleanLevel ? dictName('CLEAN_LEVEL', detail.cleanLevel) : '无要求' }}
+          <span class="form-tip">（仓位分配合规校验依据 4.4.5；无要求=不拦截）</span>
+        </el-descriptions-item>
         <el-descriptions-item label="批次管理">{{ detail.batchFlag === '1' ? `是（保质期 ${detail.shelfLifeDays ?? '-'} 天）` : '否' }}</el-descriptions-item>
+        <el-descriptions-item label="序列管理">{{ detail.serialFlag === '1' ? '是（出入库逐件校验）' : '否' }}</el-descriptions-item>
         <el-descriptions-item label="安全库存/提前期">{{ detail.safetyStock ?? '-' }} / {{ detail.leadTimeDays ?? '-' }}</el-descriptions-item>
         <el-descriptions-item label="替代物料">{{ detail.altItemCode || '-' }}</el-descriptions-item>
         <el-descriptions-item v-if="detail.packingSpec" label="包装规格">{{ detail.packingSpec }}</el-descriptions-item>
@@ -221,7 +231,7 @@ const query = ref({
 })
 const selectedIds = ref([])
 const categories = ref([])
-const dicts = ref({ UNIT: [], MATERIAL_GROUP: [], STORAGE: [] })
+const dicts = ref({ UNIT: [], MATERIAL_GROUP: [], STORAGE: [], TEMP_LEVEL: [], HAZARD_LEVEL: [], CLEAN_LEVEL: [] })
 
 /** 替代维度启用或「有替代」筛选时走 substitutes 端点（正反查语义 + 目标状态列红标）；否则走 /items 分页 */
 const isRelationView = computed(() => !!query.value.dimension || query.value.hasSubstitute === '1')
@@ -232,7 +242,7 @@ function normalize(r) {
   return {
     id: r.ID, itemCode: r.ITEM_CODE, itemName: r.ITEM_NAME,
     categoryCode: r.CATEGORY_CODE, baseUnit: r.BASE_UNIT,
-    purchaseType: r.PURCHASE_TYPE, batchFlag: r.BATCH_FLAG,
+    purchaseType: r.PURCHASE_TYPE, batchFlag: r.BATCH_FLAG, serialFlag: r.SERIAL_FLAG,
     status: r.STATUS, altItemCode: r.ALT_ITEM_CODE,
     targetCode: r.TARGET_CODE ?? null, targetName: r.TARGET_NAME ?? null,
     targetStatus: r.TARGET_STATUS ?? null
@@ -264,11 +274,15 @@ async function loadData(page) {
 }
 
 async function loadRefs() {
-  const [cats, u, g, s] = await Promise.all([
-    getCategoriesApi(), getDictApi('UNIT'), getDictApi('MATERIAL_GROUP'), getDictApi('STORAGE')
+  const [cats, u, g, s, t, h, c] = await Promise.all([
+    getCategoriesApi(), getDictApi('UNIT'), getDictApi('MATERIAL_GROUP'), getDictApi('STORAGE'),
+    getDictApi('TEMP_LEVEL'), getDictApi('HAZARD_LEVEL'), getDictApi('CLEAN_LEVEL')
   ])
   categories.value = cats.data
-  dicts.value = { UNIT: u.data, MATERIAL_GROUP: g.data, STORAGE: s.data }
+  dicts.value = {
+    UNIT: u.data, MATERIAL_GROUP: g.data, STORAGE: s.data,
+    TEMP_LEVEL: t.data, HAZARD_LEVEL: h.data, CLEAN_LEVEL: c.data
+  }
 }
 
 function statusName(s) {
@@ -284,6 +298,14 @@ function categoryName(code) {
 function dictName(type, code) {
   const d = (dicts.value[type] || []).find(x => x.code === code)
   return d ? d.name : code || '-'
+}
+/** 列表存储属性列文案：三属性拼接，全空=无要求（偏差 D2） */
+function storageAttrText(row) {
+  const parts = []
+  if (row.tempLevel) parts.push(`温${dictName('TEMP_LEVEL', row.tempLevel)}`)
+  if (row.hazardLevel) parts.push(`危${dictName('HAZARD_LEVEL', row.hazardLevel)}`)
+  if (row.cleanLevel) parts.push(`净${dictName('CLEAN_LEVEL', row.cleanLevel)}`)
+  return parts.length ? parts.join(' · ') : '无要求'
 }
 
 function onSelectionChange(sel) {

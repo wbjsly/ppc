@@ -204,6 +204,43 @@ public class ReservationServiceImpl implements ReservationService {
         return reservationDao.selectActiveBySo(soId);
     }
 
+    @Override
+    @Transactional
+    public int releaseByBatch(String warehouseCode, String itemCode, String batchNo, String reason) {
+        LambdaQueryWrapper<Reservation> qw = new LambdaQueryWrapper<Reservation>()
+                .eq(Reservation::getStatus, Reservation.ST_ACTIVE)
+                .eq(Reservation::getWarehouseCode, warehouseCode)
+                .eq(Reservation::getItemCode, itemCode)
+                // batchNo=null → 该 SKU+仓全部批次（冻结 scope=ALL）
+                .eq(batchNo != null, Reservation::getBatchNo, batchNo);
+        List<Reservation> active = reservationDao.selectList(qw);
+        if (active.isEmpty()) {
+            return 0;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        java.util.Set<String> lineIds = new java.util.HashSet<>();
+        for (Reservation r : active) {
+            r.setStatus(Reservation.ST_RELEASED);
+            r.setReleasedAt(now);
+            r.setReleaseReason(reason);
+            reservationDao.updateById(r);
+            if (r.getLineId() != null) {
+                lineIds.add(r.getLineId());
+            }
+        }
+        // 受影响行回写 RESERVED_QTY = SUM(ACTIVE)（与 releaseBySo 同口径）
+        for (String lineId : lineIds) {
+            SoLine line = soLineDao.selectById(lineId);
+            if (line != null) {
+                line.setReservedQty(nvl(reservationDao.sumActiveByLine(lineId)));
+                soLineDao.updateById(line);
+            }
+        }
+        log.info("release by batch {}|{}|{} released {} reservations ({})",
+                warehouseCode, itemCode, batchNo, active.size(), reason);
+        return active.size();
+    }
+
     // ---------- helpers ----------
 
     private static BigDecimal nvl(BigDecimal v) {

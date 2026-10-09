@@ -272,6 +272,8 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (ApprovalTask t : tasks) {
             Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", t.getId());          // 签署入参 taskId（FE 进度弹窗/冒烟依赖）
+            row.put("apprId", t.getApprId());
             row.put("seq", t.getSeq());
             row.put("nodeType", t.getNodeType());
             row.put("nodeName", t.getNodeName());

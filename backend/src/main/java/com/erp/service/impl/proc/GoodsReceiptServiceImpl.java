@@ -101,6 +101,9 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     private final com.erp.service.vmi.VmiAgreementService vmiAgreementService;
     private final com.erp.service.vmi.VmiAlertService vmiAlertService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+    /** 仓位分配台账（强前置 ①' + 取位，spec receipt-posting MODIFIED / bin-assignment） */
+    private final com.erp.dao.inv.InvPutawayDao putawayDao;
 
     // ================================================================
     // 2.4.1 登记
@@ -469,6 +472,41 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     }
 
     // ================================================================
+    // 入库确认（inbound-workbench，FR-4.4-1-7）：POSTED → CONFIRMED，不可逆
+
+    @Override
+    @Transactional
+    public com.erp.entity.proc.GoodsReceipt confirm(String id) {
+        // 服务层角色二次校验（HTTP 层另有 /grs/*/confirm 规则，接口管可为）
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        boolean allowed = auth != null && auth.getAuthorities() != null
+                && auth.getAuthorities().stream().anyMatch(a ->
+                        "ROLE_ADMIN".equals(a.getAuthority())
+                                || "ROLE_WAREHOUSE".equals(a.getAuthority()));
+        if (!allowed) {
+            throw new ServiceException(403, "入库确认限仓库主管/管理员");
+        }
+        com.erp.entity.proc.GoodsReceipt gr = grDao.selectById(id);
+        if (gr == null) {
+            throw new ServiceException(422, "收货单不存在");
+        }
+        if (com.erp.entity.proc.GoodsReceipt.ST_CONFIRMED.equals(gr.getStatus())) {
+            throw new ServiceException(422, "已确认的入库单不可重复确认（冲销不在本能力，偏差 D1）");
+        }
+        if (!com.erp.entity.proc.GoodsReceipt.ST_POSTED.equals(gr.getStatus())) {
+            throw new ServiceException(422, "仅已过账可入库确认（当前 " + gr.getStatus() + "）");
+        }
+        gr.setConfirmBy(SecurityUtils.getCurrentUserId());
+        gr.setConfirmAt(java.time.LocalDateTime.now());
+        gr.setStatus(com.erp.entity.proc.GoodsReceipt.ST_CONFIRMED);
+        if (grDao.updateById(gr) == 0) {
+            throw new ServiceException(409, "入库确认并发冲突，请重试：" + gr.getGrNo());
+        }
+        log.info("receipt {} confirmed by {}", gr.getGrNo(), gr.getConfirmBy());
+        return gr;
+    }
+
     // 2.4.3 差异处置
     // ================================================================
 
@@ -921,6 +959,26 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
             throw new ServiceException(422, "检验记录缺失或不完整，请先完成检验（C-4.12-06）：未放行行 "
                     + String.join("、", notReleased));
         }
+        // 仓位分配强前置（spec receipt-posting ①'，C-4.4-11 挂起语义）：
+        // 全部待过账行须有 bin-assignment 台账 CONFIRMED 分配且数量合计 ≥ 核销量
+        List<String> notAssigned = new ArrayList<>();
+        for (GoodsReceiptLine gl : lineList(grId)) {
+            if (!"PENDING".equals(gl.getStatus())) {
+                continue;
+            }
+            BigDecimal within = nvl(gl.getWithinToleranceQty());
+            if (within.signum() <= 0) {
+                continue;
+            }
+            BigDecimal confirmed = putawayDao.sumConfirmedQty(gr.getGrNo(), gl.getLineNo());
+            if (confirmed == null || confirmed.compareTo(within) < 0) {
+                notAssigned.add(gl.getItemCode() + " 行" + gl.getLineNo());
+            }
+        }
+        if (!notAssigned.isEmpty()) {
+            throw new ServiceException(422, "请先完成仓位分配（4.4.5）：未分配/分配不足行 "
+                    + String.join("、", notAssigned));
+        }
         String userId = SecurityUtils.getCurrentUserId();
         int postedLines = 0;
         List<GoodsReceiptLine> postedLineEntities = new ArrayList<>();
@@ -1003,46 +1061,50 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         String batch = hasText(gr.getBatchNo()) ? gr.getBatchNo() : "";
         boolean concession = "CONCESSION".equals(gl.getQcStatus());
         String limitJson = concession ? concessionLimitOf(gl.getId()) : null;
-        InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
-                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
-                .eq(InvStock::getItemCode, gl.getItemCode())
-                .eq(InvStock::getBatchNo, batch)
-                .last("LIMIT 1"));
-        if (s == null) {
-            s = new InvStock();
-            s.setWarehouseCode(InvStock.DEFAULT_WH);
-            s.setItemCode(gl.getItemCode());
-            s.setItemName(gl.getItemName());
-            s.setBatchNo(batch);
-            s.setQty(within);
-            s.setQcQty(concession ? within : BigDecimal.ZERO);
-            s.setAvailableQty(concession ? BigDecimal.ZERO : within);
-            if (concession) {
-                s.setConcessionFlag("1");
-                s.setConcessionLimit(limitJson);
-            }
-            s.setCreateBy(SecurityUtils.getCurrentUserId());
-            stockDao.insert(s);
-        } else {
-            var upd = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                    .eq(InvStock::getId, s.getId())
-                    .eq(InvStock::getVerNo, s.getVerNo())
-                    .setSql("QTY = QTY + " + within.toPlainString()));
-            if (concession) {
-                stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                        .eq(InvStock::getId, s.getId())
-                        .setSql("QC_QTY = QC_QTY + " + within.toPlainString())
-                        .set(InvStock::getConcessionFlag, "1")
-                        .set(InvStock::getConcessionLimit, limitJson));
-            } else {
-                stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                        .eq(InvStock::getId, s.getId())
-                        .setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + within.toPlainString()));
-            }
-            if (upd == 0) {
-                throw new ServiceException(409, "库存并发更新冲突，请重试：" + gl.getItemCode());
+
+        // 库存变更经通用引擎（add-stock-posting-engine，receipt-posting MODIFIED ④）：
+        // 双列/恒等、INBOUND_DATE 首插不刷新、批次台账联动建档、序列判重、PURCHASE_IN 流水均由引擎承载；
+        // 让步限制快照（CONCESSION_FLAG/LIMIT）是 GR 域副作用，留域内完成（同事务，引擎已锁行）
+        com.erp.service.inv.StockPostingEngine.Line line =
+                new com.erp.service.inv.StockPostingEngine.Line();
+        line.warehouseCode = InvStock.DEFAULT_WH;
+        line.itemCode = gl.getItemCode();
+        line.itemName = gl.getItemName();
+        line.batchNo = batch;
+        // 目标仓位取 CONFIRMED 分配记录（强前置已保证存在；spec receipt-posting ④ 携带仓位）
+        line.binCode = confirmedBin(gr.getGrNo(), gl.getLineNo());
+        line.qty = within;
+        line.intoQc = concession;
+        stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                "PURCHASE_IN", "GR", gr.getGrNo(), List.of(line)));
+
+        if (concession) {
+            int rows = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
+                    .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
+                    .eq(InvStock::getItemCode, gl.getItemCode())
+                    .eq(InvStock::getBatchNo, batch)
+                    // 只标记本次过账落位的位行（同批次可能已存在于其他仓位）
+                    .eq(InvStock::getBinCode, line.binCode)
+                    .set(InvStock::getConcessionFlag, "1")
+                    .set(InvStock::getConcessionLimit, limitJson));
+            if (rows == 0) {
+                throw new ServiceException(409, "让步锁定快照更新冲突，请重试：" + gl.getItemCode());
             }
         }
+    }
+
+    /** 取本行 CONFIRMED 分配仓位（强前置兜底：缺失 422，与 ① 前置校验同口径） */
+    private String confirmedBin(String grNo, Integer lineNo) {
+        com.erp.entity.inv.InvPutaway rec = putawayDao.selectOne(
+                new LambdaQueryWrapper<com.erp.entity.inv.InvPutaway>()
+                        .eq(com.erp.entity.inv.InvPutaway::getSourceDocNo, grNo)
+                        .eq(com.erp.entity.inv.InvPutaway::getSourceLineNo, lineNo)
+                        .eq(com.erp.entity.inv.InvPutaway::getStatus, "CONFIRMED")
+                        .isNull(com.erp.entity.inv.InvPutaway::getSupersededBy));
+        if (rec == null || !hasText(rec.getBinCode())) {
+            throw new ServiceException(422, "请先完成仓位分配（4.4.5）：" + grNo + " 行 " + lineNo);
+        }
+        return rec.getBinCode();
     }
 
     /**

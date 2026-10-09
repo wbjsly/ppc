@@ -1,0 +1,740 @@
+package com.erp.service.impl.inv;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.erp.common.ServiceException;
+import com.erp.dao.inv.InvBatchDao;
+import com.erp.dao.inv.InvDocTypeDao;
+import com.erp.dao.inv.InvSerialDao;
+import com.erp.dao.inv.InvStockDao;
+import com.erp.dao.inv.InvTransactionDao;
+import com.erp.dao.mdm.MdmItemDao;
+import com.erp.dao.sd.ReservationDao;
+import com.erp.entity.inv.InvBatch;
+import com.erp.entity.inv.InvDocType;
+import com.erp.entity.inv.InvSerial;
+import com.erp.entity.inv.InvStock;
+import com.erp.entity.inv.InvTransaction;
+import com.erp.entity.mdm.MdmItem;
+import com.erp.entity.sd.Reservation;
+import com.erp.ops.OutboxPublisher;
+import com.erp.service.inv.StockPostingEngine;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * 通用出入库过账引擎实现（spec stock-posting-engine，design D2~D4/D3.5）。
+ * IN：锁行 → 批次台账联动建档（效期：行值 ?? 入库日+物料保质期推算）→ 数量累加/首插（INBOUND_DATE 当日、补货不刷新）
+ *      → 目标列（AVAILABLE 或让步 QC）→ 流水。
+ * OUT：组内 FOR UPDATE 锁行（锁序 wh+item+inbound+create 统一）→ 缺省分配 FIFO+效期（同日在手效期升序）
+ *      / 指定批次直扣 / qcFirst 先 QC 后 AVAILABLE → 负库存守卫（可用=AVAILABLE−ACTIVE预留）→ 流水。
+ * 同事务写库存变动事件（outbox，BR-4.4-13）。
+ */
+@Slf4j
+@Service
+public class StockPostingEngineImpl implements StockPostingEngine {
+
+    private static final DateTimeFormatter TXN_DAY = DateTimeFormatter.ofPattern("yyMMdd");
+
+    private final InvDocTypeDao docTypeDao;
+    private final InvStockDao stockDao;
+    private final InvBatchDao batchDao;
+    private final InvTransactionDao txnDao;
+    private final InvSerialDao serialDao;
+    private final ReservationDao reservationDao;
+    private final MdmItemDao itemDao;
+    private final OutboxPublisher outboxPublisher;
+
+    public StockPostingEngineImpl(InvDocTypeDao docTypeDao, InvStockDao stockDao,
+                                  InvBatchDao batchDao, InvTransactionDao txnDao,
+                                  InvSerialDao serialDao, ReservationDao reservationDao,
+                                  MdmItemDao itemDao, OutboxPublisher outboxPublisher) {
+        this.docTypeDao = docTypeDao;
+        this.stockDao = stockDao;
+        this.batchDao = batchDao;
+        this.txnDao = txnDao;
+        this.serialDao = serialDao;
+        this.reservationDao = reservationDao;
+        this.itemDao = itemDao;
+        this.outboxPublisher = outboxPublisher;
+    }
+
+    // ================= 过账入口 =================
+
+    @Override
+    @Transactional
+    public Result post(Request req) {
+        if (req == null || req.lines == null || req.lines.isEmpty()) {
+            throw new ServiceException(422, "过账行不能为空");
+        }
+        InvDocType type = requireEnabledType(req.typeCode);
+        boolean isIn = InvDocType.DIR_IN.equals(type.getDirection());
+        Result out = new Result();
+        out.allocations = new ArrayList<>();
+        out.txnNos = new ArrayList<>();
+
+        if (isIn) {
+            postIn(req, type, out);
+        } else {
+            postOut(req, type, out);
+        }
+
+        // 库存变动事件（BR-4.4-13《库存变动事件日志》，同事务 outbox）
+        Map<String, Object> extra = new LinkedHashMap<>();
+        extra.put("typeCode", type.getTypeCode());
+        extra.put("direction", type.getDirection());
+        extra.put("lineCount", req.lines.size());
+        // 同一单据可拆多次 post（逐行调用）——source 带随机段避免幂等键碰撞（C-0-06 教训）
+        String source = req.bizDocNo + ":" + java.util.UUID.randomUUID().toString()
+                .substring(0, 8);
+        outboxPublisher.publishSourced("STOCK.MOVED", source, 1, null,
+                "库存变动：" + type.getTypeName() + " " + req.bizDocNo, extra, "inv-engine");
+        return out;
+    }
+
+    // ================= IN =================
+
+    private void postIn(Request req, InvDocType type, Result out) {
+        List<IndexedLine> ordered = new ArrayList<>();
+        for (int i = 0; i < req.lines.size(); i++) {
+            ordered.add(new IndexedLine(i, req.lines.get(i)));
+        }
+        // 锁序统一：wh + item + batch + bin（design D2 位行锁序）
+        ordered.sort(Comparator
+                .comparing((IndexedLine x) -> str(x.line.warehouseCode))
+                .thenComparing(x -> str(x.line.itemCode))
+                .thenComparing(x -> str(x.line.batchNo))
+                .thenComparing(x -> str(x.line.binCode)));
+
+        for (IndexedLine il : ordered) {
+            StockPostingEngine.Line line = il.line;
+            if (line.qty == null || line.qty.signum() <= 0) {
+                throw new ServiceException(422, "过账数量必须大于 0");
+            }
+            if (isBlank(line.warehouseCode)) {
+                throw new ServiceException(422, "仓库必填");
+            }
+            MdmItem item = requireItem(line.itemCode);
+            String batch = line.batchNo == null ? "" : line.batchNo.trim();
+            // IN 目标仓位：空/null = 未分配虚拟位 ''（bin-assignment 强前置由域服务把关）
+            String bin = line.binCode == null ? "" : line.binCode.trim();
+            boolean needSerial = type.getNeedSerial() != null && type.getNeedSerial() == 1
+                    || (item != null && "1".equals(item.getSerialFlag()));
+
+            // 序列判重（C-4.4-02 缺失拒 / BR-4.11-15 重复阻断）
+            checkSerialsIn(line, needSerial);
+
+            // 批次台账联动建档（batch-master；效期 D3.5 取值序）
+            LocalDate expiry = null;
+            if (!batch.isEmpty() && type.getNeedBatch() != null && type.getNeedBatch() == 1) {
+                expiry = ensureBatchLedger(req, line, item, batch);
+            }
+
+            // 锁行（四维）→ 数量变更
+            InvStock row = lockRow(line.warehouseCode, line.itemCode, batch, bin);
+            BigDecimal qty = line.qty;
+            if (row == null) {
+                InvStock fresh = new InvStock();
+                fresh.setWarehouseCode(line.warehouseCode);
+                fresh.setItemCode(line.itemCode);
+                fresh.setItemName(isBlank(line.itemName)
+                        ? (item == null ? line.itemCode : item.getItemName()) : line.itemName);
+                fresh.setBatchNo(batch);
+                fresh.setBinCode(bin);
+                fresh.setQty(qty);
+                if (line.intoQc) {
+                    fresh.setQcQty(qty);
+                    fresh.setAvailableQty(BigDecimal.ZERO);
+                } else {
+                    fresh.setQcQty(BigDecimal.ZERO);
+                    fresh.setAvailableQty(qty);
+                }
+                fresh.setFinQty(BigDecimal.ZERO);
+                fresh.setInboundDate(LocalDate.now());   // 首插记当日（FIFO 地基，行=位行）
+                try {
+                    stockDao.insert(fresh);
+                } catch (org.springframework.dao.DuplicateKeyException e) {
+                    throw new ServiceException(409, "库存行并发冲突，请重试："
+                            + line.itemCode + "/" + batch + "/" + bin);
+                }
+                out.txnNos.add(writeTxn(InvTransaction.DIR_IN, type, req, line, batch, bin,
+                        qty, BigDecimal.ZERO, qty));
+            } else {
+                BigDecimal before = nvl(row.getQty());
+                LambdaUpdateWrapper<InvStock> uw = new LambdaUpdateWrapper<InvStock>()
+                        .eq(InvStock::getId, row.getId())
+                        .setSql("QTY = QTY + " + strip(qty));
+                if (line.intoQc) {
+                    uw.setSql("QC_QTY = QC_QTY + " + strip(qty));
+                } else {
+                    uw.setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + strip(qty));
+                }
+                // 补货不刷新 INBOUND_DATE（不在 update 中触碰该列）
+                if (stockDao.update(null, uw) == 0) {
+                    throw new ServiceException(409, "库存行更新冲突，请重试："
+                            + line.itemCode + "/" + batch + "/" + bin);
+                }
+                out.txnNos.add(writeTxn(InvTransaction.DIR_IN, type, req, line, batch, bin,
+                        qty, before, before.add(qty)));
+            }
+
+            StockPostingEngine.Alloc a = StockPostingEngine.Alloc.of(il.index, batch, qty);
+            a.binCode = bin;
+            a.expiryDate = expiry;
+            a.itemName = isBlank(line.itemName)
+                    ? (item == null ? line.itemCode : item.getItemName()) : line.itemName;
+            out.allocations.add(a);
+        }
+    }
+
+    /** IN 序列判重（任一在册即阻断——含历史；缺失拒单见 needSerial 分支） */
+    private void checkSerialsIn(StockPostingEngine.Line line, boolean needSerial) {
+        List<String> serials = line.serials;
+        if ((serials == null || serials.isEmpty())) {
+            if (needSerial) {
+                throw new ServiceException(422, "请录入有效序列号（C-4.4-02）：" + line.itemCode);
+            }
+            return;
+        }
+        List<String> dup = new ArrayList<>();
+        for (String sn : serials) {
+            if (isBlank(sn)) {
+                continue;
+            }
+            InvSerial hit = serialDao.selectOne(new LambdaQueryWrapper<InvSerial>()
+                    .eq(InvSerial::getSerialNo, sn.trim()));
+            if (hit != null) {
+                dup.add(sn.trim() + "（批次 " + str(hit.getBatchNo()) + "）");
+            }
+        }
+        if (!dup.isEmpty()) {
+            throw new ServiceException(422, "序列号重复，阻断入库：" + String.join("、", dup));
+        }
+    }
+
+    /** 批次台账联动建档；返回生效效期（建档案例/既有不改写，design D3.5） */
+    private LocalDate ensureBatchLedger(Request req, StockPostingEngine.Line line,
+                                        MdmItem item, String batch) {
+        InvBatch exist = batchDao.selectOne(new LambdaQueryWrapper<InvBatch>()
+                .eq(InvBatch::getItemCode, line.itemCode)
+                .eq(InvBatch::getBatchNo, batch));
+        boolean batchManaged = item != null && "1".equals(item.getBatchFlag());
+        LocalDate expiry = resolveExpiry(line, item);
+        if (exist != null) {
+            return exist.getExpiryDate();   // 既有批次不被联动改写（手工优先存在）
+        }
+        if (batchManaged && expiry == null) {
+            throw new ServiceException(422, "批次管理物料必填有效期（BR-4.1-08）：" + line.itemCode);
+        }
+        InvBatch b = new InvBatch();
+        b.setBatchNo(batch);
+        b.setItemCode(line.itemCode);
+        b.setItemName(isBlank(line.itemName)
+                ? (item == null ? line.itemCode : item.getItemName()) : line.itemName);
+        b.setExpiryDate(expiry);
+        b.setSupplierBatchNo(line.supplierBatchNo);
+        b.setSourceDocNo(req.bizDocNo);
+        b.setStatus("1");
+        boolean inferred = line.expiryDate == null && expiry != null;
+        b.setRemark("过账联动建档：" + req.bizDocNo + (inferred ? "（效期按保质期推算）" : ""));
+        try {
+            batchDao.insert(b);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发同批建档：读回既有即可
+            return batchDao.selectOne(new LambdaQueryWrapper<InvBatch>()
+                    .eq(InvBatch::getItemCode, line.itemCode)
+                    .eq(InvBatch::getBatchNo, batch)).getExpiryDate();
+        }
+        return expiry;
+    }
+
+    /** 效期取值序：行值 → 入库日+shelfLifeDays 推算 → null（design D3.5） */
+    private LocalDate resolveExpiry(StockPostingEngine.Line line, MdmItem item) {
+        if (line.expiryDate != null) {
+            return line.expiryDate;
+        }
+        if (item != null && "1".equals(item.getBatchFlag()) && item.getShelfLifeDays() != null
+                && item.getShelfLifeDays() > 0) {
+            return LocalDate.now().plusDays(item.getShelfLifeDays());
+        }
+        return null;
+    }
+
+    // ================= OUT =================
+
+    private void postOut(Request req, InvDocType type, Result out) {
+        // 分组处理 + 锁序统一（wh+item 排序后 FOR UPDATE，design D4）
+        Map<String, List<IndexedLine>> groups = new LinkedHashMap<>();
+        for (int i = 0; i < req.lines.size(); i++) {
+            StockPostingEngine.Line line = req.lines.get(i);
+            String key = str(line.warehouseCode) + "|" + str(line.itemCode);
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(new IndexedLine(i, line));
+        }
+        List<String> groupKeys = new ArrayList<>(groups.keySet());
+        groupKeys.sort(Comparator.naturalOrder());
+
+        for (String key : groupKeys) {
+            List<IndexedLine> lines = groups.get(key);
+            StockPostingEngine.Line first = lines.get(0).line;
+            if (isBlank(first.warehouseCode)) {
+                throw new ServiceException(422, "仓库必填");
+            }
+            MdmItem item = requireItem(first.itemCode);
+
+            // 锁定该维度全部位行（锁序：batch + bin 升序，design D2）
+            List<InvStock> locked = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
+                    .eq(InvStock::getWarehouseCode, first.warehouseCode)
+                    .eq(InvStock::getItemCode, first.itemCode)
+                    .orderByAsc(InvStock::getBatchNo)
+                    .orderByAsc(InvStock::getBinCode)
+                    .last("FOR UPDATE"));
+            // 行状态（列值 + 锁后读取的批次级 ACTIVE 预留；预留不落位行——按批次预算统一封顶，
+            // 跨位多行合计只扣一次，避免批次预留被重复减）
+            Map<String, RowState> state = new HashMap<>();
+            Map<String, BigDecimal> batchAvail = new HashMap<>();
+            Map<String, BigDecimal> batchReserved = new HashMap<>();
+            for (InvStock r : locked) {
+                RowState st = new RowState();
+                st.row = r;
+                st.qty = nvl(r.getQty());
+                st.avail = nvl(r.getAvailableQty());
+                st.qc = nvl(r.getQcQty());
+                st.batchKey = str(r.getBatchNo());
+                batchAvail.merge(st.batchKey, st.avail, BigDecimal::add);
+                batchReserved.putIfAbsent(st.batchKey,
+                        nvl(reservationDao.sumActiveOnBatch(first.warehouseCode,
+                                first.itemCode, st.batchKey)));
+                state.put(r.getId(), st);
+            }
+            // FEFO 挑选序：inbound → 效期桶 → create；平局保持锁序（batch,bin 升序——
+            // 稳定排序，DB 端为锁序、单测 mock 为返回序，不引入额外字母序决胜）
+            Map<String, LocalDate> expiryByBatch = loadExpiry(first.itemCode, locked);
+            List<RowState> pickOrder = new ArrayList<>();
+            for (InvStock r : locked) {
+                pickOrder.add(state.get(r.getId()));
+            }
+            pickOrder.sort(Comparator
+                    .comparing((RowState st) -> st.row.getInboundDate() == null
+                            ? LocalDate.of(1970, 1, 1) : st.row.getInboundDate())
+                    .thenComparing(st -> expiryByBatch.getOrDefault(st.batchKey,
+                            LocalDate.of(2999, 12, 31)))
+                    .thenComparingLong(st -> st.row.getCreateDate() == null ? 0
+                            : st.row.getCreateDate().toLocalDate().toEpochDay()));
+            // 批次预算封顶：每批可扣 = Σ行可用 − 批次预留，按挑序逐行封顶（basis 上限）
+            Map<String, BigDecimal> batchAssigned = new HashMap<>();
+            for (RowState st : pickOrder) {
+                BigDecimal budget = batchAvail.get(st.batchKey)
+                        .subtract(batchReserved.get(st.batchKey));
+                BigDecimal remain = budget.subtract(
+                        batchAssigned.getOrDefault(st.batchKey, BigDecimal.ZERO));
+                if (remain.signum() < 0) {
+                    remain = BigDecimal.ZERO;
+                }
+                st.capped = st.avail.min(remain);
+                batchAssigned.merge(st.batchKey, st.capped, BigDecimal::add);
+            }
+
+            for (IndexedLine il : lines) {
+                StockPostingEngine.Line line = il.line;
+                if (line.qty == null || line.qty.signum() <= 0) {
+                    throw new ServiceException(422, "过账数量必须大于 0");
+                }
+                boolean needSerial = type.getNeedSerial() != null && type.getNeedSerial() == 1
+                        || (item != null && "1".equals(item.getSerialFlag()));
+                checkSerialsOut(line, needSerial);
+
+                String specified = line.batchNo == null || line.batchNo.trim().isEmpty()
+                        ? null : line.batchNo.trim();
+                if (specified != null) {
+                    // 指定批次：组内该批次全部位行按挑序逐行扣减（跨位拆行）
+                    List<RowState> batchRows = rowsOfBatch(pickOrder, specified);
+                    if (batchRows.isEmpty()) {
+                        throw new ServiceException(422, "库存批次不存在："
+                                + line.itemCode + " / " + specified);
+                    }
+                    out.allocations.addAll(deductBatch(req, type, line, il.index,
+                            batchRows, specified, line.qty));
+                } else if (line.qcFirst) {
+                    throw new ServiceException(422, "核销锁定量的出库须指定批次");
+                } else {
+                    // 缺省分配：FIFO+效期（位行序），扣减可用=AVAILABLE−ACTIVE预留（批次预算）
+                    BigDecimal need = line.qty;
+                    BigDecimal totalBasis = BigDecimal.ZERO;
+                    for (RowState st : pickOrder) {
+                        BigDecimal basis = st.basis();
+                        totalBasis = totalBasis.add(basis.max(BigDecimal.ZERO));
+                        if (need.signum() <= 0 || basis.signum() <= 0) {
+                            continue;
+                        }
+                        BigDecimal take = basis.min(need);
+                        out.allocations.add(deductRow(req, type, line, il.index,
+                                st, take));
+                        need = need.subtract(take);
+                    }
+                    if (need.signum() > 0) {
+                        throw new ServiceException(422, "库存不足，当前可用量为 "
+                                + strip(totalBasis.max(BigDecimal.ZERO)) + "："
+                                + line.itemCode + "（仓库 " + line.warehouseCode
+                                + "，需求 " + strip(line.qty) + "）");
+                    }
+                }
+            }
+        }
+    }
+
+    /** 按挑序取某批次的全部位行 */
+    private List<RowState> rowsOfBatch(List<RowState> pickOrder, String batch) {
+        List<RowState> rows = new ArrayList<>();
+        for (RowState st : pickOrder) {
+            if (batch.equals(str(st.row.getBatchNo()))) {
+                rows.add(st);
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * 指定批次扣减（跨位拆行）：批次级守卫（qcFirst 先核销 QC 再扣可用），
+     * 行级按挑序逐行执行，一行一条位级流水；qcFirst 时 QC 与 AVAILABLE 可分落不同位行，
+     * 各行恒等独立成立。
+     */
+    private List<StockPostingEngine.Alloc> deductBatch(Request req, InvDocType type,
+                                                       StockPostingEngine.Line line, int lineIndex,
+                                                       List<RowState> batchRows, String batch,
+                                                       BigDecimal take) {
+        BigDecimal qcSum = BigDecimal.ZERO;
+        BigDecimal basisSum = BigDecimal.ZERO;
+        for (RowState st : batchRows) {
+            qcSum = qcSum.add(st.qc);
+            basisSum = basisSum.add(st.basis());
+        }
+        BigDecimal qcNeed = line.qcFirst ? take.min(qcSum) : BigDecimal.ZERO;
+        BigDecimal avNeed = take.subtract(qcNeed);
+        if (basisSum.compareTo(avNeed) < 0) {
+            throw new ServiceException(422, "库存不足，当前可用量为 "
+                    + strip(basisSum.max(BigDecimal.ZERO)) + "："
+                    + line.itemCode + " 批次 " + batch + "（本批扣量 " + strip(take) + "）");
+        }
+        if (line.qcFirst && qcNeed.signum() > 0 && qcSum.compareTo(qcNeed) < 0) {
+            throw new ServiceException(422, "锁定量核销超出：" + line.itemCode + " 批次 " + batch);
+        }
+
+        List<StockPostingEngine.Alloc> res = new ArrayList<>();
+        // 同一行的 QC 核销与可用扣减合并为一次 update / 一条位级流水（与单行旧行为一致）
+        BigDecimal qcRem = qcNeed;
+        BigDecimal avRem = avNeed;
+        for (RowState st : batchRows) {
+            if (qcRem.signum() <= 0 && avRem.signum() <= 0) {
+                break;
+            }
+            BigDecimal rowQc = BigDecimal.ZERO;
+            if (qcRem.signum() > 0 && st.qc.signum() > 0) {
+                rowQc = st.qc.min(qcRem);
+            }
+            BigDecimal rowAv = BigDecimal.ZERO;
+            if (avRem.signum() > 0 && st.basis().signum() > 0) {
+                rowAv = st.basis().min(avRem);
+            }
+            if (rowQc.signum() <= 0 && rowAv.signum() <= 0) {
+                continue;
+            }
+            res.add(deductRowParts(req, type, line, lineIndex, st, batch, rowQc, rowAv));
+            qcRem = qcRem.subtract(rowQc);
+            avRem = avRem.subtract(rowAv);
+        }
+        return res;
+    }
+
+    /** 缺省分配单行扣减（take 已按批次预算封顶，design D2） */
+    private StockPostingEngine.Alloc deductRow(Request req, InvDocType type,
+                                               StockPostingEngine.Line line, int lineIndex,
+                                               RowState st, BigDecimal take) {
+        return deductRowParts(req, type, line, lineIndex, st, str(st.row.getBatchNo()),
+                BigDecimal.ZERO, take);
+    }
+
+    /**
+     * 位行级扣减原语：rowQcTake（QC_QTY 减）与 rowAvTake（AVAILABLE_QTY 减），
+     * 行扣量 = 两者之和；同一 update 原子扣 QC/AVAIL/QTY，位级 before/after 流水。
+     */
+    private StockPostingEngine.Alloc deductRowParts(Request req, InvDocType type,
+                                                    StockPostingEngine.Line line, int lineIndex,
+                                                    RowState st, String batch,
+                                                    BigDecimal rowQcTake, BigDecimal rowAvTake) {
+        BigDecimal rowTake = rowQcTake.add(rowAvTake);
+        if (rowTake.signum() <= 0) {
+            throw new ServiceException(422, "扣减数量必须大于 0");
+        }
+        if (rowAvTake.signum() > 0 && st.avail.compareTo(rowAvTake) < 0) {
+            throw new ServiceException(422, "库存不足，当前可用量为 "
+                    + strip(st.avail.max(BigDecimal.ZERO)) + "："
+                    + line.itemCode + " 批次 " + batch);
+        }
+        if (rowQcTake.signum() > 0 && st.qc.compareTo(rowQcTake) < 0) {
+            throw new ServiceException(422, "锁定量核销超出：" + line.itemCode + " 批次 " + batch);
+        }
+
+        LambdaUpdateWrapper<InvStock> uw = new LambdaUpdateWrapper<InvStock>()
+                .eq(InvStock::getId, st.row.getId());
+        if (rowQcTake.signum() > 0) {
+            uw.ge(InvStock::getQcQty, rowQcTake)
+              .setSql("QC_QTY = QC_QTY - " + strip(rowQcTake));
+        }
+        if (rowAvTake.signum() > 0) {
+            // 行级守卫（批次预算已在挑序封顶，锁内执行）
+            uw.ge(InvStock::getAvailableQty, rowAvTake)
+              .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + strip(rowAvTake));
+        }
+        uw.setSql("QTY = QTY - " + strip(rowTake));
+        if (stockDao.update(null, uw) == 0) {
+            throw new ServiceException(409, "库存并发冲突，请重试："
+                    + line.itemCode + " 批次 " + batch + " 仓位 " + str(st.row.getBinCode()));
+        }
+        BigDecimal before = st.qty;
+        st.qty = st.qty.subtract(rowTake);
+        st.avail = st.avail.subtract(rowAvTake);
+        st.qc = st.qc.subtract(rowQcTake);
+
+        String bin = str(st.row.getBinCode());
+        writeTxn(InvTransaction.DIR_OUT, type, req, line, batch, bin,
+                rowTake, before, st.qty);
+        StockPostingEngine.Alloc a = StockPostingEngine.Alloc.of(lineIndex, batch, rowTake);
+        a.binCode = bin;
+        a.inboundDate = st.row.getInboundDate();
+        a.itemName = st.row.getItemName();
+        return a;
+    }
+
+    private void checkSerialsOut(StockPostingEngine.Line line, boolean needSerial) {
+        List<String> serials = line.serials;
+        if (serials == null || serials.isEmpty()) {
+            if (needSerial) {
+                throw new ServiceException(422, "请录入有效序列号（C-4.4-02）：" + line.itemCode);
+            }
+            return;
+        }
+        List<String> bad = new ArrayList<>();
+        for (String sn : serials) {
+            if (isBlank(sn)) {
+                continue;
+            }
+            InvSerial row = serialDao.selectOne(new LambdaQueryWrapper<InvSerial>()
+                    .eq(InvSerial::getSerialNo, sn.trim()));
+            boolean usable = row != null
+                    && line.itemCode.equals(row.getItemCode())
+                    && InvSerial.ST_IN_STOCK.equals(row.getStatus());
+            if (!usable) {
+                bad.add(sn.trim());
+            }
+        }
+        if (!bad.isEmpty()) {
+            throw new ServiceException(422, "序列号不可用（不在可用清单，BR-4.4-22）："
+                    + String.join("、", bad));
+        }
+    }
+
+    // ================= 缺省分配 dry-run（创建期配批） =================
+
+    @Override
+    public List<Alloc> allocate(String warehouseCode, String itemCode, BigDecimal qty) {
+        if (isBlank(warehouseCode) || isBlank(itemCode) || qty == null || qty.signum() <= 0) {
+            throw new ServiceException(422, "分配参数必填且数量大于 0");
+        }
+        List<InvStock> rows = new ArrayList<>(stockDao.selectList(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, warehouseCode)
+                .eq(InvStock::getItemCode, itemCode)
+                .orderByAsc(InvStock::getInboundDate)
+                .orderByAsc(InvStock::getCreateDate)));
+        Map<String, LocalDate> expiryByBatch = loadExpiry(itemCode, rows);
+        rows.sort(Comparator
+                .comparing((InvStock r) -> r.getInboundDate() == null
+                        ? LocalDate.of(1970, 1, 1) : r.getInboundDate())
+                .thenComparing(r -> expiryByBatch.getOrDefault(str(r.getBatchNo()),
+                        LocalDate.of(2999, 12, 31)))
+                .thenComparingLong(r -> r.getCreateDate() == null ? 0
+                        : r.getCreateDate().toLocalDate().toEpochDay()));
+
+        // 批次预算：每批可扣 = Σ行可用 − 批次预留（预留批次级，只扣一次，不按行重复减）
+        Map<String, BigDecimal> batchAvail = new HashMap<>();
+        Map<String, BigDecimal> batchReserved = new HashMap<>();
+        for (InvStock r : rows) {
+            String b = str(r.getBatchNo());
+            batchAvail.merge(b, nvl(r.getAvailableQty()), BigDecimal::add);
+            batchReserved.putIfAbsent(b, nvl(reservationDao.sumActiveOnBatch(
+                    warehouseCode, itemCode, b)));
+        }
+
+        List<Alloc> out = new ArrayList<>();
+        BigDecimal need = qty;
+        BigDecimal totalBasis = BigDecimal.ZERO;
+        Map<String, BigDecimal> assigned = new HashMap<>();
+        for (InvStock r : rows) {
+            String b = str(r.getBatchNo());
+            BigDecimal budget = batchAvail.get(b).subtract(batchReserved.get(b));
+            BigDecimal remain = budget.subtract(assigned.getOrDefault(b, BigDecimal.ZERO));
+            BigDecimal basis = nvl(r.getAvailableQty()).min(
+                    remain.signum() > 0 ? remain : BigDecimal.ZERO);
+            totalBasis = totalBasis.add(basis);
+            if (need.signum() <= 0 || basis.signum() <= 0) {
+                continue;
+            }
+            BigDecimal take = basis.min(need);
+            assigned.merge(b, take, BigDecimal::add);
+            Alloc a = Alloc.of(0, b, take);
+            a.binCode = str(r.getBinCode());
+            a.inboundDate = r.getInboundDate();
+            a.expiryDate = expiryByBatch.get(b);
+            a.itemName = r.getItemName();
+            out.add(a);
+            need = need.subtract(take);
+        }
+        if (need.signum() > 0) {
+            // material-issue 创建预检语义：缺口 422（提示性，不预占）
+            throw new ServiceException(422, "可用量不足：" + itemCode + " 缺口 "
+                    + strip(need) + "，可用合计 " + strip(totalBasis));
+        }
+        return out;
+    }
+
+    // ================= helpers =================
+
+    private InvDocType requireEnabledType(String code) {
+        InvDocType type = isBlank(code) ? null : docTypeDao.selectByCode(code);
+        if (type == null) {
+            throw new ServiceException(422, "出入库业务类型不存在：" + code);
+        }
+        if (type.getEnabled() == null || type.getEnabled() != 1) {
+            throw new ServiceException(422, "业务类型已停用：" + type.getTypeName());
+        }
+        return type;
+    }
+
+    /** 物料读取（mdm 缺行不阻断：batchFlag/serialFlag 校验跳过，兼容测试夹具无主数据行） */
+    private MdmItem requireItem(String itemCode) {
+        if (isBlank(itemCode)) {
+            throw new ServiceException(422, "物料必填");
+        }
+        return itemDao.selectOne(new LambdaQueryWrapper<MdmItem>()
+                .eq(MdmItem::getItemCode, itemCode));
+    }
+
+    private InvStock lockRow(String wh, String item, String batch, String bin) {
+        return stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, wh)
+                .eq(InvStock::getItemCode, item)
+                .eq(InvStock::getBatchNo, batch)
+                .eq(InvStock::getBinCode, bin == null ? "" : bin)
+                .last("FOR UPDATE"));
+    }
+
+    private Map<String, LocalDate> loadExpiry(String itemCode, List<InvStock> rows) {
+        Map<String, LocalDate> map = new HashMap<>();
+        List<String> batches = new ArrayList<>();
+        for (InvStock r : rows) {
+            String b = str(r.getBatchNo());
+            if (!b.isEmpty() && !batches.contains(b)) {
+                batches.add(b);
+            }
+        }
+        if (batches.isEmpty()) {
+            return map;
+        }
+        List<InvBatch> ledgers = batchDao.selectList(new LambdaQueryWrapper<InvBatch>()
+                .eq(InvBatch::getItemCode, itemCode)
+                .in(InvBatch::getBatchNo, batches));
+        for (InvBatch b : ledgers) {
+            // 效期可空（无保质期物料）：跳过 null，避免比较器 NPE（getOrDefault 对 null 值不兜底）
+            if (b.getExpiryDate() != null) {
+                map.put(b.getBatchNo(), b.getExpiryDate());
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 流水写入（TX+yyMMdd+6位，唯一冲突重试 ≤5）。
+     * 位级一维一条：batch/bin/qty 为本条实际变动维度（拆批/跨位拆行逐条），before/after 为位行余额。
+     */
+    private String writeTxn(String direction, InvDocType type, Request req,
+                            StockPostingEngine.Line line, String batch, String bin,
+                            BigDecimal qty, BigDecimal before, BigDecimal after) {
+        String prefix = "TX" + LocalDate.now().format(TXN_DAY) + "-";
+        for (int attempt = 0; attempt < 5; attempt++) {
+            long seq = txnDao.countByPrefix(prefix) + 1 + attempt;
+            String no = prefix + String.format("%06d", seq);
+            InvTransaction t = new InvTransaction();
+            t.setTxnNo(no);
+            t.setDirection(direction);
+            t.setTypeCode(type.getTypeCode());
+            t.setBizDocType(req.bizDocType);
+            t.setBizDocNo(req.bizDocNo);
+            t.setWarehouseCode(line.warehouseCode);
+            t.setItemCode(line.itemCode);
+            t.setBatchNo(batch == null ? "" : batch);
+            t.setBinCode(bin == null ? "" : bin);
+            t.setQty(qty.abs());
+            t.setBeforeQty(before);
+            t.setAfterQty(after);
+            t.setRemark(req.remark);
+            try {
+                txnDao.insert(t);
+                return no;
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                // 序列撞号重试
+            }
+        }
+        throw new ServiceException(409, "流水号生成冲突，请重试");
+    }
+
+    /** 行状态（锁后读数 + 运行扣减镜像；capped=批次预算封顶后的行可扣上限） */
+    private static final class RowState {
+        InvStock row;
+        String batchKey;
+        BigDecimal qty;
+        BigDecimal avail;
+        BigDecimal qc;
+        BigDecimal capped = BigDecimal.ZERO;
+
+        BigDecimal basis() {
+            return capped;
+        }
+    }
+
+    private static final class IndexedLine {
+        final int index;
+        final StockPostingEngine.Line line;
+
+        IndexedLine(int index, StockPostingEngine.Line line) {
+            this.index = index;
+            this.line = line;
+        }
+    }
+
+    private static BigDecimal nvl(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private static String strip(BigDecimal v) {
+        return v.stripTrailingZeros().toPlainString();
+    }
+
+    private static String str(String s) {
+        return s == null ? "" : s;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+}

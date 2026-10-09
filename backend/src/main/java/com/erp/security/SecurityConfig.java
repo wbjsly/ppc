@@ -133,6 +133,8 @@ public class SecurityConfig {
                 // 收货管理（add-goods-receipt D7）：同样必须先于 /api/proc/** 的 ADMIN 规则。
                 // 顺序要点：具体路径在前——否则 POST /grs/** 的 RECEIVER 规则会吞掉过账/放行的 WAREHOUSE 门禁
                 .antMatchers(HttpMethod.POST, "/api/proc/grs/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 入库确认（inbound-workbench FR-4.4-1-7）：过账同权限，先于通用 RECEIVER 规则
+                .antMatchers(HttpMethod.POST, "/api/proc/grs/*/confirm").hasAnyRole("ADMIN", "WAREHOUSE")
                 .antMatchers(HttpMethod.POST, "/api/proc/grs/**").hasAnyRole("ADMIN", "RECEIVER")
                 .antMatchers(HttpMethod.POST, "/api/proc/gr-differences/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/proc/gr-adjustments/**").hasAnyRole("ADMIN", "PM")
@@ -183,6 +185,18 @@ public class SecurityConfig {
                 // 领料出库（add-consignment-procurement D11）：创建/过账/作废 = ADMIN/WAREHOUSE，读 + PM
                 .antMatchers(HttpMethod.POST, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 .antMatchers(HttpMethod.GET, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE", "PM")
+                // 仓位分配（add-bin-assignment，spec bin-assignment）：写限 ADMIN/WAREHOUSE，查询认证
+                .antMatchers(HttpMethod.POST, "/api/inv/bin-assignment/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.PUT, "/api/inv/bin-assignment/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.DELETE, "/api/inv/bin-assignment/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 调拨单（add-outbound-workbench，spec transfer-order）：写限 ADMIN/WAREHOUSE，查询认证
+                .antMatchers(HttpMethod.POST, "/api/inv/transfers/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.PUT, "/api/inv/transfers/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 报废出库单（add-outbound-workbench，spec scrap-order）：写限 ADMIN/WAREHOUSE，查询认证
+                .antMatchers(HttpMethod.POST, "/api/inv/scrap-orders/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                .antMatchers(HttpMethod.PUT, "/api/inv/scrap-orders/**").hasAnyRole("ADMIN", "WAREHOUSE")
+                // 出库作业台（add-outbound-workbench，spec outbound-workbench）：动作限 ADMIN/WAREHOUSE，队列查询认证
+                .antMatchers(HttpMethod.POST, "/api/inv/outbound/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 供应商门户（add-supplier-portal-collaboration D2）：门户 API 仅 ROLE_SUPPLIER，
                 // 且必须先于 /api/** 兜底；反向（门户账号打内部端点）由 PortalGuardInterceptor 403
                 // 销售发货（add-sales-lead-to-cash，spec sales-shipment tasks 9.10）

@@ -256,10 +256,32 @@ class VmiRulesUnitTest {
     // ---------- material-issue FIFO 配批与不足阻断 ----------
 
     private MaterialIssueServiceImpl issueService(InvStockDao stockDao) {
+        // 真实引擎共享 stockDao：配批/扣减断言穿引擎继续生效（type 由桩按需返回）
+        com.erp.dao.inv.InvDocTypeDao docTypeDao = mock(com.erp.dao.inv.InvDocTypeDao.class);
+        org.mockito.Mockito.when(docTypeDao.selectByCode(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(inv -> {
+                    com.erp.entity.inv.InvDocType t = new com.erp.entity.inv.InvDocType();
+                    String code = inv.getArgument(0);
+                    t.setTypeCode(code);
+                    t.setDirection("VMI_TRANSFER_IN".equals(code) ? "IN" : "OUT");
+                    t.setTypeName("test");
+                    t.setEnabled(1);
+                    t.setNeedBatch(1);
+                    t.setNeedSerial(0);
+                    return t;
+                });
+        com.erp.service.inv.StockPostingEngine engine =
+                new com.erp.service.impl.inv.StockPostingEngineImpl(
+                        docTypeDao, stockDao, mock(com.erp.dao.inv.InvBatchDao.class),
+                        mock(com.erp.dao.inv.InvTransactionDao.class),
+                        mock(com.erp.dao.inv.InvSerialDao.class),
+                        mock(com.erp.dao.sd.ReservationDao.class),
+                        mock(com.erp.dao.mdm.MdmItemDao.class),
+                        mock(com.erp.ops.OutboxPublisher.class));
         return new MaterialIssueServiceImpl(mock(MaterialIssueDao.class),
                 mock(MaterialIssueLineDao.class), stockDao, mock(VmiStockDao.class),
                 mock(MdmSupplierDao.class), mock(VmiAgreementService.class),
-                mock(VmiAlertService.class), mock(AccrualService.class));
+                mock(VmiAlertService.class), mock(AccrualService.class), engine);
     }
 
     private InvStock stockRow(String id, String batch, String avail, LocalDateTime create) {
@@ -296,6 +318,54 @@ class VmiRulesUnitTest {
         assertEquals(0, new BigDecimal("50").compareTo(plan.get(1).getQty()));
         assertEquals(0, new BigDecimal("150").compareTo(
                 plan.get(0).getQty().add(plan.get(1).getQty())));
+    }
+
+    /** material-issue MODIFIED 行为增强：同日入库按效期升序配批（BR-4.4-19 FEFO） */
+    @Test
+    void fifoPlanPrefersEarlierExpirySameDay() {
+        InvStockDao stockDao = mock(InvStockDao.class);
+        java.time.LocalDateTime sameDay = LocalDateTime.of(2026, 10, 1, 10, 0);
+        when(stockDao.selectList(any())).thenReturn(List.of(
+                stockRow("s-late", "B-LATE", "60", sameDay),
+                stockRow("s-early", "B-EARLY", "60", sameDay)));
+        // 效期台账：B-EARLY 更早到期
+        com.erp.dao.inv.InvBatchDao batchDao = mock(com.erp.dao.inv.InvBatchDao.class);
+        com.erp.entity.inv.InvBatch late = new com.erp.entity.inv.InvBatch();
+        late.setBatchNo("B-LATE");
+        late.setExpiryDate(java.time.LocalDate.of(2027, 6, 30));
+        com.erp.entity.inv.InvBatch early = new com.erp.entity.inv.InvBatch();
+        early.setBatchNo("B-EARLY");
+        early.setExpiryDate(java.time.LocalDate.of(2026, 12, 31));
+        when(batchDao.selectList(any())).thenReturn(List.of(late, early));
+
+        com.erp.dao.inv.InvDocTypeDao docTypeDao = mock(com.erp.dao.inv.InvDocTypeDao.class);
+        com.erp.service.inv.StockPostingEngine engine =
+                new com.erp.service.impl.inv.StockPostingEngineImpl(
+                        docTypeDao, stockDao, batchDao,
+                        mock(com.erp.dao.inv.InvTransactionDao.class),
+                        mock(com.erp.dao.inv.InvSerialDao.class),
+                        mock(com.erp.dao.sd.ReservationDao.class),
+                        mock(com.erp.dao.mdm.MdmItemDao.class),
+                        mock(com.erp.ops.OutboxPublisher.class));
+        MaterialIssueServiceImpl svc = new MaterialIssueServiceImpl(
+                mock(MaterialIssueDao.class), mock(MaterialIssueLineDao.class), stockDao,
+                mock(VmiStockDao.class), mock(MdmSupplierDao.class),
+                mock(VmiAgreementService.class), mock(VmiAlertService.class),
+                mock(AccrualService.class), engine);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("issueType", "OWN");
+        payload.put("workOrderNo", "WO-FEFO");
+        payload.put("lines", List.of(Map.of("itemCode", "RM1", "qty", 100)));
+
+        Map<String, Object> out = svc.preview(payload);
+        @SuppressWarnings("unchecked")
+        var lines = (List<com.erp.entity.vmi.MaterialIssueLine>) out.get("lines");
+        // 同日：先配更早到期 B-EARLY 60，再配 B-LATE 40
+        assertEquals("B-EARLY", lines.get(0).getBatchNo());
+        assertEquals(0, new BigDecimal("60").compareTo(lines.get(0).getQty()));
+        assertEquals("B-LATE", lines.get(1).getBatchNo());
+        assertEquals(0, new BigDecimal("40").compareTo(lines.get(1).getQty()));
     }
 
     @Test

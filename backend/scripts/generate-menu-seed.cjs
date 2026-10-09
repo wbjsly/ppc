@@ -127,8 +127,20 @@ const EXTRA_PERM = {
   ...leaf(['M3-11', 'M3-11-1', 'M3-11-2'], PERM.fw),
   ...leaf(['M11-1', 'M11-1-1', 'M11-1-2'], PERM.sales),
   ...leaf(['M11-11', 'M11-11-1', 'M11-11-2', 'M11-11-3'], PERM.contract),
-  // M4-1 仓库管理下 4.1.2/4.1.3 尚未纳入本轮，仅限制 4.1.1 叶子（父节点保持开放避免孤儿）
-  ...leaf(['M4-1-1'], PERM.warehouse)
+  // M4-1 仓库管理 4.1.1/4.1.2/4.1.3（change add-warehouse-zone-management 统一口径；父节点保持开放避免孤儿）
+  ...leaf(['M4-1-1', 'M4-1-2', 'M4-1-3'], PERM.warehouse),
+  // M4-2 批次管理 4.2.1/4.2.2（change add-batch-serial-master，与仓库组同口径）
+  ...leaf(['M4-2-1', 'M4-2-2'], PERM.warehouse),
+  // M4-3 库存快照 4.3.1/4.3.2/4.3.3（change add-stock-snapshot-three-state，菜单管可见、接口管可为）
+  ...leaf(['M4-3-1', 'M4-3-2', 'M4-3-3'], PERM.warehouse),
+  // M4-4 入库管理 4.4.1~4.4.4（change add-stock-posting-engine，作业台四路由）
+  ...leaf(['M4-4-1', 'M4-4-2', 'M4-4-3', 'M4-4-4'], PERM.warehouse),
+  // M4-4-5 仓位分配（change add-bin-assignment，菜单管可见、接口管可为）
+  ...leaf(['M4-4-5'], PERM.warehouse),
+  // M4-5 出库管理 4.5.1~4.5.4（change add-outbound-workbench，出库作业台四路由）
+  ...leaf(['M4-5-1', 'M4-5-2', 'M4-5-3', 'M4-5-4'], PERM.warehouse),
+  // M4-12 调拨管理 4.12.1 仓间调拨 / 4.12.2 在途跟踪（change add-outbound-workbench P1）
+  ...leaf(['M4-12-1', 'M4-12-2'], PERM.warehouse)
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

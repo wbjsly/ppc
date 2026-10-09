@@ -330,6 +330,97 @@ const routes = [
         meta: { title: '仓库档案', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
       },
       {
+        // 4.1.2 仓位规划（add-warehouse-zone-management，spec warehouse-zone-planning）
+        path: '/m/4.1.2',
+        name: 'WarehouseZone',
+        component: () => import('@/views/inv/zone/index.vue'),
+        meta: { title: '仓位规划', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.1.3 属性配置（add-warehouse-zone-management，spec warehouse-attribute-config）
+        path: '/m/4.1.3',
+        name: 'WarehouseAttributeConfig',
+        component: () => import('@/views/inv/attribute-config/index.vue'),
+        meta: { title: '属性配置', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.2.1 批号管理（add-batch-serial-master，spec batch-master）
+        path: '/m/4.2.1',
+        name: 'BatchMaster',
+        component: () => import('@/views/inv/batch/index.vue'),
+        meta: { title: '批号管理', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.2.2 序列管理（add-batch-serial-master，spec serial-master）
+        path: '/m/4.2.2',
+        name: 'SerialMaster',
+        component: () => import('@/views/inv/serial/index.vue'),
+        meta: { title: '序列管理', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.3.1 可用库存（add-stock-snapshot-three-state，spec stock-snapshot）
+        path: '/m/4.3.1',
+        name: 'StockSnapshotAvailable',
+        component: () => import('@/views/inv/stock-snapshot/index.vue'),
+        meta: { title: '可用库存', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.3.2 冻结库存（add-stock-snapshot-three-state，spec freeze-management）
+        path: '/m/4.3.2',
+        name: 'FreezeStock',
+        component: () => import('@/views/inv/freeze/index.vue'),
+        meta: { title: '冻结库存', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.3.3 在制库存（同组件另一 Tab，spec stock-snapshot D8）
+        path: '/m/4.3.3',
+        name: 'StockSnapshotWip',
+        component: () => import('@/views/inv/stock-snapshot/index.vue'),
+        meta: { title: '在制库存', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.4.1 采购入库（add-stock-posting-engine，spec inbound-workbench，type=PURCHASE_IN）
+        path: '/m/4.4.1',
+        name: 'InboundPurchase',
+        component: () => import('@/views/inv/inbound-workbench/index.vue'),
+        meta: { title: '采购入库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.4.2 完工入库（同组件 type=WIP_IN，空态骨架）
+        path: '/m/4.4.2',
+        name: 'InboundWip',
+        component: () => import('@/views/inv/inbound-workbench/index.vue'),
+        meta: { title: '完工入库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.4.3 退货入库（同组件 type=SALES_RETURN_IN，镜像+流水）
+        path: '/m/4.4.3',
+        name: 'InboundReturn',
+        component: () => import('@/views/inv/inbound-workbench/index.vue'),
+        meta: { title: '退货入库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.4.4 调拨入库（同组件 type=TRANSFER_IN，空态骨架）
+        path: '/m/4.4.4',
+        name: 'InboundTransfer',
+        component: () => import('@/views/inv/inbound-workbench/index.vue'),
+        meta: { title: '调拨入库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.4.5 仓位分配（add-bin-assignment，spec bin-assignment，双 Tab 工作台）
+        path: '/m/4.4.5',
+        name: 'BinAssignment',
+        component: () => import('@/views/inv/bin-assignment/index.vue'),
+        meta: { title: '仓位分配', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 类型配置页（spec stock-doc-type，ADMIN 写）
+        path: '/inv/doc-type',
+        name: 'DocTypeConfig',
+        component: () => import('@/views/inv/doc-type/index.vue'),
+        meta: { title: '出入库类型配置', group: '库存管理', perm: 'ROLE_ADMIN' }
+      },
+      {
         // 11.1.1 线索录入（add-sales-lead-to-cash，spec crm-lead-management）
         path: '/m/11.1.1',
         name: 'LeadEntry',
@@ -603,11 +694,60 @@ const routes = [
         meta: { title: '取价记录', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_ADMIN' }
       },
       {
-        // 4.5.2 领料出库（add-consignment-procurement，spec material-issue）
+        // 4.5.1 销售出库（add-outbound-workbench，spec outbound-workbench，四路由共用作业台）
+        path: '/m/4.5.1',
+        name: 'OutboundSales',
+        component: () => import('@/views/inv/outbound-workbench/index.vue'),
+        meta: { title: '销售出库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.5.2 领料出库（作业台队列；创建领料单入口外链 /inv/material-issue——偏差 D6）
         path: '/m/4.5.2',
+        name: 'OutboundMaterialIssue',
+        component: () => import('@/views/inv/outbound-workbench/index.vue'),
+        meta: { title: '领料出库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 领料单创建/管理页（移出菜单路由，作业台外链可达）
+        path: '/inv/material-issue',
         name: 'MaterialIssue',
         component: () => import('@/views/inv/material-issue/index.vue'),
-        meta: { title: '领料出库', group: '库存管理' }
+        meta: { title: '领料单', group: '库存管理' }
+      },
+      {
+        // 4.5.3 调拨出库（作业台出库段过账）
+        path: '/m/4.5.3',
+        name: 'OutboundTransfer',
+        component: () => import('@/views/inv/outbound-workbench/index.vue'),
+        meta: { title: '调拨出库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.5.4 报废出库（作业台队列；新建报废单入口外链 /inv/scrap-order）
+        path: '/m/4.5.4',
+        name: 'OutboundScrap',
+        component: () => import('@/views/inv/outbound-workbench/index.vue'),
+        meta: { title: '报废出库', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 报废单管理（创建/会签/过账/核销，spec scrap-order）
+        path: '/inv/scrap-order',
+        name: 'ScrapOrder',
+        component: () => import('@/views/inv/scrap-order/index.vue'),
+        meta: { title: '报废单', group: '库存管理' }
+      },
+      {
+        // 4.12.1 仓间调拨（调拨单全生命周期 + 内部往来，spec transfer-order P1）
+        path: '/m/4.12.1',
+        name: 'TransferOrder',
+        component: () => import('@/views/inv/transfer-order/index.vue'),
+        meta: { title: '仓间调拨', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 4.12.2 在途跟踪（C-4.4-09 超期挂起）
+        path: '/m/4.12.2',
+        name: 'TransferIntransit',
+        component: () => import('@/views/inv/transfer-intransit/index.vue'),
+        meta: { title: '在途跟踪', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
       },
       {
         path: '/m/2.5.2',

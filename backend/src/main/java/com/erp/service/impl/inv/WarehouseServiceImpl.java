@@ -3,7 +3,11 @@ package com.erp.service.impl.inv;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.inv.InvWarehouseDao;
+import com.erp.dao.mdm.MdmItemDictDao;
+import com.erp.dao.mdm.MdmOrgUnitDao;
 import com.erp.entity.inv.InvWarehouse;
+import com.erp.entity.mdm.MdmItemDict;
+import com.erp.entity.mdm.MdmOrgUnit;
 import com.erp.service.inv.WarehouseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -14,6 +18,8 @@ import java.util.List;
 /**
  * 仓库档案（spec warehouse-master）：
  * 编码 WH-NNNN 系统生成且创建后不可改；状态 1 启用 / 0 停用，停用后不被新发货单与新预留选用。
+ * 4.1.1 补差距（change add-warehouse-zone-management）：仓库类型走 WAREHOUSE_TYPE 字典校验，
+ * 所属组织存组织主数据 ID 并做存在性/启用校验（DC-02，NULL 放行兼容存量）。
  */
 @Slf4j
 @Service
@@ -24,9 +30,15 @@ public class WarehouseServiceImpl implements WarehouseService {
     private static final String CODE_PREFIX = "WH-";
 
     private final InvWarehouseDao warehouseDao;
+    private final MdmItemDictDao dictDao;
+    private final MdmOrgUnitDao orgUnitDao;
 
-    public WarehouseServiceImpl(InvWarehouseDao warehouseDao) {
+    public WarehouseServiceImpl(InvWarehouseDao warehouseDao,
+                                MdmItemDictDao dictDao,
+                                MdmOrgUnitDao orgUnitDao) {
         this.warehouseDao = warehouseDao;
+        this.dictDao = dictDao;
+        this.orgUnitDao = orgUnitDao;
     }
 
     @Override
@@ -59,9 +71,12 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (warehouse == null || isBlank(warehouse.getWhName())) {
             throw new ServiceException(422, "仓库名称必填");
         }
+        requireValidWhType(warehouse.getWhType());
+        requireValidOrgUnit(warehouse.getOrgUnit());
         InvWarehouse wh = new InvWarehouse();
         wh.setWhName(warehouse.getWhName().trim());
         wh.setOrgUnit(warehouse.getOrgUnit());
+        wh.setWhType(warehouse.getWhType());
         wh.setCapacityDesc(warehouse.getCapacityDesc());
         wh.setRemark(warehouse.getRemark());
         wh.setStatus(ST_ENABLED);
@@ -89,8 +104,11 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (isBlank(warehouse.getWhName())) {
             throw new ServiceException(422, "仓库名称必填");
         }
+        requireValidWhType(warehouse.getWhType());
+        requireValidOrgUnit(warehouse.getOrgUnit());
         stored.setWhName(warehouse.getWhName().trim());
         stored.setOrgUnit(warehouse.getOrgUnit());
+        stored.setWhType(warehouse.getWhType());
         stored.setCapacityDesc(warehouse.getCapacityDesc());
         stored.setRemark(warehouse.getRemark());
         warehouseDao.updateById(stored);
@@ -172,5 +190,36 @@ public class WarehouseServiceImpl implements WarehouseService {
 
     private boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * 仓库类型字典校验（spec warehouse-master MODIFIED：取值 MUST 命中 WAREHOUSE_TYPE 启用条目）。
+     * 为空视为未分类放行（存量与迁移回填不受影响；新建时由前端下拉保证必填）。
+     */
+    private void requireValidWhType(String whType) {
+        if (isBlank(whType)) {
+            return;
+        }
+        boolean active = dictDao.selectByType("WAREHOUSE_TYPE").stream()
+                .anyMatch(d -> whType.equals(d.getDictCode()));
+        if (!active) {
+            throw new ServiceException(422, "仓库类型不在启用字典内：" + whType);
+        }
+    }
+
+    /**
+     * 所属组织引用校验（DC-02 引用完整性，L1）：非空时组织必须存在且启用；NULL 放行（存量两仓未关联）。
+     */
+    private void requireValidOrgUnit(String orgUnitId) {
+        if (isBlank(orgUnitId)) {
+            return;
+        }
+        MdmOrgUnit org = orgUnitDao.selectById(orgUnitId);
+        if (org == null) {
+            throw new ServiceException(422, "所属组织不存在：" + orgUnitId);
+        }
+        if (!"1".equals(org.getStatus())) {
+            throw new ServiceException(422, "所属组织已停用：" + org.getOuName());
+        }
     }
 }

@@ -30,6 +30,12 @@ public interface GoodsReceiptService {
     Page<Map<String, Object>> page(long current, long size, String status,
                                    String sourceType, String keyword);
 
+    /**
+     * 入库确认（inbound-workbench，FR-4.4-1-7）：POSTED → CONFIRMED，
+     * 限 ADMIN/WAREHOUSE，确认人与时间留痕，不可逆（重复确认/未过账 422）。
+     */
+    com.erp.entity.proc.GoodsReceipt confirm(String id);
+
     Map<String, Object> detail(String id);
 
     /** 作废（仅 CREATED，原因必填） */

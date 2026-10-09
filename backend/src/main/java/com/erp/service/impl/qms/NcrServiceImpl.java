@@ -60,6 +60,10 @@ public class NcrServiceImpl implements NcrService {
     private static final String D_SORT = "SORT";
     private static final String D_REWORK = "REWORK";
     private static final String D_CONCESSION = "CONCESSION";
+    /** 报废（add-outbound-workbench 方案 a：报废出库质量来源的正向条件） */
+    private static final String D_SCRAP = "SCRAP";
+    /** 报废处置进行中（评审后、处置确认前） */
+    private static final String ST_SCRAPPING = "SCRAPPING";
 
     @Value("${app.qms.ncr-review-hours-critical:4}")
     private int hoursCritical;
@@ -85,6 +89,7 @@ public class NcrServiceImpl implements NcrService {
     private final com.erp.service.qms.CapaService capaService;
     private final com.erp.service.qms.CopqService copqService;
     private final com.erp.service.qms.ScarService scarService;
+    private final com.erp.service.inv.FreezeService freezeService;
 
     public NcrServiceImpl(NcrDao ncrDao,
                           NcrLogDao logDao,
@@ -98,7 +103,8 @@ public class NcrServiceImpl implements NcrService {
                           @Lazy com.erp.service.proc.ReturnService returnService,
                           @Lazy com.erp.service.qms.CapaService capaService,
                           @Lazy com.erp.service.qms.CopqService copqService,
-                          @Lazy com.erp.service.qms.ScarService scarService) {
+                          @Lazy com.erp.service.qms.ScarService scarService,
+                          @Lazy com.erp.service.inv.FreezeService freezeService) {
         this.ncrDao = ncrDao;
         this.logDao = logDao;
         this.lineDao = lineDao;
@@ -112,6 +118,7 @@ public class NcrServiceImpl implements NcrService {
         this.capaService = capaService;
         this.copqService = copqService;
         this.scarService = scarService;
+        this.freezeService = freezeService;
     }
 
     // ================= 6.1 生成 + 两阶段冻结 =================
@@ -239,14 +246,15 @@ public class NcrServiceImpl implements NcrService {
         }
         String disp = disposition == null ? "" : disposition.trim().toUpperCase();
         if (disp.isEmpty() || "PENDING".equals(disp) || "待定".equals(disposition)) {
-            throw new ServiceException(422, "评审必须选定处置方式（退货 RETURN / 挑选 SORT / 返工 REWORK / 让步接收 CONCESSION）");
+            throw new ServiceException(422, "评审必须选定处置方式（退货 RETURN / 挑选 SORT / 返工 REWORK / 让步接收 CONCESSION / 报废 SCRAP）");
         }
-        if (!List.of(D_RETURN, D_SORT, D_REWORK, D_CONCESSION).contains(disp)) {
+        if (!List.of(D_RETURN, D_SORT, D_REWORK, D_CONCESSION, D_SCRAP).contains(disp)) {
             throw new ServiceException(422, "未知处置方式：" + disposition);
         }
-        // BR-4.12-26：安全/法规 CTQ 不合格只能退货或返工，禁止让步接收
-        if (D_CONCESSION.equals(disp) && "1".equals(ncr.getRegulatoryFlag())) {
-            throw new ServiceException(422, "安全/法规 CTQ 不合格禁止让步接收，仅可退货或返工（BR-4.12-26）");
+        // BR-4.12-26：安全/法规 CTQ 不合格只能退货或返工，禁止让步接收与报废
+        if ((D_CONCESSION.equals(disp) || D_SCRAP.equals(disp))
+                && "1".equals(ncr.getRegulatoryFlag())) {
+            throw new ServiceException(422, "安全/法规 CTQ 不合格禁止让步接收与报废，仅可退货或返工（BR-4.12-26）");
         }
 
         String from = ncr.getStatus();
@@ -254,6 +262,7 @@ public class NcrServiceImpl implements NcrService {
             case D_RETURN -> "RETURNING";
             case D_SORT -> "SORTING";
             case D_REWORK -> "REWORKING";
+            case D_SCRAP -> ST_SCRAPPING;
             default -> "CONCESSION";
         };
         ncr.setStatus(to);
@@ -360,9 +369,15 @@ public class NcrServiceImpl implements NcrService {
                     missing.add("让步接收双签未批准（2.5.2）");
                 }
             }
+            case D_SCRAP -> {
+                if (!hasText(result)) {
+                    missing.add("报废执行凭证未回填（关联报废单号，4.5.4）");
+                }
+            }
             default -> missing.add("处置方式缺失");
         }
-        if (!List.of("SORTING", "REWORKING", "RETURNING", "CONCESSION").contains(ncr.getStatus())) {
+        if (!List.of("SORTING", "REWORKING", "RETURNING", "CONCESSION", ST_SCRAPPING)
+                .contains(ncr.getStatus())) {
             missing.add("状态不可确认执行：" + ncr.getStatus());
         }
         if (!missing.isEmpty()) {
@@ -594,7 +609,7 @@ public class NcrServiceImpl implements NcrService {
         LocalDateTime cutoff = LocalDateTime.now().minusDays(closeDays);
         List<Ncr> open = ncrDao.selectList(new LambdaQueryWrapper<Ncr>()
                 .in(Ncr::getStatus, ST_CREATED, "REVIEWING", "RETURNING", "SORTING",
-                        "REWORKING", "CONCESSION", ST_DISPOSED)
+                        "REWORKING", "CONCESSION", ST_SCRAPPING, ST_DISPOSED)
                 .lt(Ncr::getCreateDate, cutoff)
                 .last("LIMIT 200"));
         int handled = 0;
@@ -708,47 +723,85 @@ public class NcrServiceImpl implements NcrService {
 
     // ================= 内部：库存冻结/解冻 =================
 
-    /** AVAILABLE → QC（冻结），返回是否发生转移 */
+    /** AVAILABLE → QC（冻结），返回是否发生转移；位行粒度下按 FIFO 逐位行拆分冻结（A1 适配） */
     private boolean freezeStock(Ncr ncr) {
-        InvStock s = stockOf(ncr.getItemCode(), ncr.getBatchNo());
-        if (s == null) {
+        List<InvStock> rows = stockRows(ncr.getItemCode(), ncr.getBatchNo());
+        if (rows.isEmpty()) {
             return false;
         }
-        BigDecimal available = ncr.getQty() == null ? BigDecimal.ZERO : ncr.getQty();
-        if (s.getAvailableQty() != null && s.getAvailableQty().compareTo(available) < 0) {
-            available = s.getAvailableQty();
+        BigDecimal availTotal = BigDecimal.ZERO;
+        for (InvStock r : rows) {
+            availTotal = availTotal.add(r.getAvailableQty() == null ? BigDecimal.ZERO : r.getAvailableQty());
         }
+        BigDecimal available = ncr.getQty() == null ? availTotal : ncr.getQty().min(availTotal);
         if (available.signum() <= 0) {
             return false;
         }
-        int rows = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                .eq(InvStock::getId, s.getId())
-                .eq(InvStock::getVerNo, s.getVerNo())
-                .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + available.toPlainString())
-                .setSql("QC_QTY = QC_QTY + " + available.toPlainString()));
-        if (rows == 0) {
-            throw new ServiceException(409, "库存冻结并发冲突，请重试：" + ncr.getItemCode());
+        BigDecimal remain = available;
+        for (InvStock s : rows) {
+            if (remain.signum() <= 0) {
+                break;
+            }
+            BigDecimal avail = s.getAvailableQty() == null ? BigDecimal.ZERO : s.getAvailableQty();
+            if (avail.signum() <= 0) {
+                continue;
+            }
+            BigDecimal take = avail.min(remain);
+            int upd = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
+                    .eq(InvStock::getId, s.getId())
+                    .eq(InvStock::getVerNo, s.getVerNo())
+                    .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + take.toPlainString())
+                    .setSql("QC_QTY = QC_QTY + " + take.toPlainString()));
+            if (upd == 0) {
+                throw new ServiceException(409, "库存冻结并发冲突，请重试：" + ncr.getItemCode());
+            }
+            remain = remain.subtract(take);
         }
+        // 台账归集（spec ncr-management MODIFIED，SOURCE=NCR 即时生效）
+        freezeService.recordNcrFreeze(rows.get(0).getWarehouseCode(), ncr.getItemCode(),
+                ncr.getBatchNo(), available, ncr.getId());
         return true;
     }
 
-    /** QC → AVAILABLE（解冻还原，仅非退货分支；退货由出库扣减） */
+    /** QC → AVAILABLE（解冻还原，仅非退货分支；退货由出库扣减）——位行粒度下逐位行回补（A1 适配） */
     private void unfreezeStock(Ncr ncr) {
+        List<InvStock> rows = stockRows(ncr.getItemCode(), ncr.getBatchNo());
+        String wh = rows.isEmpty() || rows.get(0).getWarehouseCode() == null
+                ? InvStock.DEFAULT_WH : rows.get(0).getWarehouseCode();
+        // NCR 台账归账（任意出口统一释放、幂等——仅动本 NCR 自有 ACTIVE 行；
+        // 退货分支 QC 由 2.6.1 出库扣减，台账在此归零，spec ncr-management MODIFIED）
+        freezeService.recordNcrUnfreeze(wh, ncr.getItemCode(), ncr.getBatchNo(),
+                ncr.getQty(), ncr.getId());
         if (D_RETURN.equals(ncr.getDisposition())) {
             return;
         }
-        InvStock s = stockOf(ncr.getItemCode(), ncr.getBatchNo());
-        if (s == null || s.getQcQty() == null || s.getQcQty().signum() <= 0) {
+        BigDecimal qcTotal = BigDecimal.ZERO;
+        for (InvStock r : rows) {
+            qcTotal = qcTotal.add(r.getQcQty() == null ? BigDecimal.ZERO : r.getQcQty());
+        }
+        if (qcTotal.signum() <= 0) {
             return;
         }
-        BigDecimal back = ncr.getQty() == null ? s.getQcQty() : ncr.getQty();
-        if (s.getQcQty().compareTo(back) < 0) {
-            back = s.getQcQty();
+        BigDecimal back = ncr.getQty() == null ? qcTotal : ncr.getQty();
+        if (qcTotal.compareTo(back) < 0) {
+            back = qcTotal;
         }
-        stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                .eq(InvStock::getId, s.getId())
-                .setSql("QC_QTY = QC_QTY - " + back.toPlainString())
-                .setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + back.toPlainString()));
+        BigDecimal remain = back;
+        for (InvStock s : rows) {
+            if (remain.signum() <= 0) {
+                break;
+            }
+            BigDecimal held = s.getQcQty() == null ? BigDecimal.ZERO : s.getQcQty();
+            if (held.signum() <= 0) {
+                continue;
+            }
+            BigDecimal take = held.min(remain);
+            stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
+                    .eq(InvStock::getId, s.getId())
+                    .setSql("QC_QTY = QC_QTY - " + take.toPlainString())
+                    .setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + take.toPlainString()));
+            remain = remain.subtract(take);
+        }
     }
 
     private void unfreezeAll(Ncr ncr) {
@@ -784,15 +837,17 @@ public class NcrServiceImpl implements NcrService {
         return sb.length() == 0 ? "标记位清零" : sb.toString();
     }
 
-    private InvStock stockOf(String itemCode, String batchNo) {
+    /** 批次全部位行（inbound → bin 序；位行粒度下同批次可多行，A1 适配） */
+    private List<InvStock> stockRows(String itemCode, String batchNo) {
         if (!hasText(itemCode)) {
-            return null;
+            return List.of();
         }
-        return stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
+        return stockDao.selectList(new LambdaQueryWrapper<InvStock>()
                 .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
                 .eq(InvStock::getItemCode, itemCode)
                 .eq(InvStock::getBatchNo, batchNo == null ? "" : batchNo)
-                .last("LIMIT 1"));
+                .orderByAsc(InvStock::getInboundDate)
+                .orderByAsc(InvStock::getBinCode));
     }
 
     // ================= 内部工具 =================

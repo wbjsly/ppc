@@ -34,6 +34,7 @@ public class MdmItemServiceImpl implements MdmItemService {
 
     private static final String SNAPSHOT_FIELDS =
             "itemCode,itemName,categoryCode,baseUnit,materialGroup,purchaseType,storageCondition," +
+            "tempLevel,hazardLevel,cleanLevel," +
             "altItemCode,safetyStock,leadTimeDays,batchFlag,shelfLifeDays,packingSpec,barcode,bomVersion,status";
 
     private static final String ILLEGAL_CHARS = "<>&";
@@ -89,6 +90,7 @@ public class MdmItemServiceImpl implements MdmItemService {
         requireDict("UNIT", item.getBaseUnit());
         requireDict("MATERIAL_GROUP", item.getMaterialGroup());
         requireDict("STORAGE", item.getStorageCondition());
+        requireStorageAttrs(item);
         if (!PURCHASE_TYPES.containsKey(item.getPurchaseType())) {
             throw new ServiceException(422, "采购类型须为 BUY(外购)/MAKE(自制)/OUTSOURCE(委外) 之一");
         }
@@ -162,6 +164,7 @@ public class MdmItemServiceImpl implements MdmItemService {
         requireDict("UNIT", item.getBaseUnit());
         requireDict("MATERIAL_GROUP", item.getMaterialGroup());
         requireDict("STORAGE", item.getStorageCondition());
+        requireStorageAttrs(item);
         if ("1".equals(item.getBatchFlag()) && (item.getShelfLifeDays() == null || item.getShelfLifeDays() <= 0)) {
             throw new ServiceException(422, "批次管理物料必须填写有效保质期天数");
         }
@@ -634,6 +637,22 @@ public class MdmItemServiceImpl implements MdmItemService {
     }
 
     /**
+     * 三个存储属性校验（change add-bin-assignment，spec item-master-creation）：
+     * 可空（NULL=无要求放行，偏差 D2）；非空 MUST 命中对应 4.1.3 字典启用条目，非法 422。
+     */
+    private void requireStorageAttrs(MdmItem item) {
+        requireDictIfPresent("TEMP_LEVEL", item.getTempLevel());
+        requireDictIfPresent("HAZARD_LEVEL", item.getHazardLevel());
+        requireDictIfPresent("CLEAN_LEVEL", item.getCleanLevel());
+    }
+
+    private void requireDictIfPresent(String dictType, String code) {
+        if (isNotBlank(code) && dictDao.countActiveCode(dictType, code) == 0) {
+            throw new ServiceException(422, "参照数据无效（" + dictType + "）：" + code);
+        }
+    }
+
+    /**
      * 编辑距离候选池：存量 ≤5000 时全量扫描（精确符合编辑距离 ≤N 语义），
      * 超过则退化为前 4 字符 LIKE 预筛（避免大表全扫）。
      */
@@ -714,6 +733,9 @@ public class MdmItemServiceImpl implements MdmItemService {
         appendDiff(sb, "materialGroup", oldRow.getMaterialGroup(), newRow.getMaterialGroup());
         appendDiff(sb, "purchaseType", oldRow.getPurchaseType(), newRow.getPurchaseType());
         appendDiff(sb, "storageCondition", oldRow.getStorageCondition(), newRow.getStorageCondition());
+        appendDiff(sb, "tempLevel", oldRow.getTempLevel(), newRow.getTempLevel());
+        appendDiff(sb, "hazardLevel", oldRow.getHazardLevel(), newRow.getHazardLevel());
+        appendDiff(sb, "cleanLevel", oldRow.getCleanLevel(), newRow.getCleanLevel());
         appendDiff(sb, "altItemCode", oldRow.getAltItemCode(), newRow.getAltItemCode());
         appendDiff(sb, "safetyStock", str(oldRow.getSafetyStock()), str(newRow.getSafetyStock()));
         appendDiff(sb, "leadTimeDays", str(oldRow.getLeadTimeDays()), str(newRow.getLeadTimeDays()));

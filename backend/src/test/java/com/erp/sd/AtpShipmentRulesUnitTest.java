@@ -175,10 +175,27 @@ class AtpShipmentRulesUnitTest {
         soDao = mock(SoDao.class);
         soLineDao = mock(SoLineDao.class);
         reservationDao = mock(ReservationDao.class);
+
+        // 真实引擎注入（共享 stockDao/reservationDao）：双列扣减与 FIFO 断言穿引擎继续生效
+        com.erp.dao.inv.InvDocTypeDao docTypeDao = mock(com.erp.dao.inv.InvDocTypeDao.class);
+        com.erp.entity.inv.InvDocType salesOut = new com.erp.entity.inv.InvDocType();
+        salesOut.setTypeCode("SALES_OUT");
+        salesOut.setDirection("OUT");
+        salesOut.setTypeName("销售出库");
+        salesOut.setEnabled(1);
+        salesOut.setNeedBatch(1);
+        salesOut.setNeedSerial(0);
+        when(docTypeDao.selectByCode("SALES_OUT")).thenReturn(salesOut);
+        com.erp.service.inv.StockPostingEngine realEngine =
+                new com.erp.service.impl.inv.StockPostingEngineImpl(
+                        docTypeDao, stockDao, mock(com.erp.dao.inv.InvBatchDao.class),
+                        mock(com.erp.dao.inv.InvTransactionDao.class),
+                        mock(com.erp.dao.inv.InvSerialDao.class), reservationDao,
+                        mock(com.erp.dao.mdm.MdmItemDao.class), mock(OutboxPublisher.class));
         shipment = new ShipmentServiceImpl(shipDao, shipLineDao, soDao, soLineDao,
                 mock(SdReturnDao.class), mock(SdReturnLineDao.class), stockDao, reservationDao,
                 mock(OutboxPublisher.class), mock(NoticeService.class),
-                mock(SysParamService.class), mock(InvoiceService.class));
+                mock(SysParamService.class), mock(InvoiceService.class), realEngine);
     }
 
     private InvStock stock(String id, String batch, String qty) {
@@ -280,11 +297,11 @@ class AtpShipmentRulesUnitTest {
         when(shipLineDao.selectList(any())).thenReturn(List.of(shipLine(new BigDecimal("100"))));
         when(stockDao.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 stock("S1", "B-OLD", "100"))));
-        // 原子扣减影响行数 0 → 并发不足
+        // 原子扣减影响行数 0 → 并发冲突（引擎 409 文案）
         when(stockDao.update(any(), any())).thenReturn(0);
 
         ServiceException e = assertThrows(ServiceException.class, () -> shipment.post("SH1"));
-        assertTrue(e.getMessage().contains("并发不足"), e.getMessage());
+        assertTrue(e.getMessage().contains("库存并发冲突"), e.getMessage());
     }
 
     @Test

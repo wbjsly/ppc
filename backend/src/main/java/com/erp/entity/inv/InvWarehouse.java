@@ -23,8 +23,14 @@ public class InvWarehouse extends BaseEntity {
 
     private String whName;
 
-    /** 所属组织 */
+    /** 所属组织（组织主数据 ID，DC-02 引用完整性；NULL=存量未关联） */
     private String orgUnit;
+
+    /** 所属法人 LE_CODE（NULL 按 LE-0001，跨法人调拨判定依据，迁移 106） */
+    private String leCode;
+
+    /** 仓库类型（WAREHOUSE_TYPE 字典 code，spec warehouse-master 4.1.1 补差距） */
+    private String whType;
 
     /** 1 启用 / 0 停用 */
     private String status;

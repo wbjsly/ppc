@@ -112,6 +112,10 @@ app:
     appeal-workdays: 7              # BR-4.9-07 申诉期（工作日）
     rectify-days: 60                # 整改限期（天）
     frozen-c-consecutive: 2         # 连续 C 级月数进整改（FR-4.9-7-3）
+  inv:
+    # 库存主数据参数（change add-warehouse-zone-management design D8）
+    bin-batch-max: 5000             # 批量规划单次生成仓位数上限（超限 422，须拆分区间）
+    dayclose-retry-max: 3           # 库存日结失败重试上限（spec stock-snapshot，BR-4.4-18 / API_RETRY_MAX）
   db:
     bootstrap:
       enabled: true

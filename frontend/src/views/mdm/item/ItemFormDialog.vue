@@ -71,6 +71,28 @@
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="温湿度等级">
+            <el-select v-model="form.tempLevel" clearable placeholder="无要求（不参与仓位合规拦截）" style="width: 100%;">
+              <el-option v-for="d in dicts.TEMP_LEVEL" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+            <div class="form-tip">仓位分配合规校验依据（4.4.5 / C-4.4-12）</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="危化品等级">
+            <el-select v-model="form.hazardLevel" clearable placeholder="无要求（不参与仓位合规拦截）" style="width: 100%;">
+              <el-option v-for="d in dicts.HAZARD_LEVEL" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="洁净等级">
+            <el-select v-model="form.cleanLevel" clearable placeholder="无要求（不参与仓位合规拦截）" style="width: 100%;">
+              <el-option v-for="d in dicts.CLEAN_LEVEL" :key="d.code" :label="d.name" :value="d.code" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="批次管理">
             <el-switch v-model="form.batchFlag" active-value="1" inactive-value="0" />
           </el-form-item>
@@ -79,6 +101,12 @@
           <el-form-item label="保质期（天）" :prop="form.batchFlag === '1' ? 'shelfLifeDays' : undefined">
             <el-input-number v-model="form.shelfLifeDays" :min="0" :disabled="form.batchFlag !== '1'" style="width: 100%;" />
             <div v-if="form.batchFlag === '1'" class="form-tip">批次管理物料必填（BR-4.1-08）</div>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="序列管理">
+            <el-switch v-model="form.serialFlag" active-value="1" inactive-value="0" />
+            <div class="form-tip">开启后出入库逐件校验序列号（4.2.2）</div>
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -155,7 +183,7 @@ const props = defineProps({
   /** BR-4.1-13 编码阻断跳转向导的预填属性（新建态） */
   prefill: { type: Object, default: null },
   categories: { type: Array, default: () => [] },
-  dicts: { type: Object, default: () => ({ UNIT: [], MATERIAL_GROUP: [], STORAGE: [] }) }
+  dicts: { type: Object, default: () => ({ UNIT: [], MATERIAL_GROUP: [], STORAGE: [], TEMP_LEVEL: [], HAZARD_LEVEL: [], CLEAN_LEVEL: [] }) }
 })
 const emit = defineEmits(['update:visible', 'saved', 'jump-create'])
 
@@ -190,8 +218,9 @@ const fieldLabels = {
   itemCode: '物料编码',
   itemName: '物料名称', categoryCode: '物料分类', baseUnit: '计量单位',
   materialGroup: '物料组', purchaseType: '采购类型', storageCondition: '存储条件',
+  tempLevel: '温湿度等级', hazardLevel: '危化品等级', cleanLevel: '洁净等级',
   riskGrade: '风险等级',
-  batchFlag: '批次管理', shelfLifeDays: '保质期', safetyStock: '安全库存',
+  batchFlag: '批次管理', serialFlag: '序列管理', shelfLifeDays: '保质期', safetyStock: '安全库存',
   leadTimeDays: '采购提前期', altItemCode: '替代物料', packingSpec: '包装规格',
   barcode: '条码', bomVersion: 'BOM 版本'
 }
@@ -223,7 +252,9 @@ function initForm() {
     : (props.prefill || {
         itemName: '', categoryCode: '', baseUnit: '', materialGroup: '',
         purchaseType: 'BUY', storageCondition: 'NORMAL', batchFlag: '0',
+        serialFlag: '0',
         riskGrade: 'C',
+        tempLevel: null, hazardLevel: null, cleanLevel: null,
         shelfLifeDays: null, safetyStock: null, leadTimeDays: null,
         altItemCode: '', packingSpec: '', barcode: '', bomVersion: ''
       })
@@ -306,7 +337,8 @@ async function submitForm() {
           itemName: inherit.itemName, categoryCode: inherit.categoryCode,
           baseUnit: inherit.baseUnit, materialGroup: inherit.materialGroup,
           purchaseType: inherit.purchaseType, storageCondition: inherit.storageCondition,
-          batchFlag: inherit.batchFlag, shelfLifeDays: inherit.shelfLifeDays,
+          tempLevel: inherit.tempLevel, hazardLevel: inherit.hazardLevel, cleanLevel: inherit.cleanLevel,
+          batchFlag: inherit.batchFlag, serialFlag: inherit.serialFlag, shelfLifeDays: inherit.shelfLifeDays,
           packingSpec: inherit.packingSpec, barcode: inherit.barcode,
           altItemCode: inherit.itemCode, safetyStock: inherit.safetyStock,
           leadTimeDays: inherit.leadTimeDays, bomVersion: inherit.bomVersion

@@ -46,6 +46,7 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
     private final VmiAgreementService agreementService;
     private final VmiAlertService alertService;
     private final AccrualService accrualService;
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
 
     public MaterialIssueServiceImpl(MaterialIssueDao issueDao,
                                     MaterialIssueLineDao lineDao,
@@ -54,7 +55,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                                     com.erp.dao.mdm.MdmSupplierDao supplierDao,
                                     VmiAgreementService agreementService,
                                     VmiAlertService alertService,
-                                    AccrualService accrualService) {
+                                    AccrualService accrualService,
+                                    com.erp.service.inv.StockPostingEngine stockPostingEngine) {
         this.issueDao = issueDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -63,6 +65,7 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         this.agreementService = agreementService;
         this.alertService = alertService;
         this.accrualService = accrualService;
+        this.stockPostingEngine = stockPostingEngine;
     }
 
     // ---------- 创建（DRAFT，FIFO 配批固化） ----------
@@ -193,26 +196,22 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
 
     /** 自有库存：逐批复核当前可用量（防并发）→ 扣减 */
     private void postOwn(MaterialIssue h, List<MaterialIssueLine> lines) {
+        // 扣减经通用引擎（add-stock-posting-engine，material-issue MODIFIED 过账）：
+        // 指定批次直扣（配批行携带批次）、MATERIAL_OUT 流水、行级恒等由引擎承载
+        List<com.erp.service.inv.StockPostingEngine.Line> els = new ArrayList<>();
         for (MaterialIssueLine l : lines) {
-            InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
-                    .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
-                    .eq(InvStock::getItemCode, l.getItemCode())
-                    .eq(InvStock::getBatchNo, l.getBatchNo() == null ? "" : l.getBatchNo())
-                    .last("LIMIT 1"));
-            if (s == null) {
-                throw new ServiceException(422, "库存批次不存在：" + l.getItemCode()
-                        + " / " + l.getBatchNo());
-            }
-            int upd = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                    .eq(InvStock::getId, s.getId())
-                    .apply("AVAILABLE_QTY >= {0} AND QTY >= {0}", l.getQty())
-                    .setSql("AVAILABLE_QTY = AVAILABLE_QTY - " + l.getQty().toPlainString())
-                    .setSql("QTY = QTY - " + l.getQty().toPlainString()));
-            if (upd == 0) {
-                throw new ServiceException(422, "可用量不足（并发出库），请刷新后重试："
-                        + l.getItemCode() + " 批次 " + l.getBatchNo());
-            }
+            com.erp.service.inv.StockPostingEngine.Line el =
+                    new com.erp.service.inv.StockPostingEngine.Line();
+            el.warehouseCode = InvStock.DEFAULT_WH;
+            el.itemCode = l.getItemCode();
+            el.itemName = l.getItemName();
+            el.batchNo = l.getBatchNo();
+            el.qty = l.getQty();
+            el.batchSpecified = true;
+            els.add(el);
         }
+        stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                "MATERIAL_OUT", "MATERIAL_ISSUE", h.getIssueNo(), els));
     }
 
     /** VMI 物权转移内核（design D6，spec vmi-consignment R5 / material-issue R2 ③） */
@@ -251,7 +250,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                         + l.getItemCode() + " 批次 " + l.getBatchNo());
             }
             // 3) 加自有库存（按协议价计入存货，BR-4.2-01 成本确认时点）
-            addOwnStock(l.getItemCode(), l.getItemName(), l.getBatchNo(), l.getQty());
+            addOwnStock(l.getItemCode(), l.getItemName(), l.getBatchNo(), l.getQty(),
+                    transferNo);
             // 4) 逐行生成 VMI_TRANSFER 暂估（借存货/贷应付暂估，同一转自有凭证号）
             accrualService.createFromVmiTransfer(FinAccrual.SRC_VMI, transferNo,
                     h.getSupplierId(), supplierNameOf(h.getSupplierId()), null,
@@ -260,34 +260,18 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         h.setTransferDocNo(transferNo);
     }
 
-    private void addOwnStock(String itemCode, String itemName, String batchNo, BigDecimal qty) {
-        String batch = batchNo == null ? "" : batchNo;
-        InvStock s = stockDao.selectOne(new LambdaQueryWrapper<InvStock>()
-                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
-                .eq(InvStock::getItemCode, itemCode)
-                .eq(InvStock::getBatchNo, batch)
-                .last("LIMIT 1"));
-        if (s == null) {
-            s = new InvStock();
-            s.setWarehouseCode(InvStock.DEFAULT_WH);
-            s.setItemCode(itemCode);
-            s.setItemName(itemName);
-            s.setBatchNo(batch);
-            s.setQty(qty);
-            s.setQcQty(BigDecimal.ZERO);
-            s.setAvailableQty(qty);
-            s.setCreateBy(SecurityUtils.getCurrentUserId());
-            stockDao.insert(s);
-        } else {
-            int upd = stockDao.update(null, new LambdaUpdateWrapper<InvStock>()
-                    .eq(InvStock::getId, s.getId())
-                    .eq(InvStock::getVerNo, s.getVerNo())
-                    .setSql("QTY = QTY + " + qty.toPlainString())
-                    .setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + qty.toPlainString()));
-            if (upd == 0) {
-                throw new ServiceException(409, "自有库存并发更新冲突，请重试：" + itemCode);
-            }
-        }
+    private void addOwnStock(String itemCode, String itemName, String batchNo, BigDecimal qty,
+                             String docNo) {
+        // 物权转移入自有库存经通用引擎（material-issue MODIFIED ②：VMI_TRANSFER_IN 流水）
+        com.erp.service.inv.StockPostingEngine.Line el =
+                new com.erp.service.inv.StockPostingEngine.Line();
+        el.warehouseCode = InvStock.DEFAULT_WH;
+        el.itemCode = itemCode;
+        el.itemName = itemName;
+        el.batchNo = batchNo;
+        el.qty = qty;
+        stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                "VMI_TRANSFER_IN", "MATERIAL_ISSUE", docNo, List.of(el)));
     }
 
     // ---------- 作废 ----------
@@ -340,6 +324,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             row.put("itemCode", item.trim());
             row.put("itemName", m.get("itemName"));
             row.put("qty", qty);
+            // 行级指定批次可选（material-issue MODIFIED）：透传 batchNo 覆盖配批结果
+            row.put("batchNo", m.get("batchNo"));
             out.add(row);
         }
         return out;
@@ -352,38 +338,91 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         for (Map<String, Object> r : req) {
             String item = String.valueOf(r.get("itemCode"));
             BigDecimal need = (BigDecimal) r.get("qty");
-            BigDecimal remain = need;
-            List<StockRow> rows = vmi
-                    ? vmiRows(head.getSupplierId(), item)
-                    : ownRows(item);
+            String reqName = r.get("itemName") == null ? null : String.valueOf(r.get("itemName"));
+            String overrideBatch = r.get("batchNo") == null ? null
+                    : String.valueOf(r.get("batchNo")).trim();
             int no = plan.size() + 1;
-            for (StockRow row : rows) {
-                if (remain.signum() <= 0) {
-                    break;
+
+            if (!vmi && overrideBatch != null && !overrideBatch.isEmpty()) {
+                // 行级指定批次可选（material-issue MODIFIED 创建）：按指定批次预检（提示性，
+                // 按 AVAILABLE 口径；位行粒度下同批次跨多仓位 → 批次合计，selectOne 会撞 TooManyResults）
+                List<InvStock> batchRows = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
+                        .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
+                        .eq(InvStock::getItemCode, item)
+                        .eq(InvStock::getBatchNo, overrideBatch));
+                BigDecimal basis = BigDecimal.ZERO;
+                String batchItemName = null;
+                for (InvStock br : batchRows) {
+                    basis = basis.add(nvl(br.getAvailableQty()));
+                    if (batchItemName == null) {
+                        batchItemName = br.getItemName();
+                    }
                 }
-                BigDecimal take = row.available.min(remain);
-                if (take.signum() <= 0) {
-                    continue;
+                if (basis.compareTo(need) < 0) {
+                    throw new ServiceException(422, "自有可用量不足："
+                            + item + " 需要 " + need.stripTrailingZeros().toPlainString()
+                            + "，可配 " + basis.stripTrailingZeros().toPlainString()
+                            + "，缺口 " + need.subtract(basis).stripTrailingZeros().toPlainString());
                 }
-                MaterialIssueLine l = new MaterialIssueLine();
-                l.setLineNo(no++);
-                l.setItemCode(item);
-                l.setItemName(r.get("itemName") == null ? row.itemName
-                        : String.valueOf(r.get("itemName")));
-                l.setBatchNo(row.batchNo);
-                l.setQty(take);
-                l.setStockType(head.getIssueType());
-                l.setSupplierId(vmi ? head.getSupplierId() : null);
-                l.setCreateBy(SecurityUtils.getCurrentUserId());
-                plan.add(l);
-                remain = remain.subtract(take);
+                MaterialIssueLine ol = new MaterialIssueLine();
+                ol.setLineNo(no);
+                ol.setItemCode(item);
+                ol.setItemName(reqName == null ? batchItemName : reqName);
+                ol.setBatchNo(overrideBatch);
+                ol.setQty(need);
+                ol.setStockType(head.getIssueType());
+                ol.setSupplierId(null);
+                ol.setCreateBy(SecurityUtils.getCurrentUserId());
+                plan.add(ol);
+                continue;
             }
-            if (remain.signum() > 0) {
-                BigDecimal avail = need.subtract(remain);
-                throw new ServiceException(422, (vmi ? "寄售" : "自有") + "可用量不足："
-                        + item + " 需要 " + need.stripTrailingZeros().toPlainString()
-                        + "，可配 " + avail.stripTrailingZeros().toPlainString()
-                        + "，缺口 " + remain.stripTrailingZeros().toPlainString());
+
+            if (vmi) {
+                // 寄售配批保持域内 FIFO（INBOUND_DATE 升序，vmi 表不入引擎）
+                BigDecimal remain = need;
+                for (StockRow row : vmiRows(head.getSupplierId(), item)) {
+                    if (remain.signum() <= 0) {
+                        break;
+                    }
+                    BigDecimal take = row.available.min(remain);
+                    if (take.signum() <= 0) {
+                        continue;
+                    }
+                    MaterialIssueLine l = new MaterialIssueLine();
+                    l.setLineNo(no++);
+                    l.setItemCode(item);
+                    l.setItemName(reqName == null ? row.itemName : reqName);
+                    l.setBatchNo(row.batchNo);
+                    l.setQty(take);
+                    l.setStockType(head.getIssueType());
+                    l.setSupplierId(head.getSupplierId());
+                    l.setCreateBy(SecurityUtils.getCurrentUserId());
+                    plan.add(l);
+                    remain = remain.subtract(take);
+                }
+                if (remain.signum() > 0) {
+                    BigDecimal avail = need.subtract(remain);
+                    throw new ServiceException(422, "寄售可用量不足："
+                            + item + " 需要 " + need.stripTrailingZeros().toPlainString()
+                            + "，可配 " + avail.stripTrailingZeros().toPlainString()
+                            + "，缺口 " + remain.stripTrailingZeros().toPlainString());
+                }
+            } else {
+                // 自有配批经引擎分配（FIFO+效期统一分配器，material-issue MODIFIED 创建；
+                // 缺口 422 文案「可用量不足…缺口」由引擎给出）
+                for (com.erp.service.inv.StockPostingEngine.Alloc a
+                        : stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, need)) {
+                    MaterialIssueLine l = new MaterialIssueLine();
+                    l.setLineNo(no++);
+                    l.setItemCode(item);
+                    l.setItemName(reqName == null ? a.itemName : reqName);
+                    l.setBatchNo(a.batchNo);
+                    l.setQty(a.qty);
+                    l.setStockType(head.getIssueType());
+                    l.setSupplierId(null);
+                    l.setCreateBy(SecurityUtils.getCurrentUserId());
+                    plan.add(l);
+                }
             }
         }
         return plan;
