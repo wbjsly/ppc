@@ -824,6 +824,118 @@ const routes = [
         meta: { title: '库龄分析', group: '库存管理', perm: 'ROLE_WAREHOUSE,ROLE_ADMIN' }
       },
       {
+        // 5.1.1 清单创建（add-bom-management：新建/复制/草稿编辑 + 内嵌循环校验）
+        path: '/m/5.1.1',
+        name: 'BomCreate',
+        component: () => import('@/views/mrp/bom/BomCreate.vue'),
+        meta: { title: '清单创建', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.1.2 清单变更（add-bom-management：仅已发布可发起 + 变更原因必填 + 版本历史留痕）
+        path: '/m/5.1.2',
+        name: 'BomChange',
+        component: () => import('@/views/mrp/bom/BomChange.vue'),
+        meta: { title: '清单变更', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.1.3 版本发布（add-bom-management：提交挂 BomPublish 审批 + 主管签署 + 手动废止）
+        path: '/m/5.1.3',
+        name: 'BomPublish',
+        component: () => import('@/views/mrp/bom/BomPublish.vue'),
+        meta: { title: '版本发布', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.1.4 循环校验（add-bom-management：按父项/全量扫描，环路径高亮）
+        path: '/m/5.1.4',
+        name: 'BomCycleCheck',
+        component: () => import('@/views/mrp/bom/BomCycleCheck.vue'),
+        meta: { title: '循环校验', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.2.1 工序维护（add-routing-management：全局工序字典，编码建后不可改）
+        path: '/m/5.2.1',
+        name: 'OperationList',
+        component: () => import('@/views/mrp/routing/OperationList.vue'),
+        meta: { title: '工序维护', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.2.2 工作中心（add-routing-management：资源台账 + 产能三要素 + 外协供应商）
+        path: '/m/5.2.2',
+        name: 'WorkCenterList',
+        component: () => import('@/views/mrp/routing/WorkCenterList.vue'),
+        meta: { title: '工作中心', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.2.3 标准工时（add-routing-management：（工序×工作中心）定额矩阵 = 适配关系）
+        path: '/m/5.2.3',
+        name: 'StandardMatrix',
+        component: () => import('@/views/mrp/routing/StandardMatrix.vue'),
+        meta: { title: '标准工时', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.2.4 路线装配（add-routing-management：产品→有序工序序列，版本化 + 审批发布）
+        path: '/m/5.2.4',
+        name: 'RouteAssembly',
+        component: () => import('@/views/mrp/routing/RouteAssembly.vue'),
+        meta: { title: '路线装配', group: '生产管理', perm: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.3.1 采购建议（add-mrp-demand-planning：正式 MRP 运行 → 审核 → 复用请购链路转正）
+        path: '/m/5.3.1',
+        name: 'PurchaseSuggestions',
+        component: () => import('@/views/mrp/plan/PurchaseSuggestions.vue'),
+        meta: { title: '采购建议', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_ADMIN' }
+      },
+      {
+        // 5.3.2 生产建议（add-mrp-demand-planning：确认后转 PMO 占位计划工单）
+        path: '/m/5.3.2',
+        name: 'ProductionSuggestions',
+        component: () => import('@/views/mrp/plan/ProductionSuggestions.vue'),
+        meta: { title: '生产建议', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_ADMIN' }
+      },
+      {
+        // 5.3.3 异常标记（add-mrp-demand-planning：EXCESS+OVERDUE 聚合与处置留痕）
+        path: '/m/5.3.3',
+        name: 'PlanExceptions',
+        component: () => import('@/views/mrp/plan/Exceptions.vue'),
+        meta: { title: '异常标记', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_ADMIN' }
+      },
+      {
+        // 5.4.1 工单创建（add-work-order-management：手工/PMO 双入口 + 双快照 + 预检）
+        path: '/m/5.4.1',
+        name: 'MoCreate',
+        component: () => import('@/views/mrp/mo/MoCreate.vue'),
+        meta: { title: '工单创建', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.4.2 工单审批（Planned→提交→Pending→主管签核→Confirmed；驳回回 Planned）
+        path: '/m/5.4.2',
+        name: 'MoApprove',
+        component: () => import('@/views/mrp/mo/MoApprove.vue'),
+        meta: { title: '工单审批', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.4.3 工单释放（Confirmed→Released + 缺料清单展示；缺料不阻断仅标记）
+        path: '/m/5.4.3',
+        name: 'MoRelease',
+        component: () => import('@/views/mrp/mo/MoRelease.vue'),
+        meta: { title: '工单释放', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.4.4 工单变更（挂起/恢复/取消 + 拆分 C-4.5-15；合并只读提示）
+        path: '/m/5.4.4',
+        name: 'MoChange',
+        component: () => import('@/views/mrp/mo/MoChange.vue'),
+        meta: { title: '工单变更', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.4.5 工单关闭（手动完工确认 + 关闭预检 + 关闭终态）
+        path: '/m/5.4.5',
+        name: 'MoClose',
+        component: () => import('@/views/mrp/mo/MoClose.vue'),
+        meta: { title: '工单关闭', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
         // 4.12.1 仓间调拨（调拨单全生命周期 + 内部往来，spec transfer-order P1）
         path: '/m/4.12.1',
         name: 'TransferOrder',

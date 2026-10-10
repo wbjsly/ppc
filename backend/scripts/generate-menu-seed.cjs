@@ -110,8 +110,12 @@ const PERM = {
   unfreezeApprove: 'ROLE_QUALITY_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN',
   // 4.10 效期管理 4.10.3 质量评估（change add-expiry-management-menus；4.10.1/4.10.2 用 warehouse）
   expiryEval: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN',
+  // 5.1 物料清单（change add-bom-management：工艺工程师维护、工艺主管审核发布）
+  process: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN',
   // 一级域 M3：取其下各组权限并集，避免非授权角色看到空的销售管理域
-  domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+  domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // M5-4 工单管理：计划员 + 计划主管（审批签署）+ 管理员（change add-work-order-management）
+  planner: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'
 }
 const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
 const EXTRA_PERM = {
@@ -167,7 +171,15 @@ const EXTRA_PERM = {
   ...leaf(['M4-13-1', 'M4-13-2'], 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'),
   // M4-14 库存报表（change add-inventory-reports：周转为财务口径指标多两财务角色）
   ...leaf(['M4-14-1', 'M4-14-3'], 'ROLE_WAREHOUSE,ROLE_ADMIN'),
-  ...leaf(['M4-14-2'], 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR')
+  ...leaf(['M4-14-2'], 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR'),
+  // M5-1 物料清单 5.1.1~5.1.4（change add-bom-management；父节点与子节点同权限防孤儿，M6 先例）
+  ...leaf(['M5-1', 'M5-1-1', 'M5-1-2', 'M5-1-3', 'M5-1-4'], PERM.process),
+  // M5-2 工艺管理 5.2.1~5.2.4（change add-routing-management；5.2.4 路线装配为本期新增叶子）
+  ...leaf(['M5-2', 'M5-2-1', 'M5-2-2', 'M5-2-3', 'M5-2-4'], PERM.process),
+  // M5-3 需求计划 5.3.1~5.3.3（change add-mrp-demand-planning：计划员+管理员，ROLE_PLANNER 新增）
+  ...leaf(['M5-3', 'M5-3-1', 'M5-3-2', 'M5-3-3'], 'ROLE_PLANNER,ROLE_ADMIN'),
+  // M5-4 工单管理 5.4.1~5.4.5（change add-work-order-management；父节点同权限防孤儿）
+  ...leaf(['M5-4', 'M5-4-1', 'M5-4-2', 'M5-4-3', 'M5-4-4', 'M5-4-5'], PERM.planner)
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

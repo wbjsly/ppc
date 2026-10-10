@@ -112,9 +112,12 @@ public class SecurityConfig {
                 // 审批底座：待办/签署入口按角色放行，节点角色不符由服务层 403
                 // （付款/预付款分级审批新增 ROLE_FINANCE_MGR / ROLE_GM 签署节点，add-payment-management）
                 // （商机 5 阶段审批新增 ROLE_SALES_MGR；SO 审批/特殊价格会签预留 SALES_DIRECTOR/CREDIT_ADMIN，add-sales-lead-to-cash）
+                // （BOM 发布签署新增 ROLE_PROCESS_MGR，add-bom-management）
                 .antMatchers(HttpMethod.POST, "/api/qms/approvals/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR",
                         "TECH_OWNER", "QUALITY_DIRECTOR", "SQE", "WAREHOUSE", "PM", "RECEIVER",
-                        "FINANCE_MGR", "GM", "SALES_MGR", "SALES_DIRECTOR", "CREDIT_ADMIN")
+                        "FINANCE_MGR", "GM", "SALES_MGR", "SALES_DIRECTOR", "CREDIT_ADMIN", "PROCESS_MGR",
+                        // 工单审批签署（add-work-order-management：MoApprove 节点 = 计划主管，各变更向名单追加先例）
+                        "PLAN_MGR")
                 // 2.6.1 质量退货：具体路径在前（出库过账 WAREHOUSE），兜底创建/编辑 ADMIN
                 .antMatchers(HttpMethod.POST, "/api/proc/returns/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 非质量退货创建（2.6.2，spec other-return）：采购侧发起，收窄为 ADMIN/PM（须先于下方粗规则）

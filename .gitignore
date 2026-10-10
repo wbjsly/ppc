@@ -2,7 +2,8 @@
 .DS_Store
 
 # Java / Maven
-backend/target/
+# 不带斜杠：同时匹配目录与指向 ~/.cache 的 target 软链（iCloud 同步避让）
+backend/target
 *.class
 *.jar
 *.lst
