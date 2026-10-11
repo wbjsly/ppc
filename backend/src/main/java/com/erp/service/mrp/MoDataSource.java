@@ -120,6 +120,49 @@ public class MoDataSource {
     }
 
     /**
+     * 产品已发布 BOM 的行级替代关系（change add-kitting-check design D8，偏差 D4）：
+     * 主料编码 → 替代行（比例 + 优先级），按优先级升序。**读源 BOM 非工单快照**——
+     * 展示性数据，发布后源 BOM 变更与建单时不一致可接受；不参与齐套判定。
+     * 返回空 Map = 该产品 BOM 无任何替代关系。
+     */
+    public Map<String, List<MrpBomSubstitute>> publishedSubstitutes(String parentItemCode) {
+        Map<String, List<MrpBomSubstitute>> out = new LinkedHashMap<>();
+        MrpBom bom = bomDao.selectOne(new LambdaQueryWrapper<MrpBom>()
+                .eq(MrpBom::getParentItemCode, parentItemCode)
+                .eq(MrpBom::getStatus, MrpBom.ST_PUBLISHED)
+                .orderByDesc(MrpBom::getVersionMajor)
+                .orderByDesc(MrpBom::getVersionMinor)
+                .last("LIMIT 1"));
+        if (bom == null) {
+            return out;
+        }
+        List<MrpBomItem> rows = bomItemDao.selectList(new LambdaQueryWrapper<MrpBomItem>()
+                .eq(MrpBomItem::getBomId, bom.getId()));
+        for (MrpBomItem row : rows) {
+            List<MrpBomSubstitute> subs = bomSubstituteDao.selectList(
+                    new LambdaQueryWrapper<MrpBomSubstitute>()
+                            .eq(MrpBomSubstitute::getBomItemId, row.getId())
+                            .orderByAsc(MrpBomSubstitute::getPriority));
+            if (subs.isEmpty()) {
+                continue;
+            }
+            // 展示口径与 publishedBomLines 一致：仅启用中的替代物料
+            List<MrpBomSubstitute> enabled = new ArrayList<>();
+            for (MrpBomSubstitute sub : subs) {
+                MdmItem subItem = mdmItemDao.selectOne(new LambdaQueryWrapper<MdmItem>()
+                        .eq(MdmItem::getItemCode, sub.getSubstituteItemCode()));
+                if (subItem != null && "1".equals(subItem.getStatus())) {
+                    enabled.add(sub);
+                }
+            }
+            if (!enabled.isEmpty()) {
+                out.put(row.getItemCode(), enabled);
+            }
+        }
+        return out;
+    }
+
+    /**
      * 已发布 BOM 多层展平快照（design D4）：产品直接子项为层级 1，MAKE 子件有已发布 BOM 则继续展开；
      * 展平行的 unitQty = 链上单耗乘积、lossRate = Π(1+损耗)−1（保持齐套公式口径）；
      * 深度上限复用 bom-max-nesting-depth。返回 null = 产品无已发布 BOM（创建时 L1 阻断）。

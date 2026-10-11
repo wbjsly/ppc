@@ -56,15 +56,4 @@ export function checkQuoteApi(id) {
   return request.post(`/crm/opportunities/${id}/check-quote`)
 }
 
-// ---------- 站内通知（超百万通知销售经理） ----------
-export function getNoticesApi() {
-  return request.get('/crm/notices')
-}
-
-export function getUnreadCountApi() {
-  return request.get('/crm/notices/unread-count')
-}
-
-export function markNoticeReadApi(id) {
-  return request.put(`/crm/notices/${id}/read`)
-}
+// 站内通知三方法已迁至 @/api/notice（/api/notices，change add-kitting-check design D4）

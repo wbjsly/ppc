@@ -178,6 +178,14 @@ public class Ncr extends BaseEntity {
     @TableField("CAPA_ID")
     private String capaId;
 
+    /** 来源类型：GR（检验批判定，既有）/ WORKORDER（报工不合格，5.7 add-reporting-management design D6） */
+    @TableField("REF_TYPE")
+    private String refType;
+
+    /** 来源单据：报工来源 = moId#opSeq#rptNo（或 moId#opSeq#YIELD——良率超差触发） */
+    @TableField("REF_ID")
+    private String refId;
+
     /** 备注 */
     @TableField("REMARK")
     private String remark;

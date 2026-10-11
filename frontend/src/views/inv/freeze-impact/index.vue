@@ -109,12 +109,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getFreezesApi } from '@/api/inv/freeze'
-import request from '@/utils/request'
+import { getNoticesApi } from '@/api/notice'
 
-/** 我的站内通知（复用 /api/crm/notices 端点，按角色聚合） */
-function getMyNoticesApi() {
-  return request.get('/crm/notices')
-}
+// 我的站内通知（@/api/notice → /api/notices，change add-kitting-check 端点正名）
 
 // 4.9.4 影响通知：冻结单影响面快照三类清单（精度标签）+ FREEZE/UNFREEZE 通知记录。
 // 数据源 = 既有 query 接口 impactJson 字段 + 站内通知（按 BIZ_ID 关联冻结单号）。
@@ -157,7 +154,7 @@ async function openImpact(row) {
     impact.value = null
   }
   try {
-    const res = await getMyNoticesApi()
+    const res = await getNoticesApi()
     const all = res.data || []
     notices.value = all.filter(n =>
       (n.bizType === 'FREEZE' || n.bizType === 'UNFREEZE') && n.bizId === row.freezeNo)

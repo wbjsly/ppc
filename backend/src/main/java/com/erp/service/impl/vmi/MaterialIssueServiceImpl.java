@@ -51,6 +51,7 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
 
     private final com.erp.service.inv.PickTaskGate pickTaskGate;
     private final com.erp.service.inv.PickTaskService pickTaskService;
+    private final com.erp.service.mrp.ReservationService reservationService;
 
     public MaterialIssueServiceImpl(MaterialIssueDao issueDao,
                                     MaterialIssueLineDao lineDao,
@@ -63,7 +64,8 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                                     com.erp.service.inv.StockPostingEngine stockPostingEngine,
                                     com.erp.service.inv.FifoStrategyService fifoStrategyService,
                                     com.erp.service.inv.PickTaskGate pickTaskGate,
-                                    com.erp.service.inv.PickTaskService pickTaskService) {
+                                    com.erp.service.inv.PickTaskService pickTaskService,
+                                    com.erp.service.mrp.ReservationService reservationService) {
         this.issueDao = issueDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -76,6 +78,7 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         this.fifoStrategyService = fifoStrategyService;
         this.pickTaskGate = pickTaskGate;
         this.pickTaskService = pickTaskService;
+        this.reservationService = reservationService;
     }
 
     // ---------- 创建（DRAFT，FIFO 配批固化） ----------
@@ -183,6 +186,19 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                 .orderByAsc(MaterialIssueLine::getLineNo));
         if (lines.isEmpty()) {
             throw new ServiceException(422, "领料单无明细行");
+        }
+        // ④ 预扣核销（spec material-issue MODIFIED 步骤④ / dispatch-management 预扣生命周期）：
+        //    关联工单存在活动预扣 → 同事务按 min(领料行量, 核销余量) 释放锁（REMAIN 递减、takes 回补，
+        //    释放优先落到领料行将扣的批次）。时序硬约束：核销释放 MUST 先于①引擎扣减——
+        //    预扣实扣后本工单自己的领料会被引擎可用量复核挡住（锁挡住自己）；先归位锁再过账，
+        //    单事务失败整体回滚。无预扣/无关工单静默跳过（既有行为零变化）。
+        if (h.getWorkOrderNo() != null && !h.getWorkOrderNo().isEmpty()) {
+            List<com.erp.service.mrp.ReservationService.IssuePart> parts = new ArrayList<>();
+            for (MaterialIssueLine l : lines) {
+                parts.add(new com.erp.service.mrp.ReservationService.IssuePart(
+                        l.getItemCode(), l.getBatchNo(), l.getQty()));
+            }
+            reservationService.consumeOnIssue(h.getWorkOrderNo(), parts);
         }
         if (MaterialIssue.TYPE_VMI.equals(h.getIssueType())) {
             postVmi(h, lines);
@@ -376,11 +392,19 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                         batchItemName = br.getItemName();
                     }
                 }
-                if (basis.compareTo(need) < 0) {
+                // 本单预扣锁额度（options A）：指定批次正是本单锁所在批次时计入可领额度
+                // （过账 release-first 优先释放到该批次，行级复核恰好通过）
+                BigDecimal ownLocked = reservationService
+                        .lockedBatchesOf(head.getWorkOrderNo())
+                        .getOrDefault(item, List.of()).stream()
+                        .filter(lb -> overrideBatch.equals(lb.batchNo()))
+                        .map(com.erp.service.mrp.ReservationService.LockedBatch::qty)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (basis.add(ownLocked).compareTo(need) < 0) {
                     throw new ServiceException(422, "自有可用量不足："
                             + item + " 需要 " + need.stripTrailingZeros().toPlainString()
-                            + "，可配 " + basis.stripTrailingZeros().toPlainString()
-                            + "，缺口 " + need.subtract(basis).stripTrailingZeros().toPlainString());
+                            + "，可配 " + basis.add(ownLocked).stripTrailingZeros().toPlainString()
+                            + "，缺口 " + need.subtract(basis.add(ownLocked)).stripTrailingZeros().toPlainString());
                 }
                 // 改批偏离留痕（spec outbound-strategy，C-4.4-08 非波次首期仅留痕）：
                 // 推荐值 = 缺省 FIFO 分配的首批次（只读试算，异常时视为无推荐值）；
@@ -446,19 +470,60 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                 }
             } else {
                 // 自有配批经引擎分配（FIFO+效期统一分配器，material-issue MODIFIED 创建；
-                // 缺口 422 文案「可用量不足…缺口」由引擎给出）
-                for (com.erp.service.inv.StockPostingEngine.Alloc a
-                        : stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, need)) {
-                    MaterialIssueLine l = new MaterialIssueLine();
-                    l.setLineNo(no++);
-                    l.setItemCode(item);
-                    l.setItemName(reqName == null ? a.itemName : reqName);
-                    l.setBatchNo(a.batchNo);
-                    l.setQty(a.qty);
-                    l.setStockType(head.getIssueType());
-                    l.setSupplierId(null);
-                    l.setCreateBy(SecurityUtils.getCurrentUserId());
-                    plan.add(l);
+                // 缺口 422 文案「可用量不足…缺口」由引擎给出）。
+                // 预扣拆分分配（options A / dispatch-management 核销联动）：本单预扣锁内的量
+                // 从本单 takes 批次占位（过账 release-first 后该批次可用量恰好覆盖），
+                // 锁外量走引擎 FIFO——保证"派工预扣在前、领料建单在后"的自然顺序可用；
+                // 无预扣/无关工单时 locked 为空 → 全量走引擎（既有行为零变化）。
+                Map<String, List<com.erp.service.mrp.ReservationService.LockedBatch>> locked =
+                        reservationService.lockedBatchesOf(head.getWorkOrderNo());
+                BigDecimal lockable = locked.getOrDefault(item, List.of()).stream()
+                        .map(com.erp.service.mrp.ReservationService.LockedBatch::qty)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal reservedPart = need.min(lockable);
+                BigDecimal unlockedPart = need.subtract(reservedPart);
+                if (unlockedPart.signum() > 0) {
+                    for (com.erp.service.inv.StockPostingEngine.Alloc a
+                            : stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, unlockedPart)) {
+                        MaterialIssueLine l = new MaterialIssueLine();
+                        l.setLineNo(no++);
+                        l.setItemCode(item);
+                        l.setItemName(reqName == null ? a.itemName : reqName);
+                        l.setBatchNo(a.batchNo);
+                        l.setQty(a.qty);
+                        l.setStockType(head.getIssueType());
+                        l.setSupplierId(null);
+                        l.setCreateBy(SecurityUtils.getCurrentUserId());
+                        plan.add(l);
+                    }
+                }
+                if (reservedPart.signum() > 0) {
+                    BigDecimal left = reservedPart;
+                    for (com.erp.service.mrp.ReservationService.LockedBatch lb
+                            : locked.getOrDefault(item, List.of())) {
+                        if (left.signum() <= 0) {
+                            break;
+                        }
+                        BigDecimal take = lb.qty().min(left);
+                        if (take.signum() <= 0) {
+                            continue;
+                        }
+                        MaterialIssueLine l = new MaterialIssueLine();
+                        l.setLineNo(no++);
+                        l.setItemCode(item);
+                        l.setItemName(reqName == null ? item : reqName);
+                        l.setBatchNo(lb.batchNo());
+                        l.setQty(take);
+                        l.setStockType(head.getIssueType());
+                        l.setSupplierId(null);
+                        l.setCreateBy(SecurityUtils.getCurrentUserId());
+                        plan.add(l);
+                        left = left.subtract(take);
+                    }
+                    if (left.signum() > 0) {
+                        throw new ServiceException(422, "本单预扣批次不足以占位："
+                                + item + " 缺口 " + left.stripTrailingZeros().toPlainString());
+                    }
                 }
             }
         }

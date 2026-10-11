@@ -353,7 +353,15 @@ public class RoutingServiceImpl implements RoutingService {
             if (in.getLeadTime() != null && in.getLeadTime().signum() < 0) {
                 throw new ServiceException(422, "第 " + lineNo + " 行工序提前期不得为负数");
             }
+            // 5.7 变更（routing-management MODIFIED「工艺路线纯串行装配」）：
+            // 标准良率取值校验 (0,100]，空则落库默认 98
             MrpRoutingOp row = new MrpRoutingOp();
+            if (in.getStandardYield() != null
+                    && (in.getStandardYield().signum() <= 0
+                        || in.getStandardYield().compareTo(new BigDecimal("100")) > 0)) {
+                throw new ServiceException(422, "第 " + lineNo + " 行标准良率取值范围 (0,100]："
+                        + in.getStandardYield());
+            }
             row.setRoutingId(routingId);
             row.setOpSeq((i + 1) * 10);
             row.setOpCode(op.getOpCode());
@@ -361,6 +369,9 @@ public class RoutingServiceImpl implements RoutingService {
             row.setWcCode(wc.getWcCode());
             row.setWcName(wc.getWcName());
             row.setLeadTime(in.getLeadTime());
+            row.setStandardYield(in.getStandardYield() != null
+                    ? in.getStandardYield() : new BigDecimal("98"));
+            row.setKeyOpFlag("1".equals(in.getKeyOpFlag()) ? "1" : "0");
             row.setRemark(in.getRemark());
             routingOpDao.insert(row);
         }
@@ -377,6 +388,9 @@ public class RoutingServiceImpl implements RoutingService {
             in.setOpCode(src.getOpCode());
             in.setWcCode(src.getWcCode());
             in.setLeadTime(src.getLeadTime());
+            // 5.7 两字段随变更克隆（标准良率/关键标记是路线行属性）
+            in.setStandardYield(src.getStandardYield());
+            in.setKeyOpFlag(src.getKeyOpFlag());
             in.setRemark(src.getRemark());
             payload.add(in);
         }

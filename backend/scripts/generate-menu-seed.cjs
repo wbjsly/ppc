@@ -115,7 +115,19 @@ const PERM = {
   // 一级域 M3：取其下各组权限并集，避免非授权角色看到空的销售管理域
   domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
   // M5-4 工单管理：计划员 + 计划主管（审批签署）+ 管理员（change add-work-order-management）
-  planner: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'
+  planner: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-5 齐套检查：计划两方 + 仓库（到货/缺料相关方，偏差 D1 无采购员/车间主管角色）
+  kitting: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // M5-6 派工管理 5.6.1/5.6.2：计划两方 + 车间主管 + 管理员（change add-dispatch-management）
+  dispatch: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_SHOP_FLOOR,ROLE_ADMIN',
+  // M5-6-3 外协建议：车间主管不参与外协决策（outsourcing-dispatch 权限矩阵）
+  outsource: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-7-1 报工录入：车间操作工作业台（change add-reporting-management）
+  reportEntry: 'ROLE_SHOP_FLOOR,ROLE_ADMIN',
+  // M5-7-2 报工管理：计划两方（记录/冲销/完工/预警），操作工不参与管理动作
+  reportAdmin: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // 16.11 工作日历：管理员维护、计划员只读（capacity-load 日历菜单权限）
+  calendar: 'ROLE_ADMIN,ROLE_PLANNER'
 }
 const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
 const EXTRA_PERM = {
@@ -179,7 +191,21 @@ const EXTRA_PERM = {
   // M5-3 需求计划 5.3.1~5.3.3（change add-mrp-demand-planning：计划员+管理员，ROLE_PLANNER 新增）
   ...leaf(['M5-3', 'M5-3-1', 'M5-3-2', 'M5-3-3'], 'ROLE_PLANNER,ROLE_ADMIN'),
   // M5-4 工单管理 5.4.1~5.4.5（change add-work-order-management；父节点同权限防孤儿）
-  ...leaf(['M5-4', 'M5-4-1', 'M5-4-2', 'M5-4-3', 'M5-4-4', 'M5-4-5'], PERM.planner)
+  ...leaf(['M5-4', 'M5-4-1', 'M5-4-2', 'M5-4-3', 'M5-4-4', 'M5-4-5'], PERM.planner),
+  // M5-5 齐套检查 5.5.1~5.5.2（change add-kitting-check；父节点同权限防孤儿）
+  ...leaf(['M5-5', 'M5-5-1', 'M5-5-2'], PERM.kitting),
+  // M5-6 派工管理 5.6.1~5.6.3（change add-dispatch-management；父节点取四角色超集 ⊇ M5-6-3 防孤儿）
+  ...leaf(['M5-6', 'M5-6-1', 'M5-6-2'], PERM.dispatch),
+  ...leaf(['M5-6-3'], PERM.outsource),
+  // M5-7 报工管理（change add-reporting-management，偏差 D1：蓝图 4 叶改 2 叶）
+  // 5.7.1 报工录入=车间操作工；5.7.2 报工管理=计划两方（冲销/完工/预警）；父节点取两子并集防孤儿
+  ...leaf(['M5-7'], 'ROLE_SHOP_FLOOR,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-7-1'], PERM.reportEntry),
+  ...leaf(['M5-7-2'], PERM.reportAdmin),
+  // 16.11 工作日历 16.11.1~16.11.2（change add-dispatch-management；16 域默认 ADMIN，此映射加计划员只读）
+  // 父节点 M16 取并集（ADMIN + PLANNER 只读），否则计划员视图下 16.11 被提升为顶级孤儿（M3 域先例）
+  ...leaf(['M16'], 'ROLE_ADMIN,ROLE_PLANNER'),
+  ...leaf(['M16-11', 'M16-11-1', 'M16-11-2'], PERM.calendar)
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

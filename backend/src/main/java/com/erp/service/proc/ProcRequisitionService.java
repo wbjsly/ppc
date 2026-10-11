@@ -57,4 +57,17 @@ public interface ProcRequisitionService {
      * 返回 {prId, prNo}。
      */
     Map<String, Object> createFromMrp(List<Map<String, Object>> acceptedRows);
+
+    /**
+     * 外协 PR（change add-dispatch-management，spec outsourcing-dispatch「PR 漏斗下单与回联」，
+     * design D5 接缝结论）：sourceType=OUTSOURCE、状态 PENDING_CONFIRM → 走既有
+     * confirm()→审批链（confirm 仅查状态；行不设 MRP 基线故 80% 卡控自然跳过）。
+     * 行级 sourceEnum=OUTSOURCE、sourceDocNo=派工单号（回联锚点），预估单价 0（价格由采购环节价控）。
+     * 返回 {prId, prNo}。
+     *
+     * @param rows        行（itemCode/qty/reqDate 必填，Active L1 校验同 createFromMrp）
+     * @param dispatchNo  派工单号（回联必填）
+     * @param reason      需求理由（外协派工单号 + 工单 + 工序）
+     */
+    Map<String, Object> createForOutsource(List<Map<String, Object>> rows, String dispatchNo, String reason);
 }

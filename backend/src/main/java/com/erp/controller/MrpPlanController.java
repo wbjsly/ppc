@@ -48,6 +48,13 @@ public class MrpPlanController {
         private List<String> ids;
     }
 
+    /** 缺料转采购建议载荷（change add-kitting-check 任务 5.3） */
+    @Getter
+    @Setter
+    public static class ShortageIdsRequest {
+        private List<String> shortageIds;
+    }
+
     // ---------- 运行 ----------
 
     @PostMapping("/runs")
@@ -106,6 +113,12 @@ public class MrpPlanController {
     @Operation(summary = "批量转计划工单（PMO-YYYYMMDD-NNN 占位单号，5.4 对接）")
     public R<Map<String, Object>> convertMo(@RequestBody IdsRequest req) {
         return R.ok(service.convertMo(req.getIds()));
+    }
+
+    @PostMapping("/suggestions/from-shortage")
+    @Operation(summary = "缺料转采购建议（5.5.2 出口：缺料行→PENDING 建议，5.3.1 审核转正单一漏斗）")
+    public R<Map<String, Object>> convertFromShortage(@RequestBody ShortageIdsRequest req) {
+        return R.ok(service.convertFromShortage(req.getShortageIds()));
     }
 
     // ---------- 异常处置（5.3.3） ----------

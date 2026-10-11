@@ -27,6 +27,13 @@ const routes = [
         meta: { title: '工作台', closable: false }
       },
       {
+        // 通知中心（add-kitting-check design D4：布局级铃铛入口，不进 099 菜单种子）
+        path: '/notices',
+        name: 'NoticeCenter',
+        component: () => import('@/views/system/notices/index.vue'),
+        meta: { title: '通知中心', group: '系统管理' }
+      },
+      {
         path: '/system/menu',
         name: 'MenuManagement',
         component: () => import('@/views/system/menu/index.vue'),
@@ -934,6 +941,69 @@ const routes = [
         name: 'MoClose',
         component: () => import('@/views/mrp/mo/MoClose.vue'),
         meta: { title: '工单关闭', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.5.1 齐套校验（add-kitting-check：单工单工作台 + 勾选批量 + 替代候选提示）
+        path: '/m/5.5.1',
+        name: 'KittingCheck',
+        component: () => import('@/views/mrp/kitting/KittingCheck.vue'),
+        meta: { title: '齐套校验', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 5.5.2 缺料预警（跨工单按物料聚合 + 缺料转采购建议出口）
+        path: '/m/5.5.2',
+        name: 'ShortageWarning',
+        component: () => import('@/views/mrp/kitting/ShortageWarning.vue'),
+        meta: { title: '缺料预警', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_WAREHOUSE,ROLE_ADMIN' }
+      },
+      {
+        // 5.6.1 智能派工（待派列表 + 生成/确认/取消 + 缺料阻断弹窗 + 排程时段，spec dispatch-management）
+        path: '/m/5.6.1',
+        name: 'DispatchPending',
+        component: () => import('@/views/mrp/dispatch/DispatchPending.vue'),
+        meta: { title: '智能派工', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_SHOP_FLOOR,ROLE_ADMIN' }
+      },
+      {
+        // 5.6.2 负荷监控（WC×日期负荷 + 110% 标红 + 跳外协建议，spec capacity-load）
+        path: '/m/5.6.2',
+        name: 'CapacityMonitor',
+        component: () => import('@/views/mrp/dispatch/CapacityMonitor.vue'),
+        meta: { title: '负荷监控', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_SHOP_FLOOR,ROLE_ADMIN' }
+      },
+      {
+        // 5.6.3 外协建议（超载下钻 + 候选/协议价 + 改派审批 + 回联状态，spec outsourcing-dispatch）
+        path: '/m/5.6.3',
+        name: 'OutsourceSuggest',
+        component: () => import('@/views/mrp/dispatch/OutsourceSuggest.vue'),
+        meta: { title: '外协建议', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 16.11.1 工作日历（ADMIN 维护 upsert + PLANNER 只读，spec capacity-load）
+        path: '/m/16.11.1',
+        name: 'WorkCalendar',
+        component: () => import('@/views/system/calendar/WorkCalendar.vue'),
+        meta: { title: '工作日历', group: '系统管理', perm: 'ROLE_ADMIN,ROLE_PLANNER' }
+      },
+      {
+        // 16.11.2 班次模板（班次 CRUD + WC 绑定，被引用禁删 422）
+        path: '/m/16.11.2',
+        name: 'ShiftTemplate',
+        component: () => import('@/views/system/calendar/ShiftTemplate.vue'),
+        meta: { title: '班次模板', group: '系统管理', perm: 'ROLE_ADMIN,ROLE_PLANNER' }
+      },
+      {
+        // 5.7.1 报工录入（SHOP_FLOOR 作业台：扫派工单→开工→投料→产出→工时→提交，spec shop-floor-reporting）
+        path: '/m/5.7.1',
+        name: 'ReportWorkbench',
+        component: () => import('@/views/mrp/reporting/ReportWorkbench.vue'),
+        meta: { title: '报工录入', group: '生产管理', perm: 'ROLE_SHOP_FLOOR,ROLE_ADMIN' }
+      },
+      {
+        // 5.7.2 报工管理（记录查询 + 冲销发起 + 完工确认 + 良率预警/NCR 入口，偏差 D1 蓝图 4→2 叶）
+        path: '/m/5.7.2',
+        name: 'ReportAdmin',
+        component: () => import('@/views/mrp/reporting/ReportAdmin.vue'),
+        meta: { title: '报工管理', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
       },
       {
         // 4.12.1 仓间调拨（调拨单全生命周期 + 内部往来，spec transfer-order P1）

@@ -61,6 +61,7 @@ class MoControllerApiTest {
                         "/api/mrp/mos/candidate-pmos",
                         "/api/mrp/mos/from-pmo",
                         "/api/mrp/mos/{id}/shortages",
+                        "/api/mrp/mos/{id}/kitting-detail",
                         "/api/mrp/mos/{id}/submit",
                         "/api/mrp/mos/{id}/release",
                         "/api/mrp/mos/{id}/hold",
@@ -75,11 +76,38 @@ class MoControllerApiTest {
                 "端点缺失，实际注册：" + paths);
     }
 
+    /** 5.5 齐套检查端点（change add-kitting-check 任务 5.1/5.2）全部注册 */
+    @Test
+    void kittingEndpointsRegistered() {
+        Set<String> paths = new HashSet<>();
+        for (Map.Entry<RequestMappingInfo, HandlerMethod> e : handlerMapping.getHandlerMethods().entrySet()) {
+            PathPatternsRequestCondition pc = e.getKey().getPathPatternsCondition();
+            if (pc != null) {
+                pc.getPatterns().forEach(p -> {
+                    String s = p.getPatternString();
+                    if (s.startsWith("/api/mrp/kitting") || s.startsWith("/api/mrp/suggestions/from-shortage")) {
+                        paths.add(s);
+                    }
+                });
+            }
+        }
+        assertTrue(paths.containsAll(List.of(
+                        "/api/mrp/kitting/checks",
+                        "/api/mrp/kitting/shortages",
+                        "/api/mrp/suggestions/from-shortage"
+                )),
+                "齐套端点缺失，实际注册：" + paths);
+    }
+
     @Test
     void unauthenticatedHttpRejectedWith401() throws Exception {
         mockMvc.perform(get("/api/mrp/mos")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/mrp/mos")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/mrp/mos/x/submit")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/mrp/mos/candidate-pmos")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/mrp/mos/x/kitting-detail")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/mrp/kitting/checks")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/mrp/kitting/shortages")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/mrp/suggestions/from-shortage")).andExpect(status().isUnauthorized());
     }
 }

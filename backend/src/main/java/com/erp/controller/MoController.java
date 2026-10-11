@@ -31,9 +31,11 @@ import java.util.Map;
 public class MoController {
 
     private final MoService service;
+    private final com.erp.service.mrp.KittingService kittingService;
 
-    public MoController(MoService service) {
+    public MoController(MoService service, com.erp.service.mrp.KittingService kittingService) {
         this.service = service;
+        this.kittingService = kittingService;
     }
 
     /** 手工新建 / PMO 建单的头覆盖载荷 */
@@ -107,6 +109,12 @@ public class MoController {
     @Operation(summary = "缺料清单（FR-4.5-3-6，5.4.3 释放页 / 5.5 复用）")
     public R<List<MrpMoShortage>> shortages(@PathVariable String id) {
         return R.ok(service.shortages(id));
+    }
+
+    @GetMapping("/{id}/kitting-detail")
+    @Operation(summary = "齐套逐行明细（5.5.1，只读现算 + 缺料行替代候选提示，不参与判定）")
+    public R<Map<String, Object>> kittingDetail(@PathVariable String id) {
+        return R.ok(kittingService.detail(id));
     }
 
     // ---------- 5.4.2 工单审批 ----------

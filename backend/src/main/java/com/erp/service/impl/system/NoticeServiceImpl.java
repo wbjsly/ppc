@@ -35,14 +35,19 @@ public class NoticeServiceImpl implements NoticeService {
         if (isBlank(title)) {
             throw new ServiceException(422, "通知标题必填");
         }
-        // 同一业务单据 + 类型已有未读通知 → 不重复推（幂等）
+        // 同一业务单据 + 类型 + 同一接收方已有未读通知 → 不重复推（幂等）。
+        // change add-kitting-check：幂等键补接收方维度——多角色投递（如齐套缺料推计划两方+仓库）
+        // 时各角色独立成行，否则第一角色的未读行会挡住其余角色（单角色既有调用方行为不变）。
         if (!isBlank(bizType) && !isBlank(bizId)) {
             Long dup = noticeDao.selectCount(new LambdaQueryWrapper<SysNotice>()
                     .eq(SysNotice::getBizType, bizType)
                     .eq(SysNotice::getBizId, bizId)
-                    .eq(SysNotice::getReadFlag, "0"));
+                    .eq(SysNotice::getReadFlag, "0")
+                    .eq(targetRole != null, SysNotice::getTargetRole, targetRole)
+                    .eq(targetUser != null, SysNotice::getTargetUser, targetUser));
             if (dup != null && dup > 0) {
-                log.info("notice already pending for {} {}, skip", bizType, bizId);
+                log.info("notice already pending for {} {} role={} user={}, skip",
+                        bizType, bizId, targetRole, targetUser);
                 return null;
             }
         }

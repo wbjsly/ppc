@@ -61,6 +61,10 @@ final class PlanSeed {
         jdbc.update("DELETE FROM erp_mrp_op_wc_standard WHERE OP_CODE LIKE 'PLANOP%' OR WC_CODE LIKE 'PLANWC%'");
         jdbc.update("DELETE FROM erp_mrp_operation WHERE OP_CODE LIKE 'PLANOP%'");
         jdbc.update("DELETE FROM erp_mrp_work_center WHERE WC_CODE LIKE 'PLANWC%'");
+        // 齐套缺料联动测试造数（change add-kitting-check：MO-RPDS 前缀，随 plan 测试清扫）
+        jdbc.update("DELETE FROM erp_mrp_mo_shortage WHERE MO_ID IN " +
+                "(SELECT ID FROM erp_mrp_mo WHERE MO_NO LIKE 'MO-RPDS%')");
+        jdbc.update("DELETE FROM erp_mrp_mo WHERE MO_NO LIKE 'MO-RPDS%'");
         jdbc.update("DELETE FROM erp_mdm_item WHERE ITEM_NAME LIKE '计划测试%'");
         jdbc.update("DELETE FROM erp_mdm_item_category WHERE ID='cat-rplan'");
     }
@@ -122,6 +126,27 @@ final class PlanSeed {
         jdbc.update("INSERT INTO erp_proc_po_line (ID, PO_ID, LINE_NO, ITEM_CODE, QTY, UNIT_PRICE, RECEIVED_QTY) " +
                         "VALUES (?,?,1,?,?,1,?)",
                 id + "-L1", id, itemCode, new BigDecimal(qty), new BigDecimal(received));
+    }
+
+    /**
+     * 造活跃工单（change add-kitting-check 任务 5.3/5.4：MO-RPDS 前缀；JDBC 直插无 FK）。
+     * 返回 moId。status 默认 RELEASED，qualifiedQty 默认 0。
+     */
+    static String mkMo(JdbcTemplate jdbc, String productCode, String qty, String status) {
+        String id = "mo-rpds-" + SEQ.incrementAndGet();
+        jdbc.update("INSERT INTO erp_mrp_mo (ID, MO_NO, PRODUCT_CODE, QTY, STATUS, SHORTAGE_FLAG) " +
+                "VALUES (?,?,?,? ,?,'1')", id, "MO-RPDS-" + id, productCode, new BigDecimal(qty), status);
+        return id;
+    }
+
+    /** 造缺料行（未解决；req/avail/short 三值留痕） */
+    static String mkShortage(JdbcTemplate jdbc, String moId, String itemCode,
+                             String req, String avail, String shortQty) {
+        String id = "sh-rpds-" + SEQ.incrementAndGet();
+        jdbc.update("INSERT INTO erp_mrp_mo_shortage (ID, MO_ID, BOM_LINE, ITEM_CODE, " +
+                        "REQ_QTY, AVAIL_QTY, SHORT_QTY, RESOLVED_FLAG) VALUES (?,?,1,?,?,?,?, '0')",
+                id, moId, itemCode, new BigDecimal(req), new BigDecimal(avail), new BigDecimal(shortQty));
+        return id;
     }
 
     /** 发布 BOM（服务创建 + JDBC 推进 + publishApproved） */

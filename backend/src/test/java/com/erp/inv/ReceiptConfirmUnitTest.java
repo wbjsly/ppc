@@ -71,7 +71,7 @@ class ReceiptConfirmUnitTest {
                 mock(VmiStockDao.class), mock(VmiAgreementDao.class),
                 mock(VmiAgreementService.class), mock(VmiAlertService.class),
                 mock(ObjectMapper.class), mock(StockPostingEngine.class),
-                mock(InvPutawayDao.class));
+                mock(com.erp.service.mrp.DispatchService.class), mock(InvPutawayDao.class));
         ReflectionTestUtils.setField(service, "receiptTolerance", new BigDecimal("0.005"));
         ReflectionTestUtils.setField(service, "qcHoursA", 24);
         ReflectionTestUtils.setField(service, "qcHoursB", 48);

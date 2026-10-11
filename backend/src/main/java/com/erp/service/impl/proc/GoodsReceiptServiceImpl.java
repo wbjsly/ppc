@@ -102,6 +102,9 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     private final com.erp.service.vmi.VmiAlertService vmiAlertService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
     private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+
+    /** 外协回联 RECEIVED（change add-dispatch-management design D5：过账后按 PO 号回写派工单） */
+    private final com.erp.service.mrp.DispatchService dispatchService;
     /** 仓位分配台账（强前置 ①' + 取位，spec receipt-posting MODIFIED / bin-assignment） */
     private final com.erp.dao.inv.InvPutawayDao putawayDao;
 
@@ -1033,6 +1036,10 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         gr.setPostingDate(LocalDateTime.now());
         gr.setUpdateBy(userId);
         grDao.updateById(gr);
+        // 外协回联 RECEIVED（design D5）：非外协派工的 PO 内部静默跳过，不影响本过账事务
+        if (gr.getPoNo() != null && !gr.getPoNo().isEmpty()) {
+            dispatchService.recallReceived(gr.getPoNo());
+        }
         if (consign) {
             // 寄售 PO 跳过暂估（BR-4.2-01 物权属供应商，不确认应付；暂估于领用物权转移时经
             // createFromVmiTransfer 生成，MODIFIED receipt-posting ⑥）；消费水位放行额度（一次性）

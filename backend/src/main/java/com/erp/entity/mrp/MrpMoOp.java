@@ -33,6 +33,10 @@ public class MrpMoOp extends BaseEntity {
     private BigDecimal waitHours;
     /** 移动工时 */
     private BigDecimal moveHours;
+    /** 标准良率快照（%——路线后续改版不影响在制，in-process-quality，5.7 迁移 123） */
+    private BigDecimal standardYield;
+    /** 关键工序标记快照（IPQC 自动建批触发位） */
+    private String keyOpFlag;
     /** 工序状态（预留，PENDING/DONE） */
     private String opStatus;
 }

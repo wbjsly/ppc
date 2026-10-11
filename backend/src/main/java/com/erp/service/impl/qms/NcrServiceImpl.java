@@ -90,6 +90,8 @@ public class NcrServiceImpl implements NcrService {
     private final com.erp.service.qms.CopqService copqService;
     private final com.erp.service.qms.ScarService scarService;
     private final com.erp.service.inv.FreezeService freezeService;
+    /** 报工来源在制冻结解冻回调（5.7；@Lazy 断环：MoFreezeService → NcrService → 本服务） */
+    private final com.erp.service.mrp.MoFreezeService moFreezeService;
 
     public NcrServiceImpl(NcrDao ncrDao,
                           NcrLogDao logDao,
@@ -104,7 +106,8 @@ public class NcrServiceImpl implements NcrService {
                           @Lazy com.erp.service.qms.CapaService capaService,
                           @Lazy com.erp.service.qms.CopqService copqService,
                           @Lazy com.erp.service.qms.ScarService scarService,
-                          @Lazy com.erp.service.inv.FreezeService freezeService) {
+                          @Lazy com.erp.service.inv.FreezeService freezeService,
+                          @Lazy com.erp.service.mrp.MoFreezeService moFreezeService) {
         this.ncrDao = ncrDao;
         this.logDao = logDao;
         this.lineDao = lineDao;
@@ -119,6 +122,7 @@ public class NcrServiceImpl implements NcrService {
         this.copqService = copqService;
         this.scarService = scarService;
         this.freezeService = freezeService;
+        this.moFreezeService = moFreezeService;
     }
 
     // ================= 6.1 生成 + 两阶段冻结 =================
@@ -231,9 +235,60 @@ public class NcrServiceImpl implements NcrService {
         return ncr;
     }
 
-    // ================= 6.2 评审（必选处置） =================
+    // ================= 5.7 报工来源 NCR（add-reporting-management design D6） =================
 
     @Override
+    @Transactional
+    public Ncr createForWorkOrder(String moId, Integer opSeq, String refId, String itemCode,
+                                  String itemName, BigDecimal ngQty, String disposition,
+                                  String severity, String defectDesc) {
+        // 幂等：同 refId 已有未作废 NCR 返回既有（报工重复触发/并发防重）
+        Ncr existed = ncrDao.selectOne(new LambdaQueryWrapper<Ncr>()
+                .eq(Ncr::getRefType, "WORKORDER")
+                .eq(Ncr::getRefId, refId)
+                .notIn(Ncr::getStatus, ST_CANCELLED)
+                .last("LIMIT 1"));
+        if (existed != null) {
+            return existed;
+        }
+        String sev = severity == null ? "MAJOR" : severity;
+        Ncr ncr = new Ncr();
+        ncr.setNcrNo(nextNcrNo());
+        ncr.setRefType("WORKORDER");
+        ncr.setRefId(refId);
+        ncr.setItemCode(itemCode);
+        ncr.setItemName(itemName);
+        ncr.setQty(ngQty == null ? BigDecimal.ZERO : ngQty);
+        ncr.setSeverity(sev);
+        ncr.setDefectItem("报工不合格（工序 " + opSeq + "）");
+        ncr.setDefectDesc(defectDesc);
+        ncr.setCtqFlag("0");
+        ncr.setRegulatoryFlag("0");
+        ncr.setStatus(ST_CREATED);
+        if (hasText(disposition)) {
+            ncr.setDisposition(disposition);
+        }
+        // 冻结语义 = WORKORDER：挡派工/完工，不写库存冻结行（偏差 D5）
+        ncr.setFreezeScope("WORKORDER");
+        ncr.setFrozenFlag("1");
+        ncr.setReviewEscalatedFlag("0");
+        ncr.setReviewRemindCount(0);
+        ncr.setOverdueRemindCount(0);
+        ncr.setOverdueFlag("0");
+        ncr.setEscalatedFlag("0");
+        ncr.setPerfFrozenFlag("0");
+        ncr.setReviewDueTime(LocalDateTime.now().plusHours(hoursOf(sev)));
+        ncr.setCreateBy(SecurityUtils.getCurrentUserId());
+        ncrDao.insert(ncr);
+        writeLog(ncr, "CREATE", null, ST_CREATED,
+                "报工来源 NCR 生成（refType=WORKORDER）：" + defectDesc
+                        + "；冻结=WORKORDER（挡派工/完工，不冻库存）", null, null);
+        log.info("NCR {} created: workorder ref={} severity={} ng={}",
+                ncr.getNcrNo(), refId, sev, ncr.getQty());
+        return ncr;
+    }
+
+    // ================= 6.2 评审（必选处置） =================    @Override
     @Transactional
     public Ncr review(String id, String disposition, String opinion) {
         requireRole("评审 NCR", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
@@ -504,6 +559,11 @@ public class NcrServiceImpl implements NcrService {
         ncr.setStatus(ST_CANCELLED);
         ncr.setFrozenFlag("0");
         updateNcr(ncr);
+        // 报工来源：作废 = 判定推翻 → 同样解在制冻结
+        if ("WORKORDER".equals(ncr.getRefType()) && hasText(ncr.getRefId())) {
+            moFreezeService.releaseForNcr(ncr.getRefId().split("#", 2)[0], ncr.getId(),
+                    "NCR 作废 " + ncr.getNcrNo());
+        }
         // 作废 = 判定推翻：GR 行回到待检（可重新检验），库存锁定还原
         GoodsReceiptLine line = hasText(ncr.getGrLineId()) ? lineDao.selectById(ncr.getGrLineId()) : null;
         if (line != null && "FROZEN".equals(line.getQcStatus())) {
@@ -805,6 +865,13 @@ public class NcrServiceImpl implements NcrService {
     }
 
     private void unfreezeAll(Ncr ncr) {
+        // 报工来源 NCR（WORKORDER）：在制冻结（挡派工/完工）解冻回调（5.7 spec
+        // 「NCR 关闭解冻」；refId=moId#... 取 moId 段）
+        if ("WORKORDER".equals(ncr.getRefType()) && hasText(ncr.getRefId())) {
+            String moId = ncr.getRefId().split("#", 2)[0];
+            moFreezeService.releaseForNcr(moId, ncr.getId(),
+                    "NCR 关闭 " + ncr.getNcrNo());
+        }
         unfreezeStock(ncr);
         if (hasText(ncr.getGrLineId())) {
             GoodsReceiptLine line = lineDao.selectById(ncr.getGrLineId());

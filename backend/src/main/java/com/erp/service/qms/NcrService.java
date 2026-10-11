@@ -29,6 +29,21 @@ public interface NcrService {
      */
     Ncr createFromLot(InspectionLot lot, int defectCount, int ac, int re, List<LotItem> items);
 
+    /**
+     * 报工来源生产 NCR（change add-reporting-management，design D6，ncr-management spec 零改动——
+     * 本方法为实现层扩展触发源）：refType=WORKORDER、refId=moId#opSeq#rptNo（良率超差为 #YIELD）、
+     * 冻结语义 = {@code freezeScope=WORKORDER}（挡派工/完工，不写库存冻结行），
+     * 关闭/作废时经 refId 回调 MoFreezeService.releaseForNcr 解冻。
+     * 幂等：同 refId 已有未作废 NCR 返回既有单据。
+     *
+     * @param ngQty     不合格数量（严重度分级基数）
+     * @param disposition 预选处置（SCRAP/REWORK/CONCESSION，可空——评审时再定）
+     * @param severity  CRITICAL/MAJOR/MINOR（调用方按上下文定级；良率超差默认 MAJOR）
+     */
+    Ncr createForWorkOrder(String moId, Integer opSeq, String refId, String itemCode,
+                           String itemName, java.math.BigDecimal ngQty, String disposition,
+                           String severity, String defectDesc);
+
     /** 分页（状态/严重度/关键字筛选） */
     Page<Map<String, Object>> page(long current, long size, String keyword, String status, String severity);
 

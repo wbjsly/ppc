@@ -25,7 +25,9 @@ public final class MoStatusRules {
             MrpMo.ST_CONFIRMED, Set.of(MrpMo.ST_RELEASED, MrpMo.ST_CANCELLED),
             MrpMo.ST_RELEASED, Set.of(MrpMo.ST_HOLD, MrpMo.ST_COMPLETED, MrpMo.ST_CANCELLED),
             MrpMo.ST_HOLD, Set.of(MrpMo.ST_RELEASED, MrpMo.ST_CANCELLED),
-            MrpMo.ST_COMPLETED, Set.of(MrpMo.ST_CLOSED),
+            // COMPLETED → RELEASED：完工后冲销回退（5.7 completion-backflush spec
+            //「完工状态回退」——冲销使工序不再 DONE → 在制回退，可重新报工与再次完工）
+            MrpMo.ST_COMPLETED, Set.of(MrpMo.ST_CLOSED, MrpMo.ST_RELEASED),
             // 终态
             MrpMo.ST_CLOSED, Set.of(),
             MrpMo.ST_CANCELLED, Set.of()

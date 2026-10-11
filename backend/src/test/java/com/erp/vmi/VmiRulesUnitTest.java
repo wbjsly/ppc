@@ -283,7 +283,8 @@ class VmiRulesUnitTest {
                 mock(MaterialIssueLineDao.class), stockDao, mock(VmiStockDao.class),
                 mock(MdmSupplierDao.class), mock(VmiAgreementService.class),
                 mock(VmiAlertService.class), mock(AccrualService.class), engine,
-                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class),
+                mock(com.erp.service.mrp.ReservationService.class));
     }
 
     private InvStock stockRow(String id, String batch, String avail, LocalDateTime create) {
@@ -355,7 +356,8 @@ class VmiRulesUnitTest {
                 mock(VmiStockDao.class), mock(MdmSupplierDao.class),
                 mock(VmiAgreementService.class), mock(VmiAlertService.class),
                 mock(AccrualService.class), engine,
-                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class),
+                mock(com.erp.service.mrp.ReservationService.class));
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("issueType", "OWN");

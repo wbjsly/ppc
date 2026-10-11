@@ -132,6 +132,19 @@
                                style="width: 100%;" />
             </template>
           </el-table-column>
+          <el-table-column label="标准良率(%)" width="120">
+            <template #default="{ row }">
+              <el-input-number v-model="row.standardYield" :min="0.01" :max="100" :precision="2"
+                               :controls="false" style="width: 100%;"
+                               placeholder="98（FR-4.5-5-5）" />
+            </template>
+          </el-table-column>
+          <el-table-column label="关键工序" width="90" align="center">
+            <template #default="{ row }">
+              <el-switch v-model="row.keyOpFlag" active-value="1" inactive-value="0"
+                         active-text="IPQC" />
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="70">
             <template #default="{ $index }">
               <el-button link type="danger" size="small" @click="ops.splice($index, 1)">删除</el-button>
@@ -211,6 +224,15 @@
             <template #default="{ row }">{{ row.wcCode }} {{ row.wcName }}</template>
           </el-table-column>
           <el-table-column prop="leadTime" label="提前期" width="86" />
+          <el-table-column label="标准良率" width="90" align="center">
+            <template #default="{ row }">{{ row.standardYield ?? 98 }}%</template>
+          </el-table-column>
+          <el-table-column label="关键工序" width="86" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.keyOpFlag === '1'" size="small" type="warning">IPQC</el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="标准/准备/等待/移动(工时)" min-width="180">
             <template #default="{ row }">
               <template v-if="row.standard">
@@ -339,7 +361,8 @@ function onProductChange(code) {
 }
 
 function addOpRow() {
-  ops.value.push({ opCode: '', wcCode: '', leadTime: null, _noStandard: false })
+  ops.value.push({ opCode: '', wcCode: '', leadTime: null,
+    standardYield: 98, keyOpFlag: '0', _noStandard: false })
 }
 
 function onOpChange(row) {
@@ -369,6 +392,9 @@ async function openEdit(row) {
   ops.value = (res.data.ops || []).map(o => ({
     opCode: o.opCode, opName: o.opName, wcCode: o.wcCode, wcName: o.wcName,
     leadTime: o.leadTime === null ? null : Number(o.leadTime),
+    standardYield: o.standardYield === null || o.standardYield === undefined
+      ? 98 : Number(o.standardYield),
+    keyOpFlag: o.keyOpFlag || '0',
     _noStandard: !standards.value.has(`${o.opCode}|${o.wcCode}`)
   }))
   editorVisible.value = true
@@ -377,7 +403,8 @@ async function openEdit(row) {
 function payload() {
   return {
     head: { ...head.value },
-    ops: ops.value.map(o => ({ opCode: o.opCode, wcCode: o.wcCode, leadTime: o.leadTime }))
+    ops: ops.value.map(o => ({ opCode: o.opCode, wcCode: o.wcCode, leadTime: o.leadTime,
+      standardYield: o.standardYield, keyOpFlag: o.keyOpFlag }))
   }
 }
 

@@ -1,19 +1,25 @@
 package com.erp.service.impl.mrp;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.erp.common.ServiceException;
+import com.erp.dao.mrp.MrpMoOpDao;
 import com.erp.entity.mrp.MrpMo;
+import com.erp.entity.mrp.MrpMoOp;
 import com.erp.service.mrp.MoCloseCheck;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 /**
- * 关闭前置校验占位（change add-work-order-management，proposal D3 偏差 + design D6 + 任务 1.3 核实结论）。
+ * 关闭前置校验（change add-work-order-management design D6 钩子；
+ * add-reporting-management work-order-management MODIFIED「未完成工序检查」真实现兑现）。
  *
- * 本期为「空通过」实现，聚合三项待接入校验（下游落地时各自注册真实 bean 替代本占位）：
- *  1) 未完成工序检查（FR-4.5-6-8「仍有未完成工序 → 阻断」）——依赖 5.7 报工工序完成记录；
- *  2) 成本归集完成检查（C-4.5-09 L1）——依赖 4.5-6 成本归集模块；
- *  3) 在制库存余额 = 0（BR-4.4-16）——任务 1.3 核实：库存域无独立在制表
- *     （WipStockController 恒空待接入、领料单有 WORK_ORDER_NO 但完工入库无数据源），
- *     按 design Risks 降级为空通过，5.7 完工入库落地后实现。
+ *  1) 未完成工序检查（FR-4.5-6-8「仍有未完成工序 → 阻断关闭」）——真实现：
+ *     存在 OP_STATUS ≠ DONE 的工序 → 422 列出清单（5.7 完工接管后工序状态由报工推进）；
+ *  2) 成本归集完成检查（C-4.5-09 L1）——依赖 4.5-6 成本归集模块，仍空通过占位；
+ *  3) 在制库存余额 = 0（BR-4.4-16）——库存域无独立在制表（1.3 核实结论），空通过占位。
  *
  * 硬校验「状态 = COMPLETED」由 MoServiceImpl.precheckClose/close 自身执行，不经本钩子。
  */
@@ -21,14 +27,31 @@ import org.springframework.stereotype.Component;
 @Component
 public class PendingCloseChecks implements MoCloseCheck {
 
+    private final MrpMoOpDao moOpDao;
+
+    public PendingCloseChecks(MrpMoOpDao moOpDao) {
+        this.moOpDao = moOpDao;
+    }
+
     @Override
     public String name() {
-        return "下游前置校验（工序完成/成本归集/在制清零）——占位通过，待 5.7/4.5-6 接入";
+        return "未完成工序检查（成本归集/在制清零占位通过，待 4.5-6 接入）";
     }
 
     @Override
     public void validate(MrpMo mo) {
-        // 占位空通过（proposal D3）：不阻断；真实实现接入时在此抛 ServiceException(422)
-        log.debug("工单关闭占位校验通过：{}（占位项待 5.7/4.5-6 接入）", mo.getMoNo());
+        // 1) 未完成工序（work-order-management MODIFIED 真实现——422 列清单）
+        List<MrpMoOp> undone = moOpDao.selectList(new LambdaQueryWrapper<MrpMoOp>()
+                .eq(MrpMoOp::getMoId, mo.getId())
+                .ne(MrpMoOp::getOpStatus, "DONE"));
+        if (!undone.isEmpty()) {
+            String detail = undone.stream()
+                    .map(o -> "工序 " + o.getOpSeq() + " " + o.getOpName()
+                            + "（" + o.getOpStatus() + "）")
+                    .collect(Collectors.joining("、"));
+            throw new ServiceException(422, "存在未完成工序，阻断关闭：" + detail);
+        }
+        // 2)/3) 占位空通过（成本归集 4.5-6、在制余额无数据源——见类注释）
+        log.debug("工单关闭校验通过：{}（无未完成工序）", mo.getMoNo());
     }
 }

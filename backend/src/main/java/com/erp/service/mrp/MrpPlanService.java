@@ -46,4 +46,13 @@ public interface MrpPlanService {
 
     /** 异常处置：仅 EXCESS/OVERDUE 行，备注必填，处理人/时间留痕 */
     void handle(String id, String note);
+
+    /**
+     * 缺料转采购建议（change add-kitting-check 任务 5.3，spec「缺料转采购建议出口」）：
+     * 缺料行 → PENDING 采购建议（TYPE=PURCHASE，REMARK 前缀 [SHORTAGE:MO_NO] 来源标识），
+     * 经 5.3.1 审核 → convertPr 单一漏斗防重复下单（design D5）；
+     * 同工单同物料已有未处置（PENDING/CONFIRMED）缺料建议 → 422。
+     * 返回 {created, suggestions:[...]}。
+     */
+    Map<String, Object> convertFromShortage(List<String> shortageIds);
 }

@@ -4,9 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.mdm.MdmItemDao;
+import com.erp.dao.mrp.MrpMoDao;
+import com.erp.dao.mrp.MrpMoShortageDao;
 import com.erp.dao.mrp.MrpRunDao;
 import com.erp.dao.mrp.MrpSuggestionDao;
 import com.erp.entity.mdm.MdmItem;
+import com.erp.entity.mrp.MrpMo;
+import com.erp.entity.mrp.MrpMoShortage;
 import com.erp.entity.mrp.MrpRun;
 import com.erp.entity.mrp.MrpSuggestion;
 import com.erp.service.SysParamService;
@@ -73,11 +77,14 @@ public class MrpPlanServiceImpl implements MrpPlanService {
     private final SysParamService sysParamService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate txTemplate;
+    private final MrpMoDao moDao;
+    private final MrpMoShortageDao shortageDao;
 
     public MrpPlanServiceImpl(MrpRunDao runDao, MrpSuggestionDao suggestionDao,
                               MdmItemDao mdmItemDao, MrpDataSource dataSource,
                               ProcMrpService procMrpService, SysParamService sysParamService,
-                              ObjectMapper objectMapper, PlatformTransactionManager transactionManager) {
+                              ObjectMapper objectMapper, PlatformTransactionManager transactionManager,
+                              MrpMoDao moDao, MrpMoShortageDao shortageDao) {
         this.runDao = runDao;
         this.suggestionDao = suggestionDao;
         this.mdmItemDao = mdmItemDao;
@@ -86,6 +93,8 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         this.sysParamService = sysParamService;
         this.objectMapper = objectMapper;
         this.txTemplate = new TransactionTemplate(transactionManager);
+        this.moDao = moDao;
+        this.shortageDao = shortageDao;
     }
 
     // ---------- 运行 ----------
@@ -337,6 +346,83 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         log.info("异常处置：{} {} 备注={}", s.getItemCode(), s.getType(), s.getHandledNote());
     }
 
+    // ---------- 缺料转采购建议（change add-kitting-check 任务 5.3，design D5） ----------
+
+    @Override
+    public Map<String, Object> convertFromShortage(List<String> shortageIds) {
+        requireAny("缺料转采购建议");
+        if (shortageIds == null || shortageIds.isEmpty()) {
+            throw new ServiceException(422, "请选择缺料行");
+        }
+        List<MrpMoShortage> rows = shortageDao.selectBatchIds(shortageIds);
+        if (rows == null || rows.isEmpty()) {
+            throw new ServiceException(404, "缺料行不存在");
+        }
+        Map<String, MrpMo> moCache = new HashMap<>();
+        List<MrpSuggestion> created = new ArrayList<>();
+        for (MrpMoShortage row : rows) {
+            MrpMo mo = moCache.computeIfAbsent(row.getMoId(), moDao::selectById);
+            if (mo == null) {
+                throw new ServiceException(404, "缺料行所属工单不存在：" + row.getMoId());
+            }
+            String marker = "[SHORTAGE:" + mo.getMoNo() + "]";
+            // 防重：同工单同物料已有未处置缺料建议 → 422（design D5 单一漏斗）
+            Long dup = suggestionDao.selectCount(new LambdaQueryWrapper<MrpSuggestion>()
+                    .like(MrpSuggestion::getRemark, marker)
+                    .eq(MrpSuggestion::getItemCode, row.getItemCode())
+                    .in(MrpSuggestion::getStatus,
+                            MrpSuggestion.ST_PENDING, MrpSuggestion.ST_CONFIRMED));
+            if (dup != null && dup > 0) {
+                throw new ServiceException(422, "已存在未处置的缺料采购建议："
+                        + mo.getMoNo() + " / " + row.getItemCode() + "（5.3.1 可审核）");
+            }
+            MdmItem item = mdmItemDao.selectOne(new LambdaQueryWrapper<MdmItem>()
+                    .eq(MdmItem::getItemCode, row.getItemCode()));
+            if (item == null) {
+                throw new ServiceException(422, "物料不存在：" + row.getItemCode());
+            }
+
+            MrpSuggestion s = new MrpSuggestion();
+            s.setRunId("SHORTAGE"); // 非运行来源占位（design D5：REMARK 前缀才是来源标识）
+            s.setItemCode(row.getItemCode());
+            s.setItemName(row.getItemName() != null ? row.getItemName() : item.getItemName());
+            s.setPurchaseType(item.getPurchaseType());
+            s.setType(MrpSuggestion.TYPE_PURCHASE); // 补料出口固定采购（spec L2757）
+            // 五值留痕（与缺料行快照一致：需求 − 可用 = 缺料）
+            s.setDemandQty(row.getReqQty());
+            s.setOnHandQty(row.getAvailQty());
+            s.setInProcessQty(BigDecimal.ZERO);
+            s.setInTransitQty(BigDecimal.ZERO);
+            s.setNetReq(row.getShortQty());
+            s.setSuggestQty(row.getShortQty());
+            s.setStatus(MrpSuggestion.ST_PENDING);
+            s.setOverdueFlag("0");
+            s.setHandledFlag("0");
+            LocalDate reqDate = mo.getPlanStartDate() != null
+                    ? mo.getPlanStartDate() : LocalDate.now();
+            s.setReqDate(reqDate);
+            long lead = item.getLeadTimeDays() == null ? 0 : Math.max(0, item.getLeadTimeDays());
+            s.setOrderDate(reqDate.minusDays(lead));
+            if (s.getOrderDate().isBefore(LocalDate.now())) {
+                s.setOverdueFlag("1");
+            }
+            s.setRemark(truncate(marker + " 缺料转采购建议（5.5.2→5.3.1 单一漏斗，缺料 "
+                    + row.getShortQty().toPlainString() + "）", 500));
+            suggestionDao.insert(s);
+            created.add(s);
+            log.info("缺料转采购建议：{} {} 缺料={} → 建议 {}", mo.getMoNo(),
+                    row.getItemCode(), row.getShortQty(), s.getId());
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("created", created.size());
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (MrpSuggestion s : created) {
+            list.add(toMap(s));
+        }
+        out.put("suggestions", list);
+        return out;
+    }
+
     // ---------- 计算引擎（design D2） ----------
 
     private static class CalcResult {
@@ -413,6 +499,10 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         Map<String, Integer> evalDepth = new HashMap<>();
         closure.forEach(c -> evalDepth.put(c, 0));
 
+        // 5.0) 缺料需求并入（spec L2842 / change add-kitting-check 任务 5.4，design D6）：
+        // 活跃工单未解决缺料按 SO 覆盖判定并入毛需求（保守规则：覆盖不足则全额并入）
+        mergeShortageDemand(gross, closure, soDemand);
+
         for (String code : topo) {
             MdmItem item = master.get(code);
             if (item == null) {
@@ -480,6 +570,56 @@ public class MrpPlanServiceImpl implements MrpPlanService {
             }
         }
         return out;
+    }
+
+    /**
+     * 缺料需求并入（spec L2842 / change add-kitting-check 任务 5.4，design D6）：
+     * 活跃工单（未关闭）的未解决缺料行按「SO 覆盖判定」并入子项毛需求——
+     * 产成品 SO 未交量 ≥ 工单剩余量 → 跳过（SO 展开已覆盖，防双计）；
+     * 否则缺料量全额并入（保守规则：宁可轻微双计不漏算，偏差 D6）。
+     * 范围过滤：工单产品须在本次运行闭环内（CATEGORY/GROUP 语义一致）。
+     */
+    private void mergeShortageDemand(Map<String, BigDecimal> gross, Set<String> closure,
+                                     Map<String, MrpDataSource.SoDemand> soDemand) {
+        List<MrpMo> openMos = moDao.selectList(new LambdaQueryWrapper<MrpMo>()
+                .notIn(MrpMo::getStatus, MrpMo.ST_CLOSED, MrpMo.ST_CANCELLED));
+        if (openMos.isEmpty()) {
+            return;
+        }
+        List<MrpMoShortage> rows = shortageDao.selectList(new LambdaQueryWrapper<MrpMoShortage>()
+                .in(MrpMoShortage::getMoId, openMos.stream().map(MrpMo::getId).toList()));
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, MrpMo> moById = new HashMap<>();
+        openMos.forEach(m -> moById.put(m.getId(), m));
+        int merged = 0;
+        for (MrpMoShortage row : rows) {
+            MrpMo mo = moById.get(row.getMoId());
+            if (mo == null || !closure.contains(mo.getProductCode())) {
+                continue; // 范围外工单不并入（与 scope 语义一致）
+            }
+            BigDecimal qualified = mo.getQualifiedQty() == null ? BigDecimal.ZERO : mo.getQualifiedQty();
+            BigDecimal remaining = (mo.getQty() == null ? BigDecimal.ZERO : mo.getQty())
+                    .subtract(qualified);
+            if (remaining.signum() <= 0) {
+                continue;
+            }
+            MrpDataSource.SoDemand so = soDemand.get(mo.getProductCode());
+            BigDecimal soUncovered = so == null ? BigDecimal.ZERO : so.qty;
+            if (soUncovered.compareTo(remaining) >= 0) {
+                continue; // SO 未交量足额覆盖工单剩余量 → SO 展开已覆盖，防双计
+            }
+            if (row.getItemCode() == null || row.getShortQty() == null
+                    || row.getShortQty().signum() <= 0) {
+                continue;
+            }
+            gross.merge(row.getItemCode(), row.getShortQty(), BigDecimal::add);
+            merged++;
+        }
+        if (merged > 0) {
+            log.info("MRP 缺料需求并入：{} 条活跃缺料行计入毛需求", merged);
+        }
     }
 
     /** 替代分配：候选池封顶分配 + 缺量给首个启用替代（spec FR-4.5-2-4 唯一具体场景口径） */

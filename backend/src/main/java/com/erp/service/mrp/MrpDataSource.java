@@ -173,8 +173,18 @@ public class MrpDataSource {
         return out;
     }
 
-    /** Incoming 在途：APPROVED PO 行 QTY − RECEIVED_QTY（负值截 0） */
+    /** Incoming 在途：APPROVED PO 行 QTY − RECEIVED_QTY（负值截 0）；MRP 净算口径（不按日期过滤） */
     public Map<String, BigDecimal> inTransit(Set<String> itemCodes) {
+        return inTransit(itemCodes, null);
+    }
+
+    /**
+     * Incoming 在途（齐套门禁口径，change add-kitting-check design D1）：
+     * dispatchDate 非空 → 仅计 reqDate ≤ dispatchDate 的行，reqDate 为空的行不计入（保守报缺，偏差 D5）；
+     * dispatchDate 为空 → 全量计入（旧行为，KITTING_TRANSIT_DATE_FILTER=OFF 走此分支）。
+     * MRP 净算继续用旧签名——采购建议层看全局、齐套门禁看时点，口径有意分叉。
+     */
+    public Map<String, BigDecimal> inTransit(Set<String> itemCodes, java.time.LocalDate dispatchDate) {
         Map<String, BigDecimal> out = new HashMap<>();
         if (itemCodes.isEmpty()) {
             return out;
@@ -193,6 +203,9 @@ public class MrpDataSource {
                 .in(PurchaseOrderLine::getItemCode, itemCodes));
         for (PurchaseOrderLine line : lines) {
             if (line.getQty() == null) {
+                continue;
+            }
+            if (dispatchDate != null && (line.getReqDate() == null || line.getReqDate().isAfter(dispatchDate))) {
                 continue;
             }
             BigDecimal received = line.getReceivedQty() == null ? BigDecimal.ZERO : line.getReceivedQty();

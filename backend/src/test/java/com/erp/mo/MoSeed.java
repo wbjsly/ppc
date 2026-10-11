@@ -3,6 +3,7 @@ package com.erp.mo;
 import com.erp.entity.mdm.MdmItem;
 import com.erp.entity.mrp.MrpBom;
 import com.erp.entity.mrp.MrpBomItem;
+import com.erp.entity.mrp.MrpMo;
 import com.erp.entity.mrp.MrpOpWcStandard;
 import com.erp.entity.mrp.MrpOperation;
 import com.erp.entity.mrp.MrpRouting;
@@ -10,6 +11,7 @@ import com.erp.entity.mrp.MrpRoutingOp;
 import com.erp.entity.mrp.MrpWorkCenter;
 import com.erp.service.mdm.MdmItemService;
 import com.erp.service.mrp.BomService;
+import com.erp.service.mrp.MoService;
 import com.erp.service.mrp.OpWcStandardService;
 import com.erp.service.mrp.OperationService;
 import com.erp.service.mrp.RoutingService;
@@ -53,6 +55,9 @@ final class MoSeed {
         jdbc.update("DELETE FROM erp_mrp_mo WHERE PRODUCT_CODE IN " +
                 "(SELECT ITEM_CODE FROM erp_mdm_item WHERE ITEM_NAME LIKE '工单测试%')");
         jdbc.update("DELETE FROM erp_mrp_mo_shortage WHERE MO_ID NOT IN (SELECT ID FROM erp_mrp_mo)");
+        // 预扣（change add-dispatch-management）：工单已删 → 孤儿行兜底（跨测试残留防护：
+        // MO_NO 按日期+序回收，残留活动行会被后续测试同号命中导致核销 409）
+        jdbc.update("DELETE FROM erp_mrp_reservation WHERE MO_ID NOT IN (SELECT ID FROM erp_mrp_mo)");
         jdbc.update("DELETE FROM erp_mrp_mo_bom WHERE MO_ID NOT IN (SELECT ID FROM erp_mrp_mo)");
         jdbc.update("DELETE FROM erp_mrp_mo_op WHERE MO_ID NOT IN (SELECT ID FROM erp_mrp_mo)");
         // PMO 建议与运行（本测试专用前缀）
@@ -63,6 +68,9 @@ final class MoSeed {
         jdbc.update("DELETE FROM erp_sd_so_line WHERE SO_ID IN " +
                 "(SELECT ID FROM erp_sd_so WHERE SO_NO LIKE 'SO-RMO%')");
         jdbc.update("DELETE FROM erp_sd_so WHERE SO_NO LIKE 'SO-RMO%'");
+        jdbc.update("DELETE FROM erp_proc_po_line WHERE PO_ID IN " +
+                "(SELECT ID FROM erp_proc_po WHERE PO_NO LIKE 'PO-RMO%')");
+        jdbc.update("DELETE FROM erp_proc_po WHERE PO_NO LIKE 'PO-RMO%'");
         jdbc.update("DELETE FROM erp_inv_stock WHERE ITEM_CODE IN " +
                 "(SELECT ITEM_CODE FROM erp_mdm_item WHERE ITEM_NAME LIKE '工单测试%')");
         // BOM / 路线 / 工艺主数据
@@ -165,6 +173,61 @@ final class MoSeed {
         return wcCode;
     }
 
+    /**
+     * 多工序路线发布（change add-dispatch-management 批量生成测试）：
+     * opCount 道工序共用一个新 WC，逐道定额 run=1h（setup 空）；返回 wcCode。
+     * 路线 create 自动赋 opSeq 10/20/30…（RoutingServiceImpl L358）。
+     */
+    static String publishRoutingMulti(RoutingService routingService, OperationService operationService,
+                                      WorkCenterService workCenterService,
+                                      OpWcStandardService standardService,
+                                      JdbcTemplate jdbc, MdmItem product, int opCount) {
+        int n = SEQ.incrementAndGet();
+        String wcCode = "MOWC-" + n;
+        MrpWorkCenter wc = new MrpWorkCenter();
+        wc.setWcCode(wcCode);
+        wc.setWcName("工单测试中心" + n);
+        workCenterService.create(wc);
+        List<MrpRoutingOp> rows = new java.util.ArrayList<>();
+        for (int i = 1; i <= opCount; i++) {
+            String opCode = "MOOP-" + n + "-" + i;
+            MrpOperation op = new MrpOperation();
+            op.setOpCode(opCode);
+            op.setOpName("工单测试工序" + n + "-" + i);
+            operationService.create(op);
+            MrpOpWcStandard std = new MrpOpWcStandard();
+            std.setOpCode(opCode);
+            std.setWcCode(wcCode);
+            std.setRunHours(BigDecimal.ONE);
+            standardService.create(std);
+            MrpRoutingOp r = new MrpRoutingOp();
+            r.setOpCode(opCode);
+            r.setWcCode(wcCode);
+            r.setLeadTime(BigDecimal.ONE);
+            rows.add(r);
+        }
+        MrpRouting head = new MrpRouting();
+        head.setItemCode(product.getItemCode());
+        MrpRouting draft = routingService.create(head, rows);
+        jdbc.update("UPDATE erp_mrp_routing SET STATUS='PENDING' WHERE ID=?", draft.getId());
+        routingService.publishApproved(draft.getId());
+        return wcCode;
+    }
+
+    /** 创建→提交→审批→释放（派工/齐套链路的 Released 工单；需 PLANNER 登录态） */
+    static MrpMo releaseMo(MoService moService, MdmItem product, String qty,
+                           LocalDate planStart, LocalDate planEnd) {
+        MrpMo h = new MrpMo();
+        h.setProductCode(product.getItemCode());
+        h.setQty(new BigDecimal(qty));
+        h.setPlanStartDate(planStart);
+        h.setPlanEndDate(planEnd);
+        MrpMo mo = (MrpMo) moService.create(h).get("mo");
+        moService.submit(mo.getId());
+        moService.onApproved(mo.getId());
+        return moService.release(mo.getId());
+    }
+
     /** 造已确认 SO 行（超交校验需求源；JDBC 直插） */
     static void mkSo(JdbcTemplate jdbc, String itemCode, String qty, LocalDate date) {
         String id = "so-rmo-" + SEQ.incrementAndGet();
@@ -180,6 +243,21 @@ final class MoSeed {
         jdbc.update("INSERT INTO erp_inv_stock (ID, ITEM_CODE, ITEM_NAME, QTY, AVAILABLE_QTY) VALUES (?,?,?,?,?)",
                 "st-rmo-" + SEQ.incrementAndGet(), itemCode, ITEM_PREFIX,
                 new BigDecimal(available), new BigDecimal(available));
+    }
+
+    /** 造 APPROVED 在途 PO（带到货日期 reqDate；在途 = QTY − RECEIVED_QTY）——齐套在途过滤口径测试用 */
+    static void mkPo(JdbcTemplate jdbc, String itemCode, String qty, LocalDate reqDate) {
+        String id = "po-rmo-" + SEQ.incrementAndGet();
+        jdbc.update("INSERT INTO erp_proc_po (ID, PO_NO, SOURCE, SUPPLIER_ID, STATUS) " +
+                "VALUES (?,?, 'MANUAL', 'SUP-RMO-TEST', 'APPROVED')", id, "PO-RMO-" + id);
+        jdbc.update("INSERT INTO erp_proc_po_line (ID, PO_ID, LINE_NO, ITEM_CODE, QTY, UNIT_PRICE, " +
+                        "RECEIVED_QTY, REQ_DATE) VALUES (?,?,1,?,?,1,0,?)",
+                id + "-L1", id, itemCode, new BigDecimal(qty), reqDate);
+    }
+
+    /** 直改工单合格产出（模拟部分完工，剩余量基数口径测试用） */
+    static void setQualified(JdbcTemplate jdbc, String moId, String qualified) {
+        jdbc.update("UPDATE erp_mrp_mo SET QUALIFIED_QTY=? WHERE ID=?", new BigDecimal(qualified), moId);
     }
 
     /**

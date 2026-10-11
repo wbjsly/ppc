@@ -26,5 +26,9 @@ public class MrpRoutingOp extends BaseEntity {
     private String wcName;
     /** 工序提前期（天，供 MRP 串行 Σ；缺失由下游回落物料默认提前期） */
     private BigDecimal leadTime;
+    /** 标准良率（%，(0,100] 默认 98——FR-4.5-5-5 良率判定基准，5.7 变更加列，迁移 123） */
+    private BigDecimal standardYield;
+    /** 关键工序标记（FR-4.5-5-3 首次完工报工自动建 IPQC 批，5.7 变更加列） */
+    private String keyOpFlag;
     private String remark;
 }

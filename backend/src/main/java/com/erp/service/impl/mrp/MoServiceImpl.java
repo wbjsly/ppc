@@ -283,6 +283,9 @@ public class MoServiceImpl implements MoService {
             row.setWcCode(op.getWcCode());
             row.setWcName(op.getWcName());
             row.setLeadTime(op.getLeadTime());
+            // 5.7 快照两字段（路线后续改版不影响在制——routing-management MODIFIED）
+            row.setStandardYield(op.getStandardYield());
+            row.setKeyOpFlag(op.getKeyOpFlag());
             row.setOpStatus("PENDING");
             if (op.getWcCode() != null && !op.getWcCode().isEmpty()) {
                 MrpOpWcStandard std = moDataSource.standardOf(op.getOpCode(), op.getWcCode());
@@ -545,6 +548,9 @@ public class MoServiceImpl implements MoService {
                 row.setRunHours(src.getRunHours());
                 row.setWaitHours(src.getWaitHours());
                 row.setMoveHours(src.getMoveHours());
+                // 5.7 快照两字段随拆分克隆
+                row.setStandardYield(src.getStandardYield());
+                row.setKeyOpFlag(src.getKeyOpFlag());
                 row.setOpStatus("PENDING");
                 moOpDao.insert(row);
             }
