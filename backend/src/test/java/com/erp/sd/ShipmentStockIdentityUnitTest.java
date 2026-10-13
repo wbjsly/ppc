@@ -86,7 +86,9 @@ class ShipmentStockIdentityUnitTest {
         shipment = new ShipmentServiceImpl(shipDao, shipLineDao, mock(SoDao.class), soLineDao,
                 mock(SdReturnDao.class), mock(SdReturnLineDao.class), stockDao, reservationDao,
                 mock(OutboxPublisher.class), mock(NoticeService.class),
-                mock(SysParamService.class), mock(InvoiceService.class), realEngine, mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class), mock(com.erp.dao.mdm.MdmCustomerGroupDao.class), mock(com.erp.dao.inv.InvWaveLineDao.class), mock(com.erp.dao.inv.InvWaveDao.class) );
+                mock(SysParamService.class), mock(InvoiceService.class), realEngine, mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class), mock(com.erp.dao.mdm.MdmCustomerGroupDao.class), mock(com.erp.dao.inv.InvWaveLineDao.class), mock(com.erp.dao.inv.InvWaveDao.class),
+                mock(com.erp.service.qms.QualityGateService.class,
+                        inv -> java.util.Map.of("decision", "ALLOWED", "warnings", java.util.List.of())) );
     }
 
     private InvStock stock(String id, String batch, String qty) {

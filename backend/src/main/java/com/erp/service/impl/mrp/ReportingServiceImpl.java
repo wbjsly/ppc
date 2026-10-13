@@ -1023,6 +1023,15 @@ public class ReportingServiceImpl implements ReportingService {
         }
         // 倒冲补投 BFLUSH 行回加库存（余量护栏——不足 422 阻断冲销，事务回滚）
         reverseBflushFeeds(moId);
+        // 完工冲销联动：取消未结论 OQC 完工批（rework-inspection-tasks，已放行批不回滚仅告警）
+        try {
+            int cancelled = lotService.cancelFgLotsForMo(moId);
+            if (cancelled > 0) {
+                log.info("完工回退 {}：取消未结论 OQC 完工批 {} 张", mo.getMoNo(), cancelled);
+            }
+        } catch (ServiceException e) {
+            log.warn("完工回退取消 OQC 批降级（不阻断冲销）{}：{}", mo.getMoNo(), e.getMessage());
+        }
         log.info("完工回退 {}：COMPLETED → RELEASED（未完成工序或累计合格 {} < 基线 {}）",
                 mo.getMoNo(), lastGood, baseline);
     }
@@ -1150,6 +1159,24 @@ public class ReportingServiceImpl implements ReportingService {
                     trialOut.get("stockIn"), trialOut.get("lotNo"));
         }
 
+        // NORMAL：完工触发 OQC 建批（rework-inspection-tasks，spec OQC 完工触发——
+        // BLOCKED 不阻断完工、建批异常仅告警降级，看板可手动建批兜底）
+        Map<String, Object> fgOqc = null;
+        if (!MrpMo.MO_TYPE_RW.equals(mo.getMoType())
+                && !MrpMo.MO_TYPE_TRIAL.equals(mo.getMoType())
+                && qualified != null && qualified.signum() > 0) {
+            try {
+                var fgLot = lotService.createFinishedGoodsOqc(mo.getId(), mo.getProductCode(),
+                        mo.getProductName(), null, qualified, mo.getPriority());
+                fgOqc = new LinkedHashMap<>();
+                fgOqc.put("lotNo", fgLot.getLotNo());
+                fgOqc.put("status", fgLot.getStatus());
+                log.info("完工触发 OQC 批 {}（工单 {}，状态 {}）", fgLot.getLotNo(), mo.getMoNo(), fgLot.getStatus());
+            } catch (ServiceException e) {
+                log.warn("完工 OQC 建批降级（不阻断完工，可手动建批兜底）{}：{}", mo.getMoNo(), e.getMessage());
+            }
+        }
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("moNo", mo.getMoNo());
         out.put("status", MrpMo.ST_COMPLETED);
@@ -1161,6 +1188,9 @@ public class ReportingServiceImpl implements ReportingService {
         }
         if (trialOut != null) {
             out.put("trial", trialOut);
+        }
+        if (fgOqc != null) {
+            out.put("oqc", fgOqc);
         }
         log.info("报工完工接管 {} 合格={} 倒冲补投 {} 行", mo.getMoNo(), qualified, backflush.size());
         return out;

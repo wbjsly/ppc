@@ -128,4 +128,32 @@ public interface InspectionLotService {
 
     /** 到点计划生成 IPQC 批次（scheduler 驱动，幂等），返回生成批数 */
     int runPatrolPlans();
+
+    // ================= 分派与超时（change rework-inspection-tasks，design D2/D3） =================
+
+    /**
+     * 超时扫描（scheduler 驱动）：在途批（PENDING/INPUTTING/REVIEWING）超过时限未出结论
+     * → OVERDUE_FLAG=1 + 通知质检员（IPQC 追加通知车间主管）；无改派记录 → 自动改派在手最少
+     * 他人 + 通知质量经理；已改派过 → 仅升级通知。返回处理批数（spec inspection-lot 超时扫描）。
+     */
+    int sweepOverdue();
+
+    // ================= OQC 完工全链（change rework-inspection-tasks design D1） =================
+
+    /**
+     * 正常工单完工 OQC 批（spec OQC 完工触发与放行联动入库）：refType=WORKORDER、
+     * refId=<moId>#FG、sourceType=FG；无标准 → BLOCKED 占位不抛错；同 refId 未取消批幂等返回。
+     * moPriority=1（最高档）→ URGENT + 时限从严。
+     */
+    InspectionLot createFinishedGoodsOqc(String refMoId, String itemCode, String itemName,
+                                         String batchNo, java.math.BigDecimal qty, Integer moPriority);
+
+    /**
+     * 完工冲销联动（spec 正常工单 OQC 建批挂钩）：取消 refId=<moId>#FG 的未结论批
+     * （RELEASED 不回滚，仅提示人工红冲）。返回取消批数。
+     */
+    int cancelFgLotsForMo(String refMoId);
+
+    /** 批次合格证（OQC 放行生成；未放行返回 null） */
+    com.erp.entity.qms.Certificate certificateOf(String lotId);
 }

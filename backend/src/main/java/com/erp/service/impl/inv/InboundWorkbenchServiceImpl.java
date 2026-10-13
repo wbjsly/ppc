@@ -33,15 +33,18 @@ public class InboundWorkbenchServiceImpl implements InboundWorkbenchService {
     private final GoodsReceiptDao grDao;
     private final InspectionLotDao lotDao;
     private final SdReturnDao sdReturnDao;
+    private final com.erp.dao.inv.InvTransactionDao txnDao;
 
     public InboundWorkbenchServiceImpl(StockDocTypeService docTypeService,
                                        GoodsReceiptDao grDao,
                                        InspectionLotDao lotDao,
-                                       SdReturnDao sdReturnDao) {
+                                       SdReturnDao sdReturnDao,
+                                       com.erp.dao.inv.InvTransactionDao txnDao) {
         this.docTypeService = docTypeService;
         this.grDao = grDao;
         this.lotDao = lotDao;
         this.sdReturnDao = sdReturnDao;
+        this.txnDao = txnDao;
     }
 
     @Override
@@ -71,12 +74,52 @@ public class InboundWorkbenchServiceImpl implements InboundWorkbenchService {
                 return purchaseIn(typeMap, keyword, status, current, size, out);
             case "SALES_RETURN_IN":
                 return returnIn(typeMap, keyword, status, current, size, out);
+            case "WIP_IN":
+                // 完工入库（4.4.2）：OQC 放行联动写入的 MO_FINISH 流水，只读可追溯
+                // （rework-inspection-tasks spec inbound-workbench WIP_IN 数据源）
+                return wipIn(typeMap, keyword, current, size, out);
             default:
-                // 未建域类型（WIP_IN/TRANSFER_IN/...）与暂无数据源类型：空态骨架
+                // 未建域类型（TRANSFER_IN/...）与暂无数据源类型：空态骨架
                 out.put("rows", List.of());
                 out.put("total", 0);
                 return out;
         }
+    }
+
+    /** WIP_IN 完工入库队列（只读）：bizDocType=MO_FINISH 的入库流水，来源 OQC 批号可下钻 */
+    private Map<String, Object> wipIn(Map<String, Object> typeMap, String keyword,
+                                      long current, long size, Map<String, Object> out) {
+        LambdaQueryWrapper<com.erp.entity.inv.InvTransaction> qw =
+                new LambdaQueryWrapper<com.erp.entity.inv.InvTransaction>()
+                        .eq(com.erp.entity.inv.InvTransaction::getTypeCode, "WIP_IN")
+                        .eq(com.erp.entity.inv.InvTransaction::getBizDocType, "MO_FINISH")
+                        .and(!isBlank(keyword), w -> w
+                                .like(com.erp.entity.inv.InvTransaction::getBizDocNo, keyword)
+                                .or()
+                                .like(com.erp.entity.inv.InvTransaction::getItemCode, keyword)
+                                .or()
+                                .like(com.erp.entity.inv.InvTransaction::getBatchNo, keyword))
+                        .orderByDesc(com.erp.entity.inv.InvTransaction::getTxnNo);
+        Page<com.erp.entity.inv.InvTransaction> p = txnDao.selectPage(new Page<>(current, size), qw);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (com.erp.entity.inv.InvTransaction t : p.getRecords()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", t.getId());
+            m.put("txnNo", t.getTxnNo());
+            m.put("docNo", t.getTxnNo());
+            m.put("bizDocNo", t.getBizDocNo());   // 来源 OQC 批号（可下钻检验批详情）
+            m.put("itemCode", t.getItemCode());
+            m.put("batchNo", t.getBatchNo());
+            m.put("warehouseCode", t.getWarehouseCode());
+            m.put("binCode", t.getBinCode());
+            m.put("qty", t.getQty());
+            m.put("createDate", t.getCreateDate());
+            rows.add(m);
+        }
+        out.put("type", typeMap);
+        out.put("rows", rows);
+        out.put("total", p.getTotal());
+        return out;
     }
 
     private Map<String, Object> purchaseIn(Map<String, Object> typeMap, String keyword,

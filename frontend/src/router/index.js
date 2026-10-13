@@ -246,12 +246,12 @@ const routes = [
         component: () => import('@/views/qms/standard/StandardDetail.vue'),
         meta: { title: '标准详情', group: '质量管理', hidden: true }
       },
-      // 2.5 质量协同 + 6.2/6.3/6.4 检验执行（add-quality-collaboration，同组件多路由）
+      // 2.5 质量协同 + 6.2/6.3/6.4 检验执行（rework-inspection-tasks 两级式：TaskBoard/TaskDetail）
       {
         path: '/m/2.5.1',
         name: 'IncomingInspection',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '来料检验', group: '采购管理', tab: 'board', lotType: 'IQC' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '来料检验', group: '采购管理', lotType: 'IQC' }
       },
       {
         path: '/m/2.6.1',
@@ -1325,38 +1325,51 @@ const routes = [
       {
         path: '/m/6.2.1',
         name: 'TaskIqc',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '来料检验', group: '质量管理', tab: 'board', lotType: 'IQC' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '来料检验', group: '质量管理', lotType: 'IQC' }
       },
       {
         path: '/m/6.2.2',
         name: 'TaskIpqc',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '过程检验', group: '质量管理', tab: 'board', lotType: 'IPQC' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '过程检验', group: '质量管理', lotType: 'IPQC' }
       },
       {
         path: '/m/6.2.3',
         name: 'TaskOqc',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '出货检验', group: '质量管理', tab: 'board', lotType: 'OQC' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '出货检验', group: '质量管理', lotType: 'OQC' }
+      },
+      // 6.2 详情工作台（不占菜单码）+ 配置页（巡检/免检/严格度/客户协议）
+      {
+        path: '/m/6.2.lot/:id',
+        name: 'TaskLotDetail',
+        component: () => import('@/views/qms/inspection/TaskDetail.vue'),
+        meta: { title: '检验批详情', group: '质量管理', hidden: true }
+      },
+      {
+        path: '/m/6.2.config',
+        name: 'TaskConfig',
+        component: () => import('@/views/qms/inspection/TaskConfig.vue'),
+        meta: { title: '检验任务配置', group: '质量管理', hidden: true }
       },
       {
         path: '/m/6.3.1',
         name: 'SamplingExecute',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '抽样执行', group: '质量管理', tab: 'input' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '抽样执行', group: '质量管理' }
       },
       {
         path: '/m/6.3.2',
         name: 'InspectionRecord',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '检验记录', group: '质量管理', tab: 'input' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '检验记录', group: '质量管理' }
       },
       {
         path: '/m/6.4.1',
         name: 'QualifiedRelease',
-        component: () => import('@/views/qms/inspection/index.vue'),
-        meta: { title: '合格放行', group: '质量管理', tab: 'board' }
+        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        meta: { title: '合格放行', group: '质量管理' }
       },
       // 6.8 供应质量 SCAR / 6.9 器具校准 / 6.10 过程控制（add-quality-collaboration）
       {

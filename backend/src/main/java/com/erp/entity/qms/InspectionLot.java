@@ -159,6 +159,14 @@ public class InspectionLot extends BaseEntity {
     @TableField("OVERDUE_FLAG")
     private String overdueFlag;
 
+    /** 分派/改派留痕 JSON [{ts,action:ASSIGN|REASSIGN,from,to,reason}]（design D2） */
+    @TableField("ASSIGN_LOG")
+    private String assignLog;
+
+    /** 命中客户协议编码快照（design D4） */
+    @TableField("AGREE_CODE")
+    private String agreeCode;
+
     /** 放行人 */
     @TableField("RELEASED_BY")
     private String releasedBy;

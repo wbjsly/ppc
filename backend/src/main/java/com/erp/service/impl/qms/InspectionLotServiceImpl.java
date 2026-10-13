@@ -38,6 +38,10 @@ import java.util.*;
 /**
  * 检验批实现（spec inspection-lot / design D2/D3）。
  * 取严：sample = Max(风险等级比例, AQL 查表)，A 类强制全检；批量不足方案样本量时转全检并留痕（BR-4.12-13）。
+ * 偏差（change rework-inspection-tasks proposal）：
+ *   D-1 无排班表：分派以「在手未结批数最少」近似能力上限，超时自动改派一次；
+ *   D-2 投诉域未建：客户协议 COMPLAINT_STREAK 由质量工程师手工登记/清零（留痕）；
+ *   D-3 合格证无防伪编号体系，CERT_NO 仅流水单号。
  */
 @Slf4j
 @Service
@@ -78,6 +82,17 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     /** 外协检验工作台（5.10.2）：GR→PO→外协派工单上下文 */
     private final com.erp.dao.mrp.MrpDispatchDao dispatchDao;
     private final com.erp.dao.proc.GoodsReceiptDao grDao;
+    /** 分派/超时（change rework-inspection-tasks design D2） */
+    private final com.erp.dao.system.SysUserDao userDao;
+    private final com.erp.dao.system.SysUserRoleDao userRoleDao;
+    private final com.erp.dao.system.SysRoleDao roleDao;
+    private final com.erp.service.system.NoticeService noticeService;
+    private final com.erp.service.qms.CustomerAgreementService agreementService;
+    /** OQC 完工批放行联动入库（change rework-inspection-tasks design D1） */
+    private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+    private final com.erp.dao.inv.InvTransactionDao txnDao;
+    private final com.erp.service.SysParamService sysParam;
+    private final com.erp.dao.qms.CertificateDao certificateDao;
 
     public InspectionLotServiceImpl(InspectionLotDao lotDao,
                                     LotItemDao lotItemDao,
@@ -94,7 +109,16 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                                     @Lazy com.erp.service.qms.NcrService ncrService,
                                     java.util.List<com.erp.service.qms.LotReleaseListener> releaseListeners,
                                     com.erp.dao.mrp.MrpDispatchDao dispatchDao,
-                                    com.erp.dao.proc.GoodsReceiptDao grDao) {
+                                    com.erp.dao.proc.GoodsReceiptDao grDao,
+                                    com.erp.dao.system.SysUserDao userDao,
+                                    com.erp.dao.system.SysUserRoleDao userRoleDao,
+                                    com.erp.dao.system.SysRoleDao roleDao,
+                                    com.erp.service.system.NoticeService noticeService,
+                                    com.erp.service.qms.CustomerAgreementService agreementService,
+                                    com.erp.service.inv.StockPostingEngine stockPostingEngine,
+                                    com.erp.dao.inv.InvTransactionDao txnDao,
+                                    com.erp.service.SysParamService sysParam,
+                                    com.erp.dao.qms.CertificateDao certificateDao) {
         this.lotDao = lotDao;
         this.lotItemDao = lotItemDao;
         this.exemptDao = exemptDao;
@@ -111,6 +135,15 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         this.releaseListeners = releaseListeners == null ? java.util.List.of() : releaseListeners;
         this.dispatchDao = dispatchDao;
         this.grDao = grDao;
+        this.userDao = userDao;
+        this.userRoleDao = userRoleDao;
+        this.roleDao = roleDao;
+        this.noticeService = noticeService;
+        this.agreementService = agreementService;
+        this.stockPostingEngine = stockPostingEngine;
+        this.txnDao = txnDao;
+        this.sysParam = sysParam;
+        this.certificateDao = certificateDao;
     }
 
     // ================= 外协收货检验工作台（change add-outsourcing-processing） =================
@@ -247,6 +280,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
             fillFromStandard(lot, hit);
             lotDao.insert(lot);
             snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+            assignInspector(lot); // 分派（spec 质检员自动分派）
             line.setQcStatus("PENDING");
             lineDao.updateById(line);
             out.add(lot);
@@ -581,6 +615,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         fillFromStandard(lot, hit);
         lotDao.insert(lot);
         snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        assignInspector(lot); // 分派
         log.info("recheck lot {} created for NCR {}", lot.getLotNo(), ncr.getNcrNo());
         return lot;
     }
@@ -627,6 +662,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         fillFromStandard(lot, hit);
         lotDao.insert(lot);
         snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        assignInspector(lot); // 分派
         log.info("rework recheck lot {} created for {} strictness={}",
                 lot.getLotNo(), refMoId, lot.getStrictness());
         return lot;
@@ -673,6 +709,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         fillFromStandard(lot, hit);
         lotDao.insert(lot);
         snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        assignInspector(lot); // 分派
         log.info("trial OQC lot {} created for {}", lot.getLotNo(), refMoId);
         return lot;
     }
@@ -725,8 +762,13 @@ public class InspectionLotServiceImpl implements InspectionLotService {
             return lot;
         }
         fillFromStandard(lot, hit);
+        if ("URGENT".equals(lot.getPriority())) {
+            applyUrgent(lot, "1"); // 手工建批显式紧急 → 从严一档（须在 fillFromStandard 后，防 sampleBasis 被覆盖）
+        }
         lotDao.insert(lot);
         snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        applyAgreement(lot, str(body.get("customerId")), str(body.get("categoryCode"))); // 协议加严（OQC 带客户时）
+        assignInspector(lot); // 分派（spec 质检员自动分派）
         log.info("manual lot created: {} type={} item={}", lot.getLotNo(), lotType, itemCode);
         return lot;
     }
@@ -738,6 +780,402 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                 .eq(hasText(supplierId), Strictness::getSupplierId, supplierId)
                 .orderByDesc(Strictness::getActiveDate);
         return strictnessDao.selectList(qw);
+    }
+
+    // ================= 分派与超时（change rework-inspection-tasks design D2/D3） =================
+
+    /** 建批后分派：在手未结批最少的启用质检员；ASSIGN_LOG JSON 追加留痕 */
+    private void assignInspector(InspectionLot lot) {
+        // BLOCKED/SKIPPED 不参与分派（spec 质检员自动分派）
+        if (!ST_PENDING.equals(lot.getStatus())) {
+            return;
+        }
+        String bestId = null;
+        String bestName = null;
+        long bestLoad = Long.MAX_VALUE;
+        for (var u : inspectorUsers()) {
+            long load = lotDao.selectCount(new LambdaQueryWrapper<InspectionLot>()
+                    .in(InspectionLot::getStatus, ST_PENDING, "INPUTTING", "REVIEWING")
+                    .ne(InspectionLot::getOverdueFlag, "1")
+                    .eq(InspectionLot::getInspectorId, u.getId()));
+            if (load < bestLoad) {
+                bestLoad = load;
+                bestId = u.getId();
+                bestName = u.getNickName() != null ? u.getNickName() : u.getUsername();
+            }
+        }
+        if (bestId == null) {
+            return; // 无可用质检员 → 悬置待人工指派
+        }
+        lot.setInspectorId(bestId);
+        lot.setInspectorName(bestName);
+        lot.setAssignLog(appendAssignLog(lot.getAssignLog(), "ASSIGN", null, bestName, "建批自动分派"));
+        lotDao.updateById(lot);
+    }
+
+    /** 启用状态的质检员（ROLE_INSPECTOR） */
+    private List<com.erp.entity.system.SysUser> inspectorUsers() {
+        var role = roleDao.selectOne(new LambdaQueryWrapper<com.erp.entity.system.SysRole>()
+                .eq(com.erp.entity.system.SysRole::getRoleCode, "ROLE_INSPECTOR")
+                .last("LIMIT 1"));
+        if (role == null) {
+            return List.of();
+        }
+        List<String> userIds = userRoleDao.selectList(new LambdaQueryWrapper<com.erp.entity.system.SysUserRole>()
+                        .eq(com.erp.entity.system.SysUserRole::getRoleId, role.getId()))
+                .stream().map(com.erp.entity.system.SysUserRole::getUserId).toList();
+        if (userIds.isEmpty()) {
+            return List.of();
+        }
+        return userDao.selectList(new LambdaQueryWrapper<com.erp.entity.system.SysUser>()
+                .in(com.erp.entity.system.SysUser::getId, userIds)
+                .eq(com.erp.entity.system.SysUser::getStatus, "1"));
+    }
+
+    /** ASSIGN_LOG 追加一条 JSON 记录（坏数据按空重置） */
+    private String appendAssignLog(String current, String action, String from, String to, String reason) {
+        String entry = String.format(Locale.ROOT,
+                "{\"ts\":\"%s\",\"action\":\"%s\",\"from\":%s,\"to\":%s,\"reason\":%s}",
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")),
+                action, jsonStr(from), jsonStr(to), jsonStr(reason));
+        if (!hasText(current) || !current.trim().startsWith("[")) {
+            return "[" + entry + "]";
+        }
+        String trimmed = current.trim();
+        return trimmed.substring(0, trimmed.length() - 1) + "," + entry + "]";
+    }
+
+    private static String jsonStr(String v) {
+        return v == null ? "null" : "\"" + v.replace("\"", "\\\"") + "\"";
+    }
+
+    @Override
+    public int sweepOverdue() {
+        LocalDateTime now = LocalDateTime.now();
+        List<InspectionLot> overdue = lotDao.selectList(new LambdaQueryWrapper<InspectionLot>()
+                .in(InspectionLot::getStatus, ST_PENDING, "INPUTTING", "REVIEWING")
+                .ne(InspectionLot::getOverdueFlag, "1")
+                .isNotNull(InspectionLot::getDueTime));
+        int handled = 0;
+        for (InspectionLot lot : overdue) {
+            if (!lot.getDueTime().isBefore(now)) {
+                continue;
+            }
+            lot.setOverdueFlag("1");
+            lotDao.updateById(lot);
+            handled++;
+            // ① 通知质检员本人；IPQC 追加通知车间主管（spec 超时扫描与升级通知）
+            if (hasText(lot.getInspectorId())) {
+                noticeService.push(null, lot.getInspectorId(),
+                        "检验批超时：" + lot.getLotNo(),
+                        "批次 " + lot.getLotNo() + "（" + lot.getItemCode() + "）已超检验时限，请尽快处理",
+                        "QMS_LOT_OVERDUE", lot.getId());
+            }
+            if ("IPQC".equals(lot.getLotType())) {
+                noticeService.push("ROLE_SHOP_FLOOR", null,
+                        "巡检批超时：" + lot.getLotNo(),
+                        "IPQC 巡检批 " + lot.getLotNo() + " 超时未出结论",
+                        "QMS_LOT_OVERDUE", lot.getId());
+            }
+            // ② 改派：无 REASSIGN 记录 → 改派在手最少他人 + 通知质量经理；二次超时仅升级
+            boolean reassigned = hasText(lot.getAssignLog()) && lot.getAssignLog().contains("REASSIGN");
+            if (reassigned) {
+                noticeService.push("ROLE_QUALITY_MGR", null,
+                        "检验批二次超时升级：" + lot.getLotNo(),
+                        "批次 " + lot.getLotNo() + " 已改派后仍超时，请人工协调",
+                        "QMS_LOT_ESCALATE", lot.getId());
+                continue;
+            }
+            String newId = null;
+            String newName = null;
+            long bestLoad = Long.MAX_VALUE;
+            for (var u : inspectorUsers()) {
+                if (u.getId().equals(lot.getInspectorId())) {
+                    continue; // 不改派回原质检员
+                }
+                long load = lotDao.selectCount(new LambdaQueryWrapper<InspectionLot>()
+                        .in(InspectionLot::getStatus, ST_PENDING, "INPUTTING", "REVIEWING")
+                        .ne(InspectionLot::getOverdueFlag, "1")
+                        .eq(InspectionLot::getInspectorId, u.getId()));
+                if (load < bestLoad) {
+                    bestLoad = load;
+                    newId = u.getId();
+                    newName = u.getNickName() != null ? u.getNickName() : u.getUsername();
+                }
+            }
+            if (newId != null) {
+                String oldName = lot.getInspectorName();
+                lot.setInspectorId(newId);
+                lot.setInspectorName(newName);
+                lot.setAssignLog(appendAssignLog(lot.getAssignLog(), "REASSIGN",
+                        oldName, newName, "超时自动改派"));
+                lotDao.updateById(lot);
+                noticeService.push("ROLE_QUALITY_MGR", null,
+                        "检验批超时已改派：" + lot.getLotNo(),
+                        "批次 " + lot.getLotNo() + " 超时，已由 " + oldName + " 改派至 " + newName,
+                        "QMS_LOT_REASSIGN", lot.getId());
+            }
+        }
+        return handled;
+    }
+
+    /**
+     * 客户协议加严命中（spec 命中加严与投诉升级全检）：OQC 建批且批次带客户时调用。
+     * 命中 ACTIVE 协议 → AGREE_CODE 快照 + 加严 CTQ 并入检验项 + 档位取严 + 投诉≥2 全检留痕。
+     * 客户空 → 不误命中（spec 明确）。
+     */
+    private void applyAgreement(InspectionLot lot, String customerId, String categoryCode) {
+        if (!"OQC".equals(lot.getLotType()) || !hasText(customerId)) {
+            return;
+        }
+        Map<String, Object> hit = agreementService.hitFor(customerId, lot.getItemCode(), categoryCode);
+        if (hit.isEmpty()) {
+            return;
+        }
+        com.erp.entity.qms.CustomerAgreement agree =
+                (com.erp.entity.qms.CustomerAgreement) hit.get("agreement");
+        lot.setAgreeCode(agree.getAgreeCode());
+        String basis = (lot.getSampleBasis() == null ? "" : lot.getSampleBasis() + "；")
+                + "客户协议 " + agree.getAgreeCode() + " 命中";
+        // ① 档位覆盖取严
+        String override = (String) hit.get("sampleOverride");
+        if (hasText(override)) {
+            double overrideRate = rateFor(override);
+            double baseRate = rateFor(lot.getRiskGrade());
+            if (overrideRate > baseRate) {
+                basis += "；协议档位 " + override + " 严于风险档 → 按协议取样";
+                // 重算样本量（沿 fillFromStandard 口径：Max(协议档比例, AQL 查表)）
+                long qty = lot.getLotQty() == null ? 0L : lot.getLotQty().longValue();
+                int sampleA = (int) Math.ceil(qty * overrideRate);
+                int sampleB = AqlTables.sampleSizeByLot(qty);
+                int sample = Math.max(sampleA, sampleB);
+                if (sample > qty) {
+                    sample = (int) qty;
+                }
+                lot.setSampleQty(BigDecimal.valueOf(sample));
+                double aql = AqlTables.parseAql(lot.getAqlLevel());
+                lot.setAcValue(AqlTables.acceptNumber(sample, aql));
+                lot.setReValue(AqlTables.rejectNumber(sample, aql));
+            } else {
+                basis += "；协议档位 " + override + " 不严于风险档 → 按风险档取样";
+            }
+        }
+        // ② 投诉连续 ≥2 → 100% 全检
+        if (Boolean.TRUE.equals(hit.get("fullInspect"))) {
+            lot.setSampleQty(lot.getLotQty());
+            lot.setAcValue(0);
+            lot.setReValue(1);
+            basis += "；客户连续投诉升级（" + agree.getComplaintStreak() + " 次）→ 100% 全检";
+        }
+        lot.setSampleBasis(basis);
+        // ③ 加严 CTQ 并入检验项（CTQ 必检）
+        String tightJson = (String) hit.get("tightCtq");
+        if (hasText(tightJson)) {
+            mergeTightCtq(lot, tightJson);
+        }
+        lotDao.updateById(lot);
+    }
+
+    /** 协议加严 CTQ 并入检验项：同名跳过（快照已有），新项插入并标 CTQ */
+    @SuppressWarnings("unchecked")
+    private void mergeTightCtq(InspectionLot lot, String tightJson) {
+        List<Map<String, Object>> rows;
+        try {
+            rows = (List<Map<String, Object>>) new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(tightJson, List.class);
+        } catch (Exception e) {
+            log.warn("agreement tightCtq JSON 解析失败 lot={}：{}", lot.getLotNo(), e.getMessage());
+            return;
+        }
+        Set<String> existing = new HashSet<>();
+        for (LotItem li : lotItemDao.selectList(new LambdaQueryWrapper<LotItem>()
+                .eq(LotItem::getLotId, lot.getId()))) {
+            existing.add(li.getCharacteristicName());
+        }
+        int seq = Math.toIntExact(lotItemDao.selectCount(new LambdaQueryWrapper<LotItem>()
+                .eq(LotItem::getLotId, lot.getId()))) + 1;
+        for (Map<String, Object> r : rows) {
+            String name = str(r.get("name"));
+            if (!hasText(name) || existing.contains(name)) {
+                continue;
+            }
+            LotItem li = new LotItem();
+            li.setLotId(lot.getId());
+            li.setSequenceNo(seq++);
+            li.setCharacteristicName(name);
+            li.setCtqFlag("1"); // 协议加严项一律 CTQ 必检
+            li.setRegulatoryFlag(fallback(str(r.get("regulatory")), "0"));
+            li.setSpecType(fallback(str(r.get("specType")), "LOOK"));
+            li.setLowerLimit(dec(r.get("lower")));
+            li.setUpperLimit(dec(r.get("upper")));
+            li.setUnit(str(r.get("unit")));
+            li.setMethodName(str(r.get("method")));
+            li.setJudge("PENDING");
+            lotItemDao.insert(li);
+        }
+    }
+
+    /** 紧急口径（spec 紧急批次优先级）：工单最高优先级（值域顶格=1）→ URGENT + 时限从严一档（B→A、C→B） */    private void applyUrgent(InspectionLot lot, String moPriority) {
+        if (!"1".equals(moPriority)) {
+            return;
+        }
+        lot.setPriority("URGENT");
+        // 从严一档：用上一档风险等级的时限重算（A 档已最严不变）
+        String grade = lot.getRiskGrade() == null ? "C" : lot.getRiskGrade();
+        String tighter = switch (grade) {
+            case "A" -> "A";
+            case "B" -> "A";
+            default -> "B";
+        };
+        lot.setDueTime(LocalDateTime.now().plusHours(hoursOf(tighter)));
+        lot.setSampleBasis((lot.getSampleBasis() == null ? "" : lot.getSampleBasis() + "；")
+                + "紧急批次（工单最高优先级）→ 时限从严（" + grade + "→" + tighter + " 档）");
+    }
+
+    // ================= OQC 完工全链（change rework-inspection-tasks design D1） =================
+
+    @Override
+    @Transactional
+    public InspectionLot createFinishedGoodsOqc(String refMoId, String itemCode, String itemName,
+                                                String batchNo, java.math.BigDecimal qty, Integer moPriority) {
+        // 幂等：同 refId 未取消批 → 返回既有
+        InspectionLot existed = lotDao.selectOne(new LambdaQueryWrapper<InspectionLot>()
+                .eq(InspectionLot::getRefType, "WORKORDER")
+                .eq(InspectionLot::getRefId, refMoId + "#FG")
+                .notIn(InspectionLot::getStatus, "CANCELLED")
+                .orderByDesc(InspectionLot::getCreateDate)
+                .last("LIMIT 1"));
+        if (existed != null) {
+            return existed;
+        }
+        InspectionLot lot = new InspectionLot();
+        lot.setLotNo(nextLotNo());
+        lot.setLotType("OQC");
+        lot.setSourceType("FG");
+        lot.setRefType("WORKORDER");
+        lot.setRefId(refMoId + "#FG");
+        lot.setItemCode(itemCode);
+        lot.setItemName(itemName);
+        lot.setBatchNo(batchNo);
+        lot.setLotQty(qty == null ? BigDecimal.ZERO : qty);
+        lot.setRiskGrade(riskGradeOf(itemCode));
+        lot.setDueTime(LocalDateTime.now().plusHours(hoursOf(lot.getRiskGrade())));
+        lot.setStatus(ST_PENDING);
+        lot.setResult("PENDING");
+        lot.setStrictness("NORMAL");
+        lot.setPriority("NORMAL");
+        if (moPriority != null && moPriority == 1) {
+            applyUrgent(lot, "1"); // 工单最高优先级 → URGENT + 从严
+        }
+        lot.setSampleBasis("正常工单完工入库检验（OQC，FR-4.12-1-3 触发①）：" + refMoId
+                + (lot.getPriority().equals("URGENT") ? "；紧急批次时限从严" : ""));
+
+        Map<String, Object> hit = standardService.resolveFor(itemCode, null, null, null, null);
+        if (hit.isEmpty()) {
+            lot.setStatus(ST_BLOCKED);
+            lot.setSampleBasis(lot.getSampleBasis() + "；无生效检验标准（BR-4.12-07），请先维护标准后激活");
+            lotDao.insert(lot); // BLOCKED 不阻断完工（沿 IQC 口径）
+            return lot;
+        }
+        fillFromStandard(lot, hit);
+        lot.setSampleBasis("正常工单完工入库检验（OQC，FR-4.12-1-3 触发①）：" + refMoId
+                + "；" + lot.getSampleBasis());
+        lotDao.insert(lot);
+        snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        assignInspector(lot);
+        log.info("FG OQC lot {} created for {}", lot.getLotNo(), refMoId);
+        return lot;
+    }
+
+    @Override
+    public int cancelFgLotsForMo(String refMoId) {
+        List<InspectionLot> open = lotDao.selectList(new LambdaQueryWrapper<InspectionLot>()
+                .eq(InspectionLot::getRefType, "WORKORDER")
+                .eq(InspectionLot::getRefId, refMoId + "#FG")
+                .notIn(InspectionLot::getStatus, "RELEASED", "CANCELLED"));
+        for (InspectionLot l : open) {
+            l.setStatus("CANCELLED");
+            l.setRemark(hasText(l.getRemark()) ? l.getRemark() + "；完工冲销取消" : "完工冲销取消");
+            lotDao.updateById(l);
+        }
+        long released = lotDao.selectCount(new LambdaQueryWrapper<InspectionLot>()
+                .eq(InspectionLot::getRefType, "WORKORDER")
+                .eq(InspectionLot::getRefId, refMoId + "#FG")
+                .eq(InspectionLot::getStatus, "RELEASED"));
+        if (released > 0) {
+            log.warn("完工冲销 {}：已放行 OQC 批 {} 张不回滚，需人工红冲入库", refMoId, released);
+        }
+        return open.size();
+    }
+
+    /** OQC 完工批（refId=<moId>#FG）放行联动 WIP_IN 入库 + 合格证（design D1/D6） */
+    private void releaseFgLinked(InspectionLot lot) {
+        if (!"OQC".equals(lot.getLotType()) || lot.getRefId() == null
+                || !lot.getRefId().endsWith("#FG")) {
+            return;
+        }
+        String moId = lot.getRefId().substring(0, lot.getRefId().length() - 3);
+        // 幂等锚：同批号 MO_FINISH 流水已存在 → 跳过（防重复放行重入）
+        Long prior = txnDao.selectCount(new LambdaQueryWrapper<com.erp.entity.inv.InvTransaction>()
+                .eq(com.erp.entity.inv.InvTransaction::getBizDocType, "MO_FINISH")
+                .eq(com.erp.entity.inv.InvTransaction::getBizDocNo, lot.getLotNo()));
+        // 仓库与批次：沿试产口径——仓库取参数 FG_WH（默认 WH-MAIN），批次取工单号
+        String wh = sysParam.getValue("FG_WH", "WH-MAIN");
+        com.erp.service.inv.StockPostingEngine.Line line = new com.erp.service.inv.StockPostingEngine.Line();
+        line.warehouseCode = wh;
+        line.itemCode = lot.getItemCode();
+        line.itemName = lot.getItemName();
+        line.batchNo = hasText(lot.getBatchNo()) ? lot.getBatchNo() : ("MO" + moId);
+        line.qty = lot.getLotQty();
+        var item = itemDao.selectOne(new LambdaQueryWrapper<MdmItem>()
+                .eq(MdmItem::getItemCode, lot.getItemCode()).last("LIMIT 1"));
+        if (item != null && "1".equals(item.getBatchFlag())) {
+            int days = item.getShelfLifeDays() == null ? 365 : item.getShelfLifeDays();
+            line.expiryDate = LocalDate.now().plusDays(days);
+        }
+        if (prior == null || prior == 0) {
+            stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
+                    "WIP_IN", "MO_FINISH", lot.getLotNo(), List.of(line)));
+            log.info("FG OQC 放行联动入库 {}：{} × {} → {}", lot.getLotNo(),
+                    lot.getItemCode(), lot.getLotQty(), wh);
+        }
+        issueCertificate(lot); // 合格证（OQC 放行同事务，D6）
+    }
+
+    /** OQC 合格证（spec 合格证；D-3 偏差：CERT_NO 仅流水无防伪） */
+    private void issueCertificate(InspectionLot lot) {
+        Long existing = certificateDao.selectCount(new LambdaQueryWrapper<com.erp.entity.qms.Certificate>()
+                .eq(com.erp.entity.qms.Certificate::getLotNo, lot.getLotNo()));
+        if (existing != null && existing > 0) {
+            return; // 幂等
+        }
+        com.erp.entity.qms.Certificate cert = new com.erp.entity.qms.Certificate();
+        cert.setCertNo(nextCertNo());
+        cert.setLotNo(lot.getLotNo());
+        cert.setLotId(lot.getId());
+        cert.setItemCode(lot.getItemCode());
+        cert.setItemName(lot.getItemName());
+        cert.setQty(lot.getLotQty());
+        cert.setCustomerName(lot.getSupplierName()); // 完工批无客户场景留空；发货关联由 OQC 手工批带客户
+        cert.setResult("PASS");
+        cert.setIssuedBy(com.erp.util.SecurityUtils.getCurrentUserId());
+        cert.setIssuedDate(LocalDateTime.now());
+        certificateDao.insert(cert);
+        log.info("OQC 合格证 {} issued for lot {}", cert.getCertNo(), lot.getLotNo());
+    }
+
+    private String nextCertNo() {
+        String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        Long seq = certificateDao.selectCount(new LambdaQueryWrapper<com.erp.entity.qms.Certificate>()
+                .likeRight(com.erp.entity.qms.Certificate::getCertNo, "C" + date));
+        return "C" + date + "-" + String.format("%06d", (seq == null ? 0 : seq) + 1);
+    }
+
+    @Override
+    public com.erp.entity.qms.Certificate certificateOf(String lotId) {
+        return certificateDao.selectOne(new LambdaQueryWrapper<com.erp.entity.qms.Certificate>()
+                .eq(com.erp.entity.qms.Certificate::getLotId, lotId)
+                .last("LIMIT 1"));
     }
 
     // ================= IPQC 巡检计划（5.10） =================
@@ -1139,6 +1577,8 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         for (com.erp.service.qms.LotReleaseListener l : releaseListeners) {
             l.onReleased(lot);
         }
+        // OQC 完工批放行联动 WIP_IN 入库 + 合格证（rework-inspection-tasks design D1/D6，失败整体回滚）
+        releaseFgLinked(lot);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lot", lot);
         out.put("releasedBy", lot.getReleasedBy());
@@ -1153,7 +1593,10 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                 .in(InspectionLot::getStatus,
                         hasText(status) ? List.of(status)
                                 : List.of(ST_BLOCKED, ST_PENDING, "INPUTTING", "REVIEWING"))
-                .orderByAsc(InspectionLot::getDueTime);
+                // spec 紧急批次优先级：紧急优先、其次超时、再按创建时间
+                .orderByDesc(InspectionLot::getPriority)
+                .orderByDesc(InspectionLot::getOverdueFlag)
+                .orderByAsc(InspectionLot::getCreateDate);
         Page<InspectionLot> raw = lotDao.selectPage(new Page<>(current, size), qw);
         Page<Map<String, Object>> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1178,7 +1621,14 @@ public class InspectionLotServiceImpl implements InspectionLotService {
             m.put("strictness", l.getStrictness());
             m.put("exemptFlag", l.getExemptFlag());
             m.put("dueTime", l.getDueTime());
-            boolean overdue = l.getDueTime() != null && l.getDueTime().isBefore(now);
+            m.put("overdueFlag", l.getOverdueFlag());
+            m.put("priority", l.getPriority());
+            m.put("inspectorId", l.getInspectorId());
+            m.put("inspectorName", l.getInspectorName());
+            m.put("assignLog", l.getAssignLog());
+            m.put("agreeCode", l.getAgreeCode());
+            boolean overdue = "1".equals(l.getOverdueFlag())
+                    || (l.getDueTime() != null && l.getDueTime().isBefore(now));
             m.put("overdue", overdue);
             m.put("remainHours", l.getDueTime() == null ? null
                     : Math.round(java.time.Duration.between(now, l.getDueTime()).toMinutes() / 60.0));

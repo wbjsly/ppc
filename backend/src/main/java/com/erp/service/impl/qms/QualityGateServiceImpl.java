@@ -31,13 +31,71 @@ public class QualityGateServiceImpl implements QualityGateService {
     private final InvStockDao stockDao;
     private final ConcessionDao concessionDao;
     private final ConcessionWriteoffDao writeoffDao;
+    private final com.erp.dao.qms.InspectionLotDao lotDao;
+    private final com.erp.service.SysParamService sysParam;
 
     public QualityGateServiceImpl(InvStockDao stockDao,
                                   ConcessionDao concessionDao,
-                                  ConcessionWriteoffDao writeoffDao) {
+                                  ConcessionWriteoffDao writeoffDao,
+                                  com.erp.dao.qms.InspectionLotDao lotDao,
+                                  com.erp.service.SysParamService sysParam) {
         this.stockDao = stockDao;
         this.concessionDao = concessionDao;
         this.writeoffDao = writeoffDao;
+        this.lotDao = lotDao;
+        this.sysParam = sysParam;
+    }
+
+    @Override
+    public Map<String, Object> assertOqcForShipment(List<Map<String, Object>> lines) {
+        List<String> blocked = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        boolean enforce = "ON".equalsIgnoreCase(sysParam.getValue("OQC_ENFORCE", "ON"));
+        for (Map<String, Object> line : lines) {
+            String itemCode = str(line.get("itemCode"));
+            String batchNo = str(line.get("batchNo"));
+            if (itemCode == null || itemCode.isBlank()) {
+                continue;
+            }
+            // 该行物料+批次的 OQC 批（最新优先）；免检 SKIPPED 视同放行
+            var lots = lotDao.selectList(new LambdaQueryWrapper<com.erp.entity.qms.InspectionLot>()
+                    .eq(com.erp.entity.qms.InspectionLot::getLotType, "OQC")
+                    .eq(com.erp.entity.qms.InspectionLot::getItemCode, itemCode)
+                    .eq(batchNo != null && !batchNo.isBlank(),
+                            com.erp.entity.qms.InspectionLot::getBatchNo, batchNo)
+                    .orderByDesc(com.erp.entity.qms.InspectionLot::getCreateDate)
+                    .last("LIMIT 5"));
+            boolean released = lots.stream().anyMatch(l ->
+                    "RELEASED".equals(l.getStatus()) || "SKIPPED".equals(l.getStatus()));
+            if (released) {
+                continue;
+            }
+            boolean hasLot = !lots.isEmpty();
+            if (hasLot) {
+                String states = lots.stream()
+                        .map(l -> l.getLotNo() + "（" + l.getStatus() + "）")
+                        .reduce((a, b) -> a + "、" + b).orElse("");
+                blocked.add(itemCode + (batchNo == null || batchNo.isBlank() ? "" : "/" + batchNo)
+                        + "：OQC 批未放行 " + states);
+            } else if (enforce) {
+                blocked.add(itemCode + (batchNo == null || batchNo.isBlank() ? "" : "/" + batchNo)
+                        + "：无 OQC 检验批，请先建批或办理免检（OQC_ENFORCE=ON）");
+            } else {
+                warnings.add(itemCode + "：无 OQC 检验批，OQC_ENFORCE=OFF 降级放行");
+            }
+        }
+        if (!blocked.isEmpty()) {
+            throw new com.erp.common.ServiceException(422,
+                    "发货确认被 OQC 前置校验阻断：" + String.join("；", blocked));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("decision", warnings.isEmpty() ? "ALLOWED" : "DEGRADED");
+        out.put("warnings", warnings);
+        return out;
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o);
     }
 
     @Override

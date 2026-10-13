@@ -78,3 +78,42 @@ export function getExemptsApi(params) {
 export function applyExemptApi(data) {
   return request.post('/qms/exempts', data)
 }
+
+/** 批次合格证（OQC 放行生成，rework-inspection-tasks） */
+export function getCertificateApi(lotId) {
+  return request.get(`/qms/lots/${lotId}/certificate`)
+}
+
+/** 手动触发超时扫描（运维/测试；scheduler 每 5min 自动） */
+export function sweepOverdueApi() {
+  return request.post('/qms/lots/sweep-overdue')
+}
+
+/** 客户质量协议（spec customer-quality-agreement） */
+export function getAgreementsApi(params) {
+  return request.get('/qms/agreements', { params })
+}
+
+export function getAgreementDetailApi(id) {
+  return request.get(`/qms/agreements/${id}`)
+}
+
+export function saveAgreementApi(data) {
+  return request.post('/qms/agreements', data)
+}
+
+export function activateAgreementApi(id) {
+  return request.post(`/qms/agreements/${id}/activate`)
+}
+
+export function stopAgreementApi(id) {
+  return request.post(`/qms/agreements/${id}/stop`)
+}
+
+export function logComplaintApi(id, reason) {
+  return request.post(`/qms/agreements/${id}/complaint`, { reason })
+}
+
+export function clearStreakApi(id, reason) {
+  return request.post(`/qms/agreements/${id}/clear`, { reason })
+}

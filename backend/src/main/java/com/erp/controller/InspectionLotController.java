@@ -104,6 +104,18 @@ public class InspectionLotController {
         return R.ok(service.confirmRelease(id));
     }
 
+    @Operation(summary = "批次合格证（OQC 放行生成，rework-inspection-tasks）")
+    @GetMapping("/{id}/certificate")
+    public R<com.erp.entity.qms.Certificate> certificate(@PathVariable String id) {
+        return R.ok(service.certificateOf(id));
+    }
+
+    @Operation(summary = "执行超时扫描（测试/运维手动触发；scheduler 每 5min 自动）")
+    @PostMapping("/sweep-overdue")
+    public R<Integer> sweepOverdue() {
+        return R.ok(service.sweepOverdue());
+    }
+
     @Operation(summary = "待检看板（数据源 = 检验批，D1 起算点 = 登记提交时间）")
     @GetMapping("/board")
     public R<Page<Map<String, Object>>> board(@RequestParam(defaultValue = "1") long current,

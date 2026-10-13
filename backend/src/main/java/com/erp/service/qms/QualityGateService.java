@@ -21,4 +21,12 @@ public interface QualityGateService {
      * @param scope    使用范围/用途描述（与让步限制条件比对）
      */
     Map<String, Object> checkIssue(String itemCode, String batchNo, BigDecimal qty, String scope);
+
+    /**
+     * 发货确认 OQC 前置校验（change rework-inspection-tasks，spec 发货确认 OQC 前置校验）。
+     * 按出货行「物料+批次」查 OQC 批：有批未放行 → 422 阻断列出；无批按参数 OQC_ENFORCE
+     * （默认 ON）ON→422 提示先建批/免检，OFF→返回降级 warnings；SKIPPED 视同放行。
+     * 通过时不抛错（返回含 warnings 的决策 Map）。
+     */
+    Map<String, Object> assertOqcForShipment(java.util.List<java.util.Map<String, Object>> lines);
 }
