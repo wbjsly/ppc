@@ -53,6 +53,13 @@ public interface ReportingService {
     com.erp.entity.mrp.MrpFeed addFeed(String rptId, String itemCode, String batchCode,
                                        java.math.BigDecimal qty);
 
+    /**
+     * 投料（含超返工 BOM 范围确认，rework-execution spec）：RW 工单按 ADDL 行需求上限比对，
+     * 超范围/不在 BOM → 422 提示确认，overAck=true 放行；NORMAL 工单忽略 overAck。
+     */
+    com.erp.entity.mrp.MrpFeed addFeed(String rptId, String itemCode, String batchCode,
+                                       java.math.BigDecimal qty, boolean overAck);
+
     /** 报工单投料行列表（录入台回显） */
     List<com.erp.entity.mrp.MrpFeed> feedsOf(String rptId);
 

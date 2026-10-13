@@ -63,11 +63,15 @@ public class BomServiceImpl implements BomService {
     private final BomCycleChecker cycleChecker;
     private final SysParamService sysParamService;
     private final ApprovalEngine approvalEngine;
+    private final com.erp.dao.mrp.TrialSummaryDao trialSummaryDao;
+    private final com.erp.dao.mrp.MrpMoDao moDao;
 
     public BomServiceImpl(MrpBomDao bomDao, MrpBomItemDao itemDao,
                           MrpBomSubstituteDao substituteDao, MdmItemDao mdmItemDao,
                           ObjectMapper objectMapper, BomCycleChecker cycleChecker,
-                          SysParamService sysParamService, ApprovalEngine approvalEngine) {
+                          SysParamService sysParamService, ApprovalEngine approvalEngine,
+                          com.erp.dao.mrp.TrialSummaryDao trialSummaryDao,
+                          com.erp.dao.mrp.MrpMoDao moDao) {
         this.bomDao = bomDao;
         this.itemDao = itemDao;
         this.substituteDao = substituteDao;
@@ -76,6 +80,28 @@ public class BomServiceImpl implements BomService {
         this.cycleChecker = cycleChecker;
         this.sysParamService = sysParamService;
         this.approvalEngine = approvalEngine;
+        this.trialSummaryDao = trialSummaryDao;
+        this.moDao = moDao;
+    }
+
+    /**
+     * 转量产发布闸口（trial-execution「未评审草稿提交发布 422」/ design D3）：
+     * SRC_TRIAL_NO 非空 → 回查该试产工单总结评审，非 APPROVED 一律 L1 阻断；空 = 普通版本放行。
+     */
+    private void requireTrialReviewed(String srcTrialNo) {
+        if (srcTrialNo == null || srcTrialNo.isBlank()) {
+            return;
+        }
+        com.erp.entity.mrp.MrpMo mo = moDao.selectOne(
+                new LambdaQueryWrapper<com.erp.entity.mrp.MrpMo>()
+                        .eq(com.erp.entity.mrp.MrpMo::getMoNo, srcTrialNo).last("LIMIT 1"));
+        com.erp.entity.mrp.TrialSummary summary = mo == null ? null
+                : trialSummaryDao.selectOne(new LambdaQueryWrapper<com.erp.entity.mrp.TrialSummary>()
+                        .eq(com.erp.entity.mrp.TrialSummary::getMoId, mo.getId()).last("LIMIT 1"));
+        if (summary == null || !com.erp.entity.mrp.TrialSummary.ST_APPROVED.equals(summary.getStatus())) {
+            throw new ServiceException(422, "来源试产评审未通过，禁止发布（FR-4.5-8-7 未经评审阻断）："
+                    + srcTrialNo + "（评审状态 " + (summary == null ? "未建总结单" : summary.getStatus()) + "）");
+        }
     }
 
     // ---------- 创建 / 编辑 / 复制 ----------
@@ -91,8 +117,10 @@ public class BomServiceImpl implements BomService {
                 "父项物料不存在或已废止，无法创建");
         requireLines(items);
         // 同父项唯一在途（任务 4.3）：先锁父项既有版本行，再判定在途
+        // （change add-trial-production-management：按试产/量产池分池——TRIAL_STAGE 非空入试产池）
         lockParentVersions(parent.getItemCode());
-        requireNoInFlight(parent.getItemCode());
+        String trialStage = normalizeTrialStage(head.getTrialStage());
+        requireNoInFlight(parent.getItemCode(), trialStage != null);
         int[] ver = nextVersion(parent.getItemCode());
         MrpBom bom = new MrpBom();
         bom.setParentItemCode(parent.getItemCode());
@@ -100,12 +128,14 @@ public class BomServiceImpl implements BomService {
         bom.setVersionMajor(ver[0]);
         bom.setVersionMinor(ver[1]);
         bom.setStatus(MrpBom.ST_DRAFT);
+        bom.setTrialStage(trialStage);
         bom.setEffectiveDate(head.getEffectiveDate());
         bom.setExpiryDate(head.getExpiryDate());
         insertBomResolvingVersionConflict(bom);
         insertLines(bom.getId(), items);
         validateNoCycle(bom.getId(), bom.getParentItemCode());
-        log.info("BOM 草稿创建：{} V{}", bom.getParentItemCode(), bom.getVersionLabel());
+        log.info("BOM 草稿创建：{} V{}{}", bom.getParentItemCode(), bom.getVersionLabel(),
+                trialStage == null ? "" : "（试产版 " + trialStage + "）");
         return bom;
     }
 
@@ -194,13 +224,17 @@ public class BomServiceImpl implements BomService {
         if (src == null) {
             throw new ServiceException(404, "源 BOM 版本不存在");
         }
-        if (!MrpBom.ST_PUBLISHED.equals(src.getStatus())) {
-            throw new ServiceException(422, "仅已发布版本可发起变更（当前状态：" + src.getStatus() + "）");
+        if (!MrpBom.ST_PUBLISHED.equals(src.getStatus())
+                && !MrpBom.ST_TRIAL.equals(src.getStatus())) {
+            throw new ServiceException(422,
+                    "仅已发布/试产已审批版本可发起变更（当前状态：" + src.getStatus() + "）");
         }
         MdmItem parent = requireActiveItem(src.getParentItemCode(),
                 "父项物料不存在或已废止，无法变更");
         lockParentVersions(parent.getItemCode());
-        requireNoInFlight(parent.getItemCode());
+        // 分池：试产版变更克隆入试产池（TRIAL_STAGE 继承），量产版入量产池（spec bom delta）
+        boolean trialSrc = MrpBom.ST_TRIAL.equals(src.getStatus());
+        requireNoInFlight(parent.getItemCode(), trialSrc);
         int[] ver = nextVersion(parent.getItemCode(), upgradeMajor);
         MrpBom bom = new MrpBom();
         bom.setParentItemCode(parent.getItemCode());
@@ -208,6 +242,7 @@ public class BomServiceImpl implements BomService {
         bom.setVersionMajor(ver[0]);
         bom.setVersionMinor(ver[1]);
         bom.setStatus(MrpBom.ST_DRAFT);
+        bom.setTrialStage(src.getTrialStage());
         bom.setChangeReason(changeReason.trim());
         bom.setChangeFromId(src.getId());
         bom.setEffectiveDate(src.getEffectiveDate());
@@ -223,6 +258,41 @@ public class BomServiceImpl implements BomService {
 
     @Override
     @Transactional
+    public MrpBom promoteFromTrial(String sourceId, String trialMoNo) {
+        requireAny("转量产复制", "ROLE_PROCESS_ENG", "ROLE_PLANNER", "ROLE_PM", "ROLE_ADMIN");
+        MrpBom src = bomDao.selectById(sourceId);
+        if (src == null) {
+            throw new ServiceException(404, "试产 BOM 版本不存在");
+        }
+        if (src.getTrialStage() == null || src.getTrialStage().isBlank()) {
+            throw new ServiceException(422, "仅试产版可转量产复制（该版本无试产阶段标记）：" + src.getVersionLabel());
+        }
+        MdmItem parent = requireActiveItem(src.getParentItemCode(),
+                "父项物料不存在或已废止，无法复制");
+        lockParentVersions(parent.getItemCode());
+        requireNoInFlight(parent.getItemCode());
+        int[] ver = nextVersion(parent.getItemCode());
+        MrpBom bom = new MrpBom();
+        bom.setParentItemCode(parent.getItemCode());
+        bom.setParentItemName(parent.getItemName());
+        bom.setVersionMajor(ver[0]);
+        bom.setVersionMinor(ver[1]);
+        bom.setStatus(MrpBom.ST_DRAFT);
+        bom.setEffectiveDate(src.getEffectiveDate());
+        bom.setExpiryDate(src.getExpiryDate());
+        bom.setCopyFromId(src.getId());
+        bom.setSrcTrialNo(trialMoNo);   // 来源留痕（发布闸口回查评审，design D11）
+        // TRIAL_STAGE 不设 —— 量产草稿（试产版本身零改动）
+        insertBomResolvingVersionConflict(bom);
+        cloneLines(src.getId(), bom.getId());
+        validateNoCycle(bom.getId(), bom.getParentItemCode());
+        log.info("试产转量产复制 BOM：{} → {} V{}（来源 {}）", src.getId(), bom.getId(),
+                bom.getVersionLabel(), trialMoNo);
+        return bom;
+    }
+
+    @Override
+    @Transactional
     public void publishApproved(String bomId) {
         MrpBom bom = bomDao.selectById(bomId);
         if (bom == null) {
@@ -232,6 +302,8 @@ public class BomServiceImpl implements BomService {
         if (!MrpBom.ST_PENDING.equals(bom.getStatus())) {
             throw new ServiceException(422, "仅待审核版本可发布（当前状态：" + bom.getStatus() + "）");
         }
+        // 转量产草稿发布闸口（签署处二次校验——评审可被驳回于审批期间，design D3）
+        requireTrialReviewed(bom.getSrcTrialNo());
         // PENDING → PUBLISHED（白名单 + CAS）
         casStatus(bom, MrpBom.ST_PUBLISHED);
         // 同父项旧已发布 → REVISED（同事务，保证 BR-4.5-08 唯一已发布）
@@ -266,6 +338,74 @@ public class BomServiceImpl implements BomService {
         log.info("BOM 审核退回：{} → 草稿（意见：{}）", bomId, bom.getRejectReason());
     }
 
+    // ---------- 试产特别审批（change add-trial-production-management，spec bom-management delta） ----------
+
+    @Override
+    @Transactional
+    public MrpBom submitTrial(String bomId) {
+        requireAny("提交试产版特别审批", "ROLE_PROCESS_ENG", "ROLE_ADMIN");
+        MrpBom bom = bomDao.selectById(bomId);
+        if (bom == null) {
+            throw new ServiceException(404, "BOM 版本不存在");
+        }
+        if (!MrpBom.ST_DRAFT.equals(bom.getStatus())) {
+            throw new ServiceException(422,
+                    "仅草稿可提交试产特别审批（当前状态：" + bom.getStatus() + "）：" + bom.getVersionLabel());
+        }
+        if (!isNotBlank(bom.getTrialStage())) {
+            throw new ServiceException(422,
+                    "非试产版 BOM（未标记试产阶段），请在创建时标记 EVT/DVT/PVT：" + bom.getVersionLabel());
+        }
+        // 挂审批底座单节点（BIZ=TrialBom，PROCESS_MGR 签）；审批期间状态保持 DRAFT，
+        // 通过回调 onTrialApproved 同事务 DRAFT→TRIAL（delta「由 DRAFT → TRIAL」语义）
+        approvalEngine.submit(BIZ_TRIAL, bom.getId(),
+                "试产版特别审批：" + bom.getParentItemCode() + " V" + bom.getVersionLabel()
+                        + "（" + bom.getTrialStage() + "）",
+                null,
+                List.of(List.of(ApprovalNodeSpec.sign("ROLE_PROCESS_MGR", "工艺主管"))));
+        log.info("BOM 试产特别审批提交：{} V{} 阶段={}", bom.getParentItemCode(),
+                bom.getVersionLabel(), bom.getTrialStage());
+        return bom;
+    }
+
+    @Override
+    @Transactional
+    public void onTrialApproved(String bomId) {
+        MrpBom bom = bomDao.selectById(bomId);
+        if (bom == null) {
+            throw new ServiceException(404, "BOM 版本不存在");
+        }
+        lockParentVersions(bom.getParentItemCode());
+        if (!MrpBom.ST_DRAFT.equals(bom.getStatus())) {
+            throw new ServiceException(422,
+                    "试产审批落态冲突（当前状态：" + bom.getStatus() + "），请刷新后重试：" + bomId);
+        }
+        // 同父项旧 TRIAL → REVISED（试产唯一已审批，spec delta「新试产版取代旧 TRIAL」）
+        List<MrpBom> oldTrial = bomDao.selectList(new LambdaQueryWrapper<MrpBom>()
+                .eq(MrpBom::getParentItemCode, bom.getParentItemCode())
+                .eq(MrpBom::getStatus, MrpBom.ST_TRIAL)
+                .ne(MrpBom::getId, bom.getId()));
+        for (MrpBom old : oldTrial) {
+            casStatus(old, MrpBom.ST_REVISED);
+        }
+        casStatus(bom, MrpBom.ST_TRIAL);
+        log.info("BOM 试产特别审批通过：{} V{} 阶段={}（旧 TRIAL→REVISED {} 条）",
+                bom.getParentItemCode(), bom.getVersionLabel(), bom.getTrialStage(), oldTrial.size());
+    }
+
+    @Override
+    @Transactional
+    public void onTrialRejected(String bomId, String reason) {
+        MrpBom bom = bomDao.selectById(bomId);
+        if (bom == null) {
+            throw new ServiceException(404, "BOM 版本不存在");
+        }
+        // 审批期间状态保持 DRAFT（驳回回 DRAFT 语义即状态不动），仅留痕意见
+        bom.setRejectReason(isNotBlank(reason) ? reason.trim() : null);
+        bomDao.updateById(bom);
+        log.info("BOM 试产特别审批驳回：{} 意见={}", bomId, bom.getRejectReason());
+    }
+
     @Override
     @Transactional
     public MrpBom submit(String bomId) {
@@ -274,9 +414,16 @@ public class BomServiceImpl implements BomService {
         if (bom == null) {
             throw new ServiceException(404, "BOM 版本不存在");
         }
+        if (MrpBom.ST_TRIAL.equals(bom.getStatus())) {
+            // spec bom-management delta「试产版不可直接发布」场景：TRIAL 态阻断正式发布
+            throw new ServiceException(422,
+                    "试产版（TRIAL）不可直接发布，请经转量产复制为量产草稿后走正式发布：" + bom.getVersionLabel());
+        }
         if (!MrpBom.ST_DRAFT.equals(bom.getStatus())) {
             throw new ServiceException(422, "仅草稿可提交审核（当前状态：" + bom.getStatus() + "）");
         }
+        // 转量产草稿发布闸口（trial-execution「转量产复制与发布阻断」：未评审 L1 阻断）
+        requireTrialReviewed(bom.getSrcTrialNo());
         // 挂审批底座单节点（任务 5.2）：同事务提交实例 + CAS DRAFT→PENDING，
         // 重复提交由底座「同一业务 PENDING 实例」422 拒绝
         approvalEngine.submit(BIZ_PUBLISH, bom.getId(),
@@ -586,14 +733,41 @@ public class BomServiceImpl implements BomService {
         throw new ServiceException(422, "版本号分配冲突重试超限，请稍后重试");
     }
 
-    /** 同父项唯一在途（任务 4.3：存在草稿/待审核 → L1 阻断再创建/变更/复制） */
-    private void requireNoInFlight(String parentItemCode) {
-        long inFlight = bomDao.selectCount(new LambdaQueryWrapper<MrpBom>()
-                .eq(MrpBom::getParentItemCode, parentItemCode)
-                .in(MrpBom::getStatus, MrpBom.ST_DRAFT, MrpBom.ST_PENDING));
+    /** 同父项唯一在途（任务 4.3：存在草稿/待审核 → L1 阻断再创建/变更/复制）
+     *  change add-trial-production-management：按试产/量产池分池（spec bom-management delta
+     *  「试产版与量产版并存」——量产在途不挡试产创建，反之亦然；池内唯一照旧） */
+    private void requireNoInFlight(String parentItemCode, boolean trialPool) {
+        long inFlight = trialPool
+                ? bomDao.selectCount(new LambdaQueryWrapper<MrpBom>()
+                        .eq(MrpBom::getParentItemCode, parentItemCode)
+                        .in(MrpBom::getStatus, MrpBom.ST_DRAFT, MrpBom.ST_PENDING)
+                        .isNotNull(MrpBom::getTrialStage))
+                : bomDao.selectCount(new LambdaQueryWrapper<MrpBom>()
+                        .eq(MrpBom::getParentItemCode, parentItemCode)
+                        .in(MrpBom::getStatus, MrpBom.ST_DRAFT, MrpBom.ST_PENDING)
+                        .isNull(MrpBom::getTrialStage));
         if (inFlight > 0) {
-            throw new ServiceException(422, "该父项存在在途版本（草稿/待审核），请先处理在途版本");
+            throw new ServiceException(422, trialPool
+                    ? "该父项试产池存在在途版本（草稿/待审核），请先处理试产在途版本"
+                    : "该父项存在在途版本（草稿/待审核），请先处理在途版本");
         }
+    }
+
+    /** 兼容旧调用（量产池语义） */
+    private void requireNoInFlight(String parentItemCode) {
+        requireNoInFlight(parentItemCode, false);
+    }
+
+    /** 试产阶段归一：空 → null（量产版）；EVT/DVT/PVT 大写；非法值 422 */
+    private String normalizeTrialStage(String stage) {
+        if (stage == null || stage.isBlank()) {
+            return null;
+        }
+        String s = stage.trim().toUpperCase();
+        if (!"EVT".equals(s) && !"DVT".equals(s) && !"PVT".equals(s)) {
+            throw new ServiceException(422, "试产阶段仅支持 EVT/DVT/PVT：" + stage);
+        }
+        return s;
     }
 
     /** 父项行级锁（design D2）：串行化唯一在途/唯一已发布判定（无行时靠唯一索引+重试兜底） */

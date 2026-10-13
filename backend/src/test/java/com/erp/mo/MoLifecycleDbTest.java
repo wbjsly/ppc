@@ -207,6 +207,11 @@ class MoLifecycleDbTest {
 
     @Test
     void completeThenCloseWithTraceAndHooks() {
+        // C-4.5-09：关单前归集须完整——预置当期制造费用池（否则 NO_POOL 标记按规格阻断）
+        jdbc.update("INSERT IGNORE INTO erp_mrp_overhead_pool "
+                + "(ID, PERIOD, POOL_AMT, RULE, CREATE_BY, DEL_FLAG, VER_NO) VALUES "
+                + "('pl-lifecycle', ?, 1000, 'TIME', 'junit', '0', 0)",
+                java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
         MdmItem product = mkMake("关闭产品一");
         MdmItem child = MoSeed.mkItem(itemService, categoryCode, "关闭子件一", "BUY");
         MoSeed.publishBom(bomService, jdbc, product, child, "1", "0");

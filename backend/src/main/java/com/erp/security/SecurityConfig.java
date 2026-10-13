@@ -186,6 +186,10 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.PUT, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.DELETE, "/api/fin/**").hasRole("ADMIN")
                 // 领料出库（add-consignment-procurement D11）：创建/过账/作废 = ADMIN/WAREHOUSE，读 + PM
+                // 试产挪用双人确认发起（add-trial-production-management 3.4）：计划侧发起（服务层再限
+                // PLANNER/PLAN_MGR/ADMIN，仓管过 HTTP 后落业务 403——spec trial-execution 权限矩阵）
+                .antMatchers(HttpMethod.POST, "/api/inv/issues/*/borrow-approval")
+                        .hasAnyRole("ADMIN", "WAREHOUSE", "PLANNER", "PLAN_MGR")
                 .antMatchers(HttpMethod.POST, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 .antMatchers(HttpMethod.GET, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE", "PM")
                 // 仓位分配（add-bin-assignment，spec bin-assignment）：写限 ADMIN/WAREHOUSE，查询认证

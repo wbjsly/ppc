@@ -15,7 +15,8 @@
         <el-option label="已冲销" value="REVERSED" />
       </el-select>
       <el-button size="small" type="primary" @click="load">查询</el-button>
-      <span class="tip">确认后只读（BR-4.5-25）；冲销走 ReportReversal 审批（计划主管签）</span>
+      <span class="tip">确认后只读（BR-4.5-25）；冲销走 ReportReversal 审批（计划主管签）；
+        标「外协自动」的记录由外协收货过账自动生成、直接 CONFIRMED 免审（4.1）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="300"
@@ -33,8 +34,9 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="标记" width="150">
+      <el-table-column label="标记" width="190">
         <template #default="{ row }">
+          <el-tag v-if="isAutoOutsource(row)" size="small" type="primary">外协自动</el-tag>
           <el-tag v-if="row.overprodFlag === '1'" size="small" type="danger">超产挂起</el-tag>
           <el-tag v-if="row.hourAlertFlag === '1' && !row.hourConfirmBy" size="small" type="warning">
             工时待确认
@@ -156,6 +158,11 @@ const reversalReason = ref('')
 const yieldMoId = ref('')
 const yieldOpSeq = ref('')
 const yieldInfo = ref(null)
+
+// 外协自动报工识别（4.1 约定）：remark 前缀 AUTO_OUTSOURCE:，红冲追加 ;REVERSED: 不影响前缀
+function isAutoOutsource(row) {
+  return typeof row?.remark === 'string' && row.remark.startsWith('AUTO_OUTSOURCE:')
+}
 
 async function load() {
   loading.value = true

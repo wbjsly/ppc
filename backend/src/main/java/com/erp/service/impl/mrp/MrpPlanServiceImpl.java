@@ -365,6 +365,13 @@ public class MrpPlanServiceImpl implements MrpPlanService {
             if (mo == null) {
                 throw new ServiceException(404, "缺料行所属工单不存在：" + row.getMoId());
             }
+            // change add-trial-production-management：试产缺料行不进正式采购漏斗
+            // （BR-4.5-03，spec kitting-check delta「试产缺料行无转采购入口」）
+            if ("TRIAL".equals(mo.getMoType())) {
+                throw new ServiceException(422,
+                        "试产工单缺料行不可转采购建议（BR-4.5-03，试产物料以试备料与样品批次解决）："
+                                + mo.getMoNo());
+            }
             String marker = "[SHORTAGE:" + mo.getMoNo() + "]";
             // 防重：同工单同物料已有未处置缺料建议 → 422（design D5 单一漏斗）
             Long dup = suggestionDao.selectCount(new LambdaQueryWrapper<MrpSuggestion>()
@@ -582,7 +589,10 @@ public class MrpPlanServiceImpl implements MrpPlanService {
     private void mergeShortageDemand(Map<String, BigDecimal> gross, Set<String> closure,
                                      Map<String, MrpDataSource.SoDemand> soDemand) {
         List<MrpMo> openMos = moDao.selectList(new LambdaQueryWrapper<MrpMo>()
-                .notIn(MrpMo::getStatus, MrpMo.ST_CLOSED, MrpMo.ST_CANCELLED));
+                .notIn(MrpMo::getStatus, MrpMo.ST_CLOSED, MrpMo.ST_CANCELLED)
+                // change add-trial-production-management：试产工单不参与 MRP 净算（BR-4.5-03，
+                // spec mrp-demand-planning delta）；RW 返工追加料缺料属真实需求保留并入（核对结论 D6）
+                .ne(MrpMo::getMoType, "TRIAL"));
         if (openMos.isEmpty()) {
             return;
         }

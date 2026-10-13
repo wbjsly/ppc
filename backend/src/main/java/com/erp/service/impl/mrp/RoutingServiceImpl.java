@@ -57,11 +57,15 @@ public class RoutingServiceImpl implements RoutingService {
     private final MdmItemDao mdmItemDao;
     private final ObjectMapper objectMapper;
     private final ApprovalEngine approvalEngine;
+    private final com.erp.dao.mrp.TrialSummaryDao trialSummaryDao;
+    private final com.erp.dao.mrp.MrpMoDao moDao;
 
     public RoutingServiceImpl(MrpRoutingDao routingDao, MrpRoutingOpDao routingOpDao,
                               MrpOperationDao operationDao, MrpWorkCenterDao workCenterDao,
                               MrpOpWcStandardDao standardDao, MdmItemDao mdmItemDao,
-                              ObjectMapper objectMapper, ApprovalEngine approvalEngine) {
+                              ObjectMapper objectMapper, ApprovalEngine approvalEngine,
+                              com.erp.dao.mrp.TrialSummaryDao trialSummaryDao,
+                              com.erp.dao.mrp.MrpMoDao moDao) {
         this.routingDao = routingDao;
         this.routingOpDao = routingOpDao;
         this.operationDao = operationDao;
@@ -70,6 +74,27 @@ public class RoutingServiceImpl implements RoutingService {
         this.mdmItemDao = mdmItemDao;
         this.objectMapper = objectMapper;
         this.approvalEngine = approvalEngine;
+        this.trialSummaryDao = trialSummaryDao;
+        this.moDao = moDao;
+    }
+
+    /**
+     * 转量产发布闸口（trial-execution「未评审草稿提交发布 422」/ design D3）：
+     * SRC_TRIAL_NO 非空 → 回查总结评审，非 APPROVED 一律 L1 阻断；空 = 普通版本放行。
+     */
+    private void requireTrialReviewed(String srcTrialNo) {
+        if (srcTrialNo == null || srcTrialNo.isBlank()) {
+            return;
+        }
+        com.erp.entity.mrp.MrpMo mo = moDao.selectOne(new LambdaQueryWrapper<com.erp.entity.mrp.MrpMo>()
+                .eq(com.erp.entity.mrp.MrpMo::getMoNo, srcTrialNo).last("LIMIT 1"));
+        com.erp.entity.mrp.TrialSummary summary = mo == null ? null
+                : trialSummaryDao.selectOne(new LambdaQueryWrapper<com.erp.entity.mrp.TrialSummary>()
+                        .eq(com.erp.entity.mrp.TrialSummary::getMoId, mo.getId()).last("LIMIT 1"));
+        if (summary == null || !com.erp.entity.mrp.TrialSummary.ST_APPROVED.equals(summary.getStatus())) {
+            throw new ServiceException(422, "来源试产评审未通过，禁止发布（FR-4.5-8-7 未经评审阻断）："
+                    + srcTrialNo + "（评审状态 " + (summary == null ? "未建总结单" : summary.getStatus()) + "）");
+        }
     }
 
     // ---------- 创建 / 编辑 / 变更 ----------
@@ -84,18 +109,24 @@ public class RoutingServiceImpl implements RoutingService {
         MdmItem item = requireActiveItem(head.getItemCode(),
                 "产品物料不存在或已停用，无法创建路线");
         requireOps(ops);
+        String routeType = normalizeType(head.getRouteType());
+        // change add-trial-production-management：试产/量产池分池（spec routing delta 试产池并存）
+        String trialStage = normalizeTrialStage(head.getTrialStage());
         lockProductVersions(item.getItemCode());
-        requireNoInFlight(item.getItemCode());
+        requireNoInFlight(item.getItemCode(), routeType, trialStage != null);
         int[] ver = nextVersion(item.getItemCode());
         MrpRouting routing = new MrpRouting();
         routing.setItemCode(item.getItemCode());
         routing.setItemName(item.getItemName());
+        routing.setRouteType(routeType);
+        routing.setTrialStage(trialStage);
         routing.setVersionMajor(ver[0]);
         routing.setVersionMinor(ver[1]);
         routing.setStatus(MrpRouting.ST_DRAFT);
         insertRoutingResolvingVersionConflict(routing);
         insertOps(routing.getId(), ops);
-        log.info("工艺路线草稿创建：{} V{}", routing.getItemCode(), routing.getVersionLabel());
+        log.info("工艺路线草稿创建：{} V{}{}", routing.getItemCode(), routing.getVersionLabel(),
+                trialStage == null ? "" : "（试产版 " + trialStage + "）");
         return routing;
     }
 
@@ -113,6 +144,10 @@ public class RoutingServiceImpl implements RoutingService {
         if (head != null && isNotBlank(head.getItemCode())
                 && !head.getItemCode().equals(routing.getItemCode())) {
             throw new ServiceException(422, "产品物料不可修改（如需更换产品请新建路线）");
+        }
+        if (head != null && isNotBlank(head.getRouteType())
+                && !normalizeType(head.getRouteType()).equals(normalizeType(routing.getRouteType()))) {
+            throw new ServiceException(422, "路线类型不可修改（如需改类型请新建路线）");
         }
         requireOps(ops);
         if (head != null && isNotBlank(head.getItemCode())) {
@@ -147,12 +182,14 @@ public class RoutingServiceImpl implements RoutingService {
             throw new ServiceException(422, "仅已发布版本可发起变更（当前状态：" + src.getStatus() + "）");
         }
         MdmItem item = requireActiveItem(src.getItemCode(), "产品物料不存在或已停用，无法变更");
+        String routeType = normalizeType(src.getRouteType());
         lockProductVersions(item.getItemCode());
-        requireNoInFlight(item.getItemCode());
+        requireNoInFlight(item.getItemCode(), routeType);
         int[] ver = nextVersion(item.getItemCode(), upgradeMajor);
         MrpRouting routing = new MrpRouting();
         routing.setItemCode(item.getItemCode());
         routing.setItemName(item.getItemName());
+        routing.setRouteType(routeType);
         routing.setVersionMajor(ver[0]);
         routing.setVersionMinor(ver[1]);
         routing.setStatus(MrpRouting.ST_DRAFT);
@@ -170,6 +207,37 @@ public class RoutingServiceImpl implements RoutingService {
 
     @Override
     @Transactional
+    public MrpRouting promoteFromTrial(String sourceId, String trialMoNo) {
+        requireAny("转量产复制路线", "ROLE_PROCESS_ENG", "ROLE_PLANNER", "ROLE_PM", "ROLE_ADMIN");
+        MrpRouting src = routingDao.selectById(sourceId);
+        if (src == null) {
+            throw new ServiceException(404, "试产路线版本不存在");
+        }
+        if (src.getTrialStage() == null || src.getTrialStage().isBlank()) {
+            throw new ServiceException(422, "仅试产版路线可转量产复制：V" + src.getVersionLabel());
+        }
+        MdmItem item = requireActiveItem(src.getItemCode(), "产品物料不存在或已停用，无法复制");
+        String routeType = normalizeType(src.getRouteType());
+        lockProductVersions(item.getItemCode());
+        requireNoInFlight(item.getItemCode(), routeType);
+        int[] ver = nextVersion(item.getItemCode());
+        MrpRouting routing = new MrpRouting();
+        routing.setItemCode(item.getItemCode());
+        routing.setItemName(item.getItemName());
+        routing.setRouteType(routeType);
+        routing.setVersionMajor(ver[0]);
+        routing.setVersionMinor(ver[1]);
+        routing.setStatus(MrpRouting.ST_DRAFT);
+        routing.setSrcTrialNo(trialMoNo);   // 来源留痕（发布闸口回查评审，design D11）
+        insertRoutingResolvingVersionConflict(routing);
+        cloneOps(src.getId(), routing.getId());
+        log.info("试产转量产复制路线：{} → V{}（来源 {}）", src.getId(),
+                routing.getVersionLabel(), trialMoNo);
+        return routing;
+    }
+
+    @Override
+    @Transactional
     public void publishApproved(String routingId) {
         MrpRouting routing = routingDao.selectById(routingId);
         if (routing == null) {
@@ -179,10 +247,14 @@ public class RoutingServiceImpl implements RoutingService {
         if (!MrpRouting.ST_PENDING.equals(routing.getStatus())) {
             throw new ServiceException(422, "仅待审核版本可发布（当前状态：" + routing.getStatus() + "）");
         }
+        // 转量产草稿发布闸口（签署处二次校验——design D3）
+        requireTrialReviewed(routing.getSrcTrialNo());
         casStatus(routing, MrpRouting.ST_PUBLISHED);
-        // 同产品旧已发布 → REVISED（同事务，保证唯一已发布）
+        // 同产品**同类型**旧已发布 → REVISED（同事务，保证类型池内唯一已发布；
+        // REWORK 发布不得置 NORMAL 已发布为 REVISED——按类型分池，routing delta）
         List<MrpRouting> oldPublished = routingDao.selectList(new LambdaQueryWrapper<MrpRouting>()
                 .eq(MrpRouting::getItemCode, routing.getItemCode())
+                .eq(MrpRouting::getRouteType, normalizeType(routing.getRouteType()))
                 .eq(MrpRouting::getStatus, MrpRouting.ST_PUBLISHED)
                 .ne(MrpRouting::getId, routing.getId()));
         for (MrpRouting old : oldPublished) {
@@ -221,9 +293,17 @@ public class RoutingServiceImpl implements RoutingService {
         if (routing == null) {
             throw new ServiceException(404, "路线版本不存在");
         }
+        if (MrpRouting.ST_TRIAL.equals(routing.getStatus())) {
+            // spec routing-management delta「试产路线审批入 TRIAL 态」对偶：TRIAL 不可直接发布
+            throw new ServiceException(422,
+                    "试产版（TRIAL）路线不可直接发布，请经转量产复制为量产草稿后走正式发布：V"
+                            + routing.getVersionLabel());
+        }
         if (!MrpRouting.ST_DRAFT.equals(routing.getStatus())) {
             throw new ServiceException(422, "仅草稿可提交审核（当前状态：" + routing.getStatus() + "）");
         }
+        // 转量产草稿发布闸口（trial-execution 未评审 L1 阻断）
+        requireTrialReviewed(routing.getSrcTrialNo());
         approvalEngine.submit(BIZ_PUBLISH, routing.getId(),
                 "工艺路线发布审核：" + routing.getItemCode() + " V" + routing.getVersionLabel(),
                 null,
@@ -250,6 +330,74 @@ public class RoutingServiceImpl implements RoutingService {
         log.info("路线手动废止：{} V{}", routing.getItemCode(), routing.getVersionLabel());
     }
 
+    // ---------- 试产特别审批（change add-trial-production-management，spec routing delta） ----------
+
+    @Override
+    @Transactional
+    public MrpRouting submitTrial(String routingId) {
+        requireAny("提交试产版特别审批", "ROLE_PROCESS_ENG", "ROLE_PROCESS_MGR", "ROLE_ADMIN");
+        MrpRouting routing = routingDao.selectById(routingId);
+        if (routing == null) {
+            throw new ServiceException(404, "路线版本不存在");
+        }
+        if (!MrpRouting.ST_DRAFT.equals(routing.getStatus())) {
+            throw new ServiceException(422,
+                    "仅草稿可提交试产特别审批（当前状态：" + routing.getStatus() + "）：V"
+                            + routing.getVersionLabel());
+        }
+        if (!isNotBlank(routing.getTrialStage())) {
+            throw new ServiceException(422,
+                    "非试产版路线（未标记试产阶段），请在创建时标记 EVT/DVT/PVT：V"
+                            + routing.getVersionLabel());
+        }
+        approvalEngine.submit(BIZ_TRIAL, routing.getId(),
+                "试产版路线特别审批：" + routing.getItemCode() + " V" + routing.getVersionLabel()
+                        + "（" + routing.getTrialStage() + "）",
+                null,
+                List.of(List.of(ApprovalNodeSpec.sign("ROLE_PROCESS_MGR", "工艺主管"))));
+        log.info("路线试产特别审批提交：{} V{} 阶段={}", routing.getItemCode(),
+                routing.getVersionLabel(), routing.getTrialStage());
+        return routing;
+    }
+
+    @Override
+    @Transactional
+    public void onTrialApproved(String routingId) {
+        MrpRouting routing = routingDao.selectById(routingId);
+        if (routing == null) {
+            throw new ServiceException(404, "路线版本不存在");
+        }
+        lockProductVersions(routing.getItemCode());
+        if (!MrpRouting.ST_DRAFT.equals(routing.getStatus())) {
+            throw new ServiceException(422,
+                    "试产审批落态冲突（当前状态：" + routing.getStatus() + "），请刷新后重试：" + routingId);
+        }
+        // 同产品旧 TRIAL → REVISED（试产唯一已审批，spec delta「新试产版取代旧 TRIAL」）
+        List<MrpRouting> oldTrial = routingDao.selectList(new LambdaQueryWrapper<MrpRouting>()
+                .eq(MrpRouting::getItemCode, routing.getItemCode())
+                .eq(MrpRouting::getStatus, MrpRouting.ST_TRIAL)
+                .ne(MrpRouting::getId, routing.getId()));
+        for (MrpRouting old : oldTrial) {
+            casStatus(old, MrpRouting.ST_REVISED);
+        }
+        casStatus(routing, MrpRouting.ST_TRIAL);
+        log.info("路线试产特别审批通过：{} V{} 阶段={}（旧 TRIAL→REVISED {} 条）",
+                routing.getItemCode(), routing.getVersionLabel(), routing.getTrialStage(),
+                oldTrial.size());
+    }
+
+    @Override
+    @Transactional
+    public void onTrialRejected(String routingId, String reason) {
+        MrpRouting routing = routingDao.selectById(routingId);
+        if (routing == null) {
+            throw new ServiceException(404, "路线版本不存在");
+        }
+        routing.setRejectReason(isNotBlank(reason) ? reason.trim() : null);
+        routingDao.updateById(routing);
+        log.info("路线试产特别审批驳回：{} 意见={}", routingId, routing.getRejectReason());
+    }
+
     // ---------- 查询 ----------
 
     @Override
@@ -265,9 +413,15 @@ public class RoutingServiceImpl implements RoutingService {
 
     @Override
     public List<Map<String, Object>> query(String status, String itemCode, String keyword) {
+        return query(status, itemCode, keyword, null);
+    }
+
+    @Override
+    public List<Map<String, Object>> query(String status, String itemCode, String keyword, String routeType) {
         LambdaQueryWrapper<MrpRouting> w = new LambdaQueryWrapper<>();
         w.eq(isNotBlank(status), MrpRouting::getStatus, status);
         w.eq(isNotBlank(itemCode), MrpRouting::getItemCode, itemCode);
+        w.eq(isNotBlank(routeType), MrpRouting::getRouteType, routeType);
         if (isNotBlank(keyword)) {
             String like = "%" + keyword.trim() + "%";
             w.and(q -> q.like(MrpRouting::getItemCode, like)
@@ -285,11 +439,17 @@ public class RoutingServiceImpl implements RoutingService {
 
     @Override
     public Map<String, Object> publishedRoute(String itemCode) {
+        return publishedRoute(itemCode, MrpRouting.T_NORMAL);
+    }
+
+    @Override
+    public Map<String, Object> publishedRoute(String itemCode, String routeType) {
         if (!isNotBlank(itemCode)) {
             return Map.of();
         }
         MrpRouting routing = routingDao.selectOne(new LambdaQueryWrapper<MrpRouting>()
                 .eq(MrpRouting::getItemCode, itemCode.trim())
+                .eq(MrpRouting::getRouteType, normalizeType(routeType))
                 .eq(MrpRouting::getStatus, MrpRouting.ST_PUBLISHED)
                 .orderByDesc(MrpRouting::getVersionMajor)
                 .orderByDesc(MrpRouting::getVersionMinor)
@@ -438,14 +598,54 @@ public class RoutingServiceImpl implements RoutingService {
         throw new ServiceException(422, "版本号分配冲突重试超限，请稍后重试");
     }
 
-    /** 同产品唯一在途（任务 4.3）：存在草稿/待审核 → L1 阻断再创建/变更 */
-    private void requireNoInFlight(String itemCode) {
-        long inFlight = routingDao.selectCount(new LambdaQueryWrapper<MrpRouting>()
-                .eq(MrpRouting::getItemCode, itemCode)
-                .in(MrpRouting::getStatus, MrpRouting.ST_DRAFT, MrpRouting.ST_PENDING));
+    /** 同产品同类型唯一在途（任务 4.3 + routing delta 按类型分池）：存在草稿/待审核 → L1 阻断。
+     *  change add-trial-production-management：试产/量产池再分池（试产池内唯一，量产池不受试产在途阻断） */
+    private void requireNoInFlight(String itemCode, String routeType) {
+        requireNoInFlight(itemCode, routeType, false);
+    }
+
+    private void requireNoInFlight(String itemCode, String routeType, boolean trialPool) {
+        long inFlight = trialPool
+                ? routingDao.selectCount(new LambdaQueryWrapper<MrpRouting>()
+                        .eq(MrpRouting::getItemCode, itemCode)
+                        .eq(MrpRouting::getRouteType, normalizeType(routeType))
+                        .in(MrpRouting::getStatus, MrpRouting.ST_DRAFT, MrpRouting.ST_PENDING)
+                        .isNotNull(MrpRouting::getTrialStage))
+                : routingDao.selectCount(new LambdaQueryWrapper<MrpRouting>()
+                        .eq(MrpRouting::getItemCode, itemCode)
+                        .eq(MrpRouting::getRouteType, normalizeType(routeType))
+                        .in(MrpRouting::getStatus, MrpRouting.ST_DRAFT, MrpRouting.ST_PENDING)
+                        .isNull(MrpRouting::getTrialStage));
         if (inFlight > 0) {
-            throw new ServiceException(422, "该产品存在在途路线（草稿/待审核），请先处理在途版本");
+            String pool = trialPool ? "试产" : "";
+            String kind = MrpRouting.T_REWORK.equals(normalizeType(routeType)) ? "返工" : "";
+            throw new ServiceException(422, "该产品存在" + pool + "在途"
+                    + kind + "路线（草稿/待审核），请先处理在途版本");
         }
+    }
+
+    /** 试产阶段归一：空 → null（量产版）；EVT/DVT/PVT 大写；非法值 422 */
+    private String normalizeTrialStage(String stage) {
+        if (stage == null || stage.isBlank()) {
+            return null;
+        }
+        String s = stage.trim().toUpperCase();
+        if (!"EVT".equals(s) && !"DVT".equals(s) && !"PVT".equals(s)) {
+            throw new ServiceException(422, "试产阶段仅支持 EVT/DVT/PVT：" + stage);
+        }
+        return s;
+    }
+
+    /** 类型归一：空 → NORMAL；非法值阻断 */
+    private String normalizeType(String routeType) {
+        if (!isNotBlank(routeType)) {
+            return MrpRouting.T_NORMAL;
+        }
+        String t = routeType.trim();
+        if (!MrpRouting.T_NORMAL.equals(t) && !MrpRouting.T_REWORK.equals(t)) {
+            throw new ServiceException(422, "路线类型仅支持 NORMAL/REWORK：" + t);
+        }
+        return t;
     }
 
     /** 产品行级锁：串行化唯一在途/唯一已发布判定 */

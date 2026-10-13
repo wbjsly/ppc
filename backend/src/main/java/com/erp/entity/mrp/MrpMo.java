@@ -31,8 +31,32 @@ public class MrpMo extends BaseEntity {
     public static final String ST_CLOSED = "CLOSED";
     public static final String ST_CANCELLED = "CANCELLED";
 
-    /** 工单号 MO-YYYYMMDD-NNN（冲突自动递增） */
+    /** 工单类型：正常（MO- 前缀编码） */
+    public static final String MO_TYPE_NORMAL = "NORMAL";
+    /** 工单类型：返工（RW- 前缀编码，BR-4.5-31；唯一在途/优先级与 NORMAL 分池，change add-rework-management） */
+    public static final String MO_TYPE_RW = "RW";
+    /** 工单类型：试产（TP- 前缀编码，FR-4.5-8-3；唯一在途按类型+阶段双维分池，change add-trial-production-management） */
+    public static final String MO_TYPE_TRIAL = "TRIAL";
+
+    /** 试产阶段：工程验证 */
+    public static final String STAGE_EVT = "EVT";
+    /** 试产阶段：设计验证 */
+    public static final String STAGE_DVT = "DVT";
+    /** 试产阶段：生产验证 */
+    public static final String STAGE_PVT = "PVT";
+
+    /** 工单号 MO-YYYYMMDD-NNN / RW-YYYYMMDD-NNN / TP-YYYYMMDD-NNN（冲突自动递增） */
     private String moNo;
+    /** 工单类型 NORMAL/RW/TRIAL（迁移 124/125；缺省 NORMAL） */
+    private String moType;
+    /** 试产阶段 EVT/DVT/PVT（仅 MO_TYPE=TRIAL 非空，迁移 125） */
+    private String trialStage;
+    /** 判定来源 NCR/RETURN（仅 RW；迁移 124） */
+    private String srcType;
+    /** 判定单号（仅 RW；REWORK_ROUND = 同 SRC_NO 已建数 + 1 派生，迁移 124） */
+    private String srcNo;
+    /** 判定批准数量（仅 RW；C-4.5-13 投入上限锚点，迁移 124） */
+    private BigDecimal srcQty;
     private String productCode;
     private String productName;
     /** 计划数量（>0） */

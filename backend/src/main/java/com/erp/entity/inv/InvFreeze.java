@@ -49,6 +49,8 @@ public class InvFreeze extends BaseEntity {
     private String status;
     private String source;
     private String ncrId;
+    /** 钉住返工工单（迁移 124：转在制不解除冻结标记——活动行 + 本字段非空即钉住，入库回调清空并 RELEASE） */
+    private String refMoId;
     /** 冻结审批实例（BIZ_TYPE=FREEZE） */
     private String apprId;
     /** 解冻审批实例（独立审批 FR-4.4-5-7） */

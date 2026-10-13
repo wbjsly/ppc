@@ -49,16 +49,50 @@ public class KittingServiceImpl implements KittingService {
     private final MoDataSource moDataSource;
     private final SysParamService sysParam;
     private final NoticeService noticeService;
+    /** 返工投入行取数（change add-rework-management，kitting delta：INPUT 行按在制池判满足） */
+    private final com.erp.dao.inv.InvFreezeDao freezeDao;
+    private final com.erp.dao.inv.InvStockDao stockDao;
 
     public KittingServiceImpl(MrpMoDao moDao, MrpMoBomDao bomDao,
                               MrpMoShortageDao shortageDao, MoDataSource moDataSource,
-                              SysParamService sysParam, NoticeService noticeService) {
+                              SysParamService sysParam, NoticeService noticeService,
+                              com.erp.dao.inv.InvFreezeDao freezeDao,
+                              com.erp.dao.inv.InvStockDao stockDao) {
         this.moDao = moDao;
         this.bomDao = bomDao;
         this.shortageDao = shortageDao;
         this.moDataSource = moDataSource;
         this.sysParam = sysParam;
         this.noticeService = noticeService;
+        this.freezeDao = freezeDao;
+        this.stockDao = stockDao;
+    }
+
+    /**
+     * 返工（MO_TYPE=RW）投入行可用量（kitting delta 场景「返工投入行按在制池判满足」）：
+     * 优先取本单钉住量（活动冻结行 REF_MO_ID=moId 的 ΣQTY）；无钉住（纯待检转在制路径）
+     * 回落该物料在制池现值（WIP_QTY 合计——单批次投入场景口径，design D4）。
+     */
+    private BigDecimal reworkInputAvail(String moId, String itemCode, Map<String, BigDecimal> cache) {
+        return cache.computeIfAbsent(itemCode == null ? "" : itemCode, k -> {
+            java.util.List<com.erp.entity.inv.InvFreeze> pins =
+                    freezeDao.selectList(new LambdaQueryWrapper<com.erp.entity.inv.InvFreeze>()
+                            .eq(com.erp.entity.inv.InvFreeze::getRefMoId, moId)
+                            .eq(com.erp.entity.inv.InvFreeze::getStatus,
+                                    com.erp.entity.inv.InvFreeze.ST_ACTIVE)
+                            .eq(com.erp.entity.inv.InvFreeze::getItemCode, k));
+            BigDecimal pinned = pins.stream().map(com.erp.entity.inv.InvFreeze::getQty)
+                    .filter(java.util.Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (pinned.signum() > 0) {
+                return pinned;
+            }
+            return stockDao.selectList(new LambdaQueryWrapper<com.erp.entity.inv.InvStock>()
+                            .eq(com.erp.entity.inv.InvStock::getItemCode, k))
+                    .stream().map(com.erp.entity.inv.InvStock::getWipQty)
+                    .filter(java.util.Objects::nonNull)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        });
     }
 
     /**
@@ -103,6 +137,9 @@ public class KittingServiceImpl implements KittingService {
         }
         int satisfied = 0;
         int shortCount = 0;
+        // 返工分池（kitting delta）：INPUT 行（不合格品投入）按在制池判满足，ADDL 行沿用可用库存+在途
+        boolean rework = com.erp.entity.mrp.MrpMo.MO_TYPE_RW.equals(mo.getMoType());
+        Map<String, BigDecimal> wipCache = new java.util.HashMap<>();
         for (MrpMoBom line : lines) {
             BigDecimal usage = line.getUnitQty() == null ? BigDecimal.ZERO : line.getUnitQty();
             BigDecimal loss = line.getLossRate() == null ? BigDecimal.ZERO : line.getLossRate();
@@ -110,8 +147,13 @@ public class KittingServiceImpl implements KittingService {
             BigDecimal req = remaining.multiply(usage)
                     .multiply(BigDecimal.ONE.add(loss))
                     .setScale(4, RoundingMode.HALF_UP);
-            BigDecimal avail = onHand.getOrDefault(line.getItemCode(), BigDecimal.ZERO)
-                    .add(inTransit.getOrDefault(line.getItemCode(), BigDecimal.ZERO));
+            BigDecimal avail;
+            if (rework && com.erp.entity.mrp.MrpMoBom.LINE_INPUT.equals(line.getLineType())) {
+                avail = reworkInputAvail(moId, line.getItemCode(), wipCache);
+            } else {
+                avail = onHand.getOrDefault(line.getItemCode(), BigDecimal.ZERO)
+                        .add(inTransit.getOrDefault(line.getItemCode(), BigDecimal.ZERO));
+            }
             BigDecimal shortQty = req.subtract(avail);
             if (shortQty.signum() > 0) {
                 shortCount++;
@@ -189,14 +231,21 @@ public class KittingServiceImpl implements KittingService {
 
         List<Map<String, Object>> rows = new java.util.ArrayList<>();
         int satisfied = 0;
+        boolean reworkRows = com.erp.entity.mrp.MrpMo.MO_TYPE_RW.equals(mo.getMoType());
+        Map<String, BigDecimal> wipCacheRows = new java.util.HashMap<>();
         for (MrpMoBom line : lines) {
             BigDecimal usage = line.getUnitQty() == null ? BigDecimal.ZERO : line.getUnitQty();
             BigDecimal loss = line.getLossRate() == null ? BigDecimal.ZERO : line.getLossRate();
             BigDecimal req = remaining.multiply(usage)
                     .multiply(BigDecimal.ONE.add(loss))
                     .setScale(4, RoundingMode.HALF_UP);
-            BigDecimal avail = onHand.getOrDefault(line.getItemCode(), BigDecimal.ZERO)
-                    .add(inTransit.getOrDefault(line.getItemCode(), BigDecimal.ZERO));
+            BigDecimal avail;
+            if (reworkRows && com.erp.entity.mrp.MrpMoBom.LINE_INPUT.equals(line.getLineType())) {
+                avail = reworkInputAvail(moId, line.getItemCode(), wipCacheRows);
+            } else {
+                avail = onHand.getOrDefault(line.getItemCode(), BigDecimal.ZERO)
+                        .add(inTransit.getOrDefault(line.getItemCode(), BigDecimal.ZERO));
+            }
             BigDecimal shortQty = req.subtract(avail);
             boolean shortage = shortQty.signum() > 0;
             if (!shortage) {
@@ -318,12 +367,15 @@ public class KittingServiceImpl implements KittingService {
     /**
      * 缺料聚合（5.5.2）：未关闭工单的活跃缺料行按物料 group。
      * 过滤 CLOSED/CANCELLED 工单（历史噪音），聚合维度 = itemCode，明细保留 moId 供下钻。
+     * change add-trial-production-management：试产工单缺料行 MUST NOT 纳入本看板（BR-4.5-03，
+     * spec kitting-check delta——试产缺料仅在阶段视图内展示）。
      */
     @Override
     public List<Map<String, Object>> aggregate(String itemCode, String moNo) {
         requireLoginKitting("缺料聚合查询");
         List<MrpMo> openMos = moDao.selectList(new LambdaQueryWrapper<MrpMo>()
-                .notIn(MrpMo::getStatus, MrpMo.ST_CLOSED, MrpMo.ST_CANCELLED));
+                .notIn(MrpMo::getStatus, MrpMo.ST_CLOSED, MrpMo.ST_CANCELLED)
+                .ne(MrpMo::getMoType, "TRIAL"));
         if (openMos.isEmpty()) {
             return List.of();
         }

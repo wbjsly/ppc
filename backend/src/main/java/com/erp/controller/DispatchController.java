@@ -36,9 +36,12 @@ public class DispatchController {
     }
 
     @GetMapping("/pending")
-    @Operation(summary = "待派工列表", description = "Released 工单 × 未派工序；priority+planStartDate 排序（D6）")
-    public R<List<Map<String, Object>>> pending(@RequestParam(required = false) String keyword) {
-        return R.ok(service.pending(keyword));
+    @Operation(summary = "待派工列表",
+            description = "Released 工单 × 未派工序；priority+planStartDate 排序（D6）；"
+                    + "moType 可选分池（NORMAL/RW/TRIAL，缺省全部；trial-order delta 试产池按申请时间序）")
+    public R<List<Map<String, Object>>> pending(@RequestParam(required = false) String keyword,
+                                                @RequestParam(required = false) String moType) {
+        return R.ok(service.pending(keyword, moType));
     }
 
     @GetMapping("/list")
@@ -96,6 +99,25 @@ public class DispatchController {
             @RequestParam(required = false) String productCode,
             @RequestParam(required = false) String dispatchId) {
         return R.ok(service.outsourceCandidates(opCode, productCode, dispatchId));
+    }
+
+    @GetMapping("/os/workbench")
+    @Operation(summary = "外协订单工作台（5.10.1）",
+            description = "外协派工单聚合：回联状态 PENDING_PR/ORDERED/RECEIVED 分组；"
+                    + "状态/供应商/WC 筛选 + 关键词；PLANNER/PLAN_MGR/PURCHASER/ADMIN")
+    public R<List<Map<String, Object>>> osWorkbench(
+            @RequestParam(required = false) String linkStatus,
+            @RequestParam(required = false) String supplierCode,
+            @RequestParam(required = false) String wcCode,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(service.workbench(linkStatus, supplierCode, wcCode, keyword));
+    }
+
+    @PutMapping("/os/fields/{id}")
+    @Operation(summary = "维护外协字段（5.10.1）", description = "外协交期/备注/供料方式；仅外协派工单；SUPPLIER_BUY/COMPANY_SUPPLY")
+    public R<MrpDispatch> maintainOsFields(@PathVariable String id, @RequestBody Map<String, String> body) {
+        return R.ok(service.maintainOsFields(id, body.get("osDueDate"), body.get("osRemark"),
+                body.get("osSupplyType")));
     }
 
     @SuppressWarnings("unchecked")

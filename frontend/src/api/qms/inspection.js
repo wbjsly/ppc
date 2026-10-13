@@ -7,6 +7,11 @@ export function getLotBoardApi(params) {
   return request.get('/qms/lots/board', { params })
 }
 
+/** 外协收货检验工作台（5.10.2，spec outsourcing-execution）：外协 PO 来源批 + 派工上下文 */
+export function getOutsourceBoardApi(params) {
+  return request.get('/qms/lots/outsource-board', { params })
+}
+
 /** 检验批分页（按状态/类型/物料筛选） */
 export function getLotPageApi(params) {
   return request.get('/qms/lots', { params })

@@ -36,10 +36,26 @@ public interface MoService {
      */
     Map<String, Object> createFromPmo(String suggestId, MrpMo overrides);
 
+    /**
+     * 按类型分配工单号并插入（MO_TYPE=NORMAL→MO- / RW→RW- / TRIAL→TP-，冲突递增；
+     * change add-rework-management / add-trial-production-management）。
+     * 供返工与试产工单创建复用统一编号逻辑——调用方负责其余校验与快照。
+     */
+    MrpMo insertWithMoNo(MrpMo mo);
+
+    /**
+     * 唯一在途校验（按类型分池，TRIAL 再按阶段细分——trial-order delta 三池隔离）。
+     * 422 阻断：该产品在该类型（试产含阶段维）存在未终态在途工单。供试产建单口复用。
+     */
+    void checkNoInFlight(String productCode, String moType, String trialStage);
+
     /** 详情：头 + BOM 快照行 + 工序快照行 + 缺料清单 */
     Map<String, Object> detail(String moId);
 
-    /** 列表（状态/产品/缺料过滤，带全部留痕字段） */
+    /** 列表按类型分池（change add-rework-management：NORMAL/RW 不混排，spec「优先级不混排」）；moType 空=全部 */
+    List<MrpMo> listByType(String status, String productCode, String moType);
+
+    /** 列表（状态/产品/缺料过滤，带全部留痕字段）——缺省仅正常工单（分池默认口径） */
     List<MrpMo> list(String status, String productCode, String shortageFlag);
 
     /** 缺料清单（5.4.3 释放页） */

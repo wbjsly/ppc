@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 /**
  * 最小库存（4.4 承接，change add-goods-receipt design D1/D6；add-quality-collaboration B 口径改造）。
- * QTY = QC_QTY + AVAILABLE_QTY；QC_QTY 语义在 2.5 接入后由「待检锁定」转为
+ * QTY = QC_QTY + AVAILABLE_QTY（+ WIP_QTY + OS_QTY，迁移 124/126 后）；QC_QTY 语义在 2.5 接入后由「待检锁定」转为
  * 「让步接收限制锁定」（检验合格量过账后直入 AVAILABLE_QTY，spec receipt-posting MODIFIED）。
  * 唯一键 (WAREHOUSE_CODE, ITEM_CODE, BATCH_NO)（change add-sales-lead-to-cash design D16）。
  * 既有收货/领用/退货/质检流程的单据均不带仓库，统一落 DEFAULT_WH（迁移 055 回填同值）。
@@ -36,6 +36,13 @@ public class InvStock extends BaseEntity {
     private BigDecimal finQty;
     /** 可领用量 */
     private BigDecimal availableQty;
+
+    /** 在制池（返工转在制：入=转在制过账，出=入库/报废闭环；迁移 124；QTY = QC + AVAIL + WIP） */
+    private BigDecimal wipQty;
+
+    /** 外协在途池（甲供发料：入=发料出库，出=收货冲减/余料退回/红冲恢复；迁移 126；
+     *  QTY = QC + AVAIL + WIP + OS；所有权留厂内，仅保管责任转移供应商） */
+    private BigDecimal osQty;
 
     /** 入库日期（首插记录、补货不刷新，batch-master FIFO 排序依据；存量由迁移 102 回填） */
     private java.time.LocalDate inboundDate;

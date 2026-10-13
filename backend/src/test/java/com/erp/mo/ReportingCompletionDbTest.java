@@ -92,6 +92,12 @@ class ReportingCompletionDbTest {
 
         product = MoSeed.mkItem(itemService, categoryCode, "完工测试产品", "MAKE");
         child = MoSeed.mkItem(itemService, categoryCode, "完工测试子件", "BUY");
+        // C-4.5-09：关单前归集须完整——投料子件须有单价（标准成本或采购价兜底），
+        // 否则完工自动归集 422 无 summary，关闭被成本检查阻断（依赖残留采购价曾致非确定性失败）
+        jdbc.update("UPDATE erp_mdm_item SET STANDARD_COST = 8 WHERE ITEM_CODE = ?",
+                child.getItemCode());
+        jdbc.update("UPDATE erp_mdm_item SET STANDARD_COST = 100 WHERE ITEM_CODE = ?",
+                product.getItemCode());
         MoSeed.publishBom(bomService, jdbc, product, child, "1", "0.1");
         MoSeed.publishRoutingMulti(routingService, operationService,
                 workCenterService, standardService, jdbc, product, 2);
@@ -318,8 +324,17 @@ class ReportingCompletionDbTest {
     @Test
     void closeBlockedByUnfinishedOpAndPassesWhenAllDone() {
         // 完工但制造「未完成工序」（直改 op 状态模拟）→ 关闭 422 列清单
+        // C-4.5-09：关单前归集须完整——预置当期制造费用池（否则 NO_POOL 标记按规格阻断）
+        jdbc.update("INSERT IGNORE INTO erp_mrp_overhead_pool "
+                + "(ID, PERIOD, POOL_AMT, RULE, CREATE_BY, DEL_FLAG, VER_NO) VALUES "
+                + "('pl-rptcomp', ?, 1000, 'TIME', 'junit', '0', 0)",
+                java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
         reportBothOps(8, 8);
         reportingService.completeMo(mo.getId());
+        // C-4.5-09 落地后完工自动归集：本测试业务是工序关单（差异审阅由 CostAggregationDbTest 覆盖），
+        // 临时放宽差异阈值避免 89% 差异阻断；finally 必复位防泄漏影响后续按阈值断言的测试
+        sysParam.setValue("COST_VARIANCE_RATE", "10", "NUMBER", "MRP", "工序关单测试放宽", "junit");
+        try {
         jdbc.update("UPDATE erp_mrp_mo_op SET OP_STATUS='RUNNING' WHERE MO_ID=? AND OP_SEQ=?",
                 mo.getId(), op1);
         ServiceException e = assertThrows(ServiceException.class,
@@ -335,5 +350,8 @@ class ReportingCompletionDbTest {
         assertEquals(Boolean.TRUE, pre.get("passed"), "预检通过：" + pre.get("checks"));
         MrpMo closed = moService.close(mo.getId());
         assertEquals("CLOSED", closed.getStatus(), "关闭终态");
+        } finally {
+            sysParam.setValue("COST_VARIANCE_RATE", "0.05", "NUMBER", "MRP", "测试复位", "junit");
+        }
     }
 }

@@ -49,6 +49,15 @@ public class GlVoucherServiceImpl implements GlVoucherService {
     public FinVoucher create(String voucherType, LocalDate voucherDate, String summary,
                              String sourceType, String sourceDocNo, String supplierId,
                              List<FinVoucherLineSpec> specs) {
+        return create(voucherType, voucherDate, summary, sourceType, sourceDocNo,
+                supplierId, specs, false);
+    }
+
+    @Override
+    @Transactional
+    public FinVoucher create(String voucherType, LocalDate voucherDate, String summary,
+                             String sourceType, String sourceDocNo, String supplierId,
+                             List<FinVoucherLineSpec> specs, boolean draft) {
         if (specs == null || specs.isEmpty()) {
             throw new ServiceException(422, "凭证行不能为空");
         }
@@ -118,7 +127,7 @@ public class GlVoucherServiceImpl implements GlVoucherService {
         v.setSummary(summary);
         v.setSourceType(sourceType);
         v.setSourceDocNo(sourceDocNo);
-        v.setStatus(FinVoucher.STATUS_POSTED);
+        v.setStatus(draft ? FinVoucher.STATUS_DRAFT : FinVoucher.STATUS_POSTED);
         v.setTotalDr(totalDr);
         v.setTotalCr(totalCr);
         v.setCreateBy(SecurityUtils.getCurrentUserId());

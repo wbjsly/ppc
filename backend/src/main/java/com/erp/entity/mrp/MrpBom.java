@@ -24,6 +24,8 @@ public class MrpBom extends BaseEntity {
     public static final String ST_PUBLISHED = "PUBLISHED";
     public static final String ST_REVISED = "REVISED";
     public static final String ST_OBSOLETE = "OBSOLETE";
+    /** 试产已审批（FR-4.5-8-2 特别审批入态；转量产经复制为量产草稿走正式发布，不可直接发布——迁移 125） */
+    public static final String ST_TRIAL = "TRIAL";
 
     private String parentItemCode;
     private String parentItemName;
@@ -32,6 +34,10 @@ public class MrpBom extends BaseEntity {
     /** 次版本号（变更默认 +1） */
     private Integer versionMinor;
     private String status;
+    /** 试产阶段 EVT/DVT/PVT（非空=试产版，试产池唯一性分池，迁移 125） */
+    private String trialStage;
+    /** 转量产来源试产工单号 TP-（发布时校验其总结评审 APPROVED，FR-4.5-8-7，迁移 125） */
+    private String srcTrialNo;
     /** 变更原因（发起变更必填） */
     private String changeReason;
     /** 变更来源版本 ID（自引用） */

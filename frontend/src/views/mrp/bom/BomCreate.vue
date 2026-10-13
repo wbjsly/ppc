@@ -7,6 +7,7 @@
         <el-select v-model="query.status" clearable placeholder="全部" style="width: 140px;" @change="loadData">
           <el-option label="草稿" value="DRAFT" />
           <el-option label="待审核" value="PENDING" />
+          <el-option label="试产已审批" value="TRIAL" />
           <el-option label="已发布" value="PUBLISHED" />
           <el-option label="已变更" value="REVISED" />
           <el-option label="已废止" value="OBSOLETE" />
@@ -34,14 +35,22 @@
           <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="试产版" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.trialStage" size="small" type="warning">{{ row.trialStage }}</el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="生效/失效" width="180">
         <template #default="{ row }">{{ row.effectiveDate || '-' }} ~ {{ row.expiryDate || '-' }}</template>
       </el-table-column>
       <el-table-column prop="changeReason" label="变更原因" min-width="140" show-overflow-tooltip />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEng && row.status === 'DRAFT'" link type="primary" size="small"
                      @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canEng && row.trialStage && row.status === 'DRAFT'" link type="warning"
+                     size="small" @click="submitTrial(row)">试产审批</el-button>
           <el-button v-if="canEng" link type="warning" size="small" @click="doCopy(row)">复制</el-button>
           <el-button link type="info" size="small" @click="openDetail(row)">详情</el-button>
         </template>
@@ -72,6 +81,22 @@
           <el-col :span="7">
             <el-form-item label="失效日期">
               <el-date-picker v-model="head.expiryDate" type="date" value-format="YYYY-MM-DD" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12" v-if="!editingId">
+          <el-col :span="24">
+            <el-form-item label="试产版">
+              <el-switch v-model="trialMode" />
+              <el-select v-if="trialMode" v-model="head.trialStage" style="width: 140px; margin-left: 10px;"
+                         placeholder="试产阶段">
+                <el-option label="EVT 工程验证" value="EVT" />
+                <el-option label="DVT 设计验证" value="DVT" />
+                <el-option label="PVT 生产验证" value="PVT" />
+              </el-select>
+              <span class="tip" style="margin-left: 10px">
+                试产版保存后须经「试产审批」入 TRIAL 态方可用于试产建单（C-4.5-14）
+              </span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -135,6 +160,7 @@ import { useUserStore } from '@/store/user'
 import {
   getBomsApi, getBomDetailApi, createBomApi, saveBomDraftApi, copyBomApi
 } from '@/api/mrp/bom'
+import { submitTrialBomApi } from '@/api/mrp/trial'
 import BomLineEditor from './BomLineEditor.vue'
 
 // 5.1.1 清单创建：列表 + 新建/复制/草稿编辑；错误提示由 request 拦截器单点弹出
@@ -153,7 +179,8 @@ const query = ref({ status: '', parentItemCode: '' })
 const editorVisible = ref(false)
 const editingId = ref('')
 const editingVersion = ref('')
-const head = ref({ parentItemCode: '', parentItemName: '', effectiveDate: null, expiryDate: null })
+const trialMode = ref(false)
+const head = ref({ parentItemCode: '', parentItemName: '', effectiveDate: null, expiryDate: null, trialStage: null })
 const lines = ref([])
 const parentOptions = ref([])
 const parentLoading = ref(false)
@@ -162,10 +189,12 @@ const detailVisible = ref(false)
 const detail = ref(null)
 
 function statusText(s) {
-  return { DRAFT: '草稿', PENDING: '待审核', PUBLISHED: '已发布', REVISED: '已变更', OBSOLETE: '已废止' }[s] || s
+  return { DRAFT: '草稿', PENDING: '待审核', TRIAL: '试产已审批', PUBLISHED: '已发布',
+    REVISED: '已变更', OBSOLETE: '已废止' }[s] || s
 }
 function statusTag(s) {
-  return { DRAFT: 'info', PENDING: 'warning', PUBLISHED: 'success', REVISED: 'info', OBSOLETE: 'danger' }[s] || 'info'
+  return { DRAFT: 'info', PENDING: 'warning', TRIAL: 'warning', PUBLISHED: 'success',
+    REVISED: 'info', OBSOLETE: 'danger' }[s] || 'info'
 }
 function fmtTime(v) {
   if (!v) return '-'
@@ -206,7 +235,8 @@ function onParentChange(code) {
 function openCreate() {
   editingId.value = ''
   editingVersion.value = ''
-  head.value = { parentItemCode: '', parentItemName: '', effectiveDate: null, expiryDate: null }
+  trialMode.value = false
+  head.value = { parentItemCode: '', parentItemName: '', effectiveDate: null, expiryDate: null, trialStage: null }
   lines.value = []
   editorVisible.value = true
 }
@@ -238,7 +268,11 @@ async function openEdit(row) {
 
 function payload() {
   return {
-    head: { ...head.value },
+    head: {
+      ...head.value,
+      // 试产版勾选 → 置 TRIAL_STAGE（试产池分池创建，change add-trial-production-management）
+      trialStage: !editingId.value && trialMode.value ? head.value.trialStage : null
+    },
     items: lines.value.map(l => ({
       itemCode: l.itemCode, qty: l.qty, lossRate: l.lossRate,
       effectiveDate: l.effectiveDate || null, expiryDate: l.expiryDate || null,
@@ -259,6 +293,10 @@ async function save() {
     ElMessage.warning('至少一行子项物料')
     return
   }
+  if (trialMode.value && !editingId.value && !head.value.trialStage) {
+    ElMessage.warning('试产版须选择阶段（EVT/DVT/PVT）')
+    return
+  }
   saving.value = true
   try {
     if (editingId.value) {
@@ -273,6 +311,24 @@ async function save() {
   } catch (e) {
     // 422（环路径/用量/单位等）已由拦截器弹出具体 message
     console.warn('[bom-create] save failed', e)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitTrial(row) {
+  try {
+    await ElMessageBox.confirm(
+      `提交试产特别审批？V${row.versionLabel}（${row.trialStage}）通过后入 TRIAL 态，可用于试产建单`,
+      '试产审批', { type: 'warning' })
+  } catch { return }
+  saving.value = true
+  try {
+    await submitTrialBomApi(row.id)
+    ElMessage.success('已提交工艺主管试产审批（TrialBom）')
+    loadData()
+  } catch (e) {
+    console.warn('[bom-create] submit trial failed', e)
   } finally {
     saving.value = false
   }

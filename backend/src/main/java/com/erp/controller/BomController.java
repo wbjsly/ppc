@@ -85,6 +85,13 @@ public class BomController {
         return R.ok(service.submit(id));
     }
 
+    @PostMapping("/{id}/submit-trial")
+    @Operation(summary = "提交试产特别审批（仅带 TRIAL_STAGE 草稿；TrialBom 节点 PROCESS_MGR 签，"
+            + "通过入 TRIAL 态——change add-trial-production-management FR-4.5-8-2）")
+    public R<MrpBom> submitTrial(@PathVariable String id) {
+        return R.ok(service.submitTrial(id));
+    }
+
     @PostMapping("/{id}/obsolete")
     @Operation(summary = "手动废止（PROCESS_MGR/ADMIN，PUBLISHED|REVISED→OBSOLETE）")
     public R<Void> obsolete(@PathVariable String id) {

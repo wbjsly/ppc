@@ -72,12 +72,18 @@ public class MoServiceImpl implements MoService {
     private final KittingService kittingService;
     private final ApprovalEngine approvalEngine;
     private final List<MoCloseCheck> closeChecks;
+    /** 5.11 完工自动归集（spec production-cost-aggregation 触发） */
+    private final com.erp.service.mrp.CostAggregationService costAggregationService;
+    /** 5.11 完工凭证（spec completion-cost-voucher，首次归集后生成） */
+    private final com.erp.service.mrp.CostVoucherService costVoucherService;
 
     public MoServiceImpl(MrpMoDao moDao, MrpMoBomDao moBomDao, MrpMoOpDao moOpDao,
                          MrpMoShortageDao shortageDao, MrpSuggestionDao suggestionDao,
                          MdmItemDao mdmItemDao, MoDataSource moDataSource,
                          KittingService kittingService, ApprovalEngine approvalEngine,
-                         List<MoCloseCheck> closeChecks) {
+                         List<MoCloseCheck> closeChecks,
+                         com.erp.service.mrp.CostAggregationService costAggregationService,
+                         com.erp.service.mrp.CostVoucherService costVoucherService) {
         this.moDao = moDao;
         this.moBomDao = moBomDao;
         this.moOpDao = moOpDao;
@@ -88,6 +94,8 @@ public class MoServiceImpl implements MoService {
         this.kittingService = kittingService;
         this.approvalEngine = approvalEngine;
         this.closeChecks = closeChecks == null ? List.of() : closeChecks;
+        this.costAggregationService = costAggregationService;
+        this.costVoucherService = costVoucherService;
     }
 
     // ==================== 5.4.1 创建 ====================
@@ -178,9 +186,10 @@ public class MoServiceImpl implements MoService {
         if (head.getPriority() == null) {
             head.setPriority(5);
         }
-        // 唯一在途：父项行锁 + 在途阻断（design D1，BOM 父项锁先例）
+        // 唯一在途：父项行锁 + 在途阻断（design D1，BOM 父项锁先例）——按类型分池
+        // （work-order delta：返工工单在途不阻断正常工单创建，反之亦然；本入口恒为正常工单）
         lockProduct(productCode);
-        requireNoInFlight(productCode);
+        requireNoInFlight(productCode, MrpMo.MO_TYPE_NORMAL);
         // 超交 5%（BR-4.5-15）：存在该产品 SO 未交需求时适用；无需求（备库存）跳过
         var demand = moDataSource.base().soDemands(Set.of(productCode)).get(productCode);
         BigDecimal outstanding = demand == null ? BigDecimal.ZERO : demand.qty;
@@ -317,6 +326,7 @@ public class MoServiceImpl implements MoService {
 
     @Override
     public List<MrpMo> list(String status, String productCode, String shortageFlag) {
+        // 分池默认口径（design D2）：既有入口只看正常工单，返工列表走 listByType(RW)
         requireLogin("查询工单");
         LambdaQueryWrapper<MrpMo> w = new LambdaQueryWrapper<>();
         if (isNotBlank(status)) {
@@ -327,6 +337,23 @@ public class MoServiceImpl implements MoService {
         }
         if (isNotBlank(shortageFlag)) {
             w.eq(MrpMo::getShortageFlag, shortageFlag.trim());
+        }
+        w.eq(MrpMo::getMoType, MrpMo.MO_TYPE_NORMAL);
+        return moDao.selectList(w.orderByDesc(MrpMo::getCreateDate));
+    }
+
+    @Override
+    public List<MrpMo> listByType(String status, String productCode, String moType) {
+        requireLogin("查询工单");
+        LambdaQueryWrapper<MrpMo> w = new LambdaQueryWrapper<>();
+        if (isNotBlank(status)) {
+            w.eq(MrpMo::getStatus, status.trim());
+        }
+        if (isNotBlank(productCode)) {
+            w.eq(MrpMo::getProductCode, productCode.trim());
+        }
+        if (isNotBlank(moType)) {
+            w.eq(MrpMo::getMoType, moType.trim());
         }
         return moDao.selectList(w.orderByDesc(MrpMo::getCreateDate));
     }
@@ -468,6 +495,16 @@ public class MoServiceImpl implements MoService {
     public Map<String, Object> split(String moId, List<BigDecimal> childQtys, String reason) {
         requireAny("拆分工单");
         MrpMo parent = requireMo(moId);
+        // 返工工单禁拆分（change add-rework-management，work-order delta：投入量由判定单批准数量锚定，
+        // 拆分会绕过 C-4.5-13 数量上限；挂起/取消对 RW 照常适用）
+        if (MrpMo.MO_TYPE_RW.equals(parent.getMoType())) {
+            throw new ServiceException(422, "返工工单不支持拆分（投入量以判定单批准数量为准）");
+        }
+        // 试产工单禁拆分（change add-trial-production-management，work-order delta：
+        // 试产数量由申请单审批锚定，拆分会绕过申请审批量；挂起/取消对 TRIAL 照常适用）
+        if (MrpMo.MO_TYPE_TRIAL.equals(parent.getMoType())) {
+            throw new ServiceException(422, "试产工单不支持拆分（数量以申请单为准）");
+        }
         if (List.of(MrpMo.ST_PLANNED, MrpMo.ST_PENDING, MrpMo.ST_CONFIRMED)
                 .contains(parent.getStatus())) {
             throw new ServiceException(422, "计划/待审核/已确认状态不允许拆分");
@@ -589,6 +626,22 @@ public class MoServiceImpl implements MoService {
         mo.setCompleteBy(currentOperator());
         mo.setCompleteAt(LocalDateTime.now());
         casStatus(mo, MrpMo.ST_COMPLETED);
+        // 5.11 成本归集（完工自动触发，spec production-cost-aggregation）：
+        // TRIAL 走试产自有归集不在此；归集自成事务且失败仅告警——缺价等异常不回滚完工，
+        // 补数后可 5.11 手动重跑，关单前由 C-4.5-09 强制归集完整兜底。
+        if (!MrpMo.MO_TYPE_TRIAL.equals(mo.getMoType())) {
+            try {
+                Map<String, Object> agg = costAggregationService.aggregate(moId);
+                // 首次归集完成 → 完工凭证（幂等锚工单号；summary 传参避免独立事务读未提交数据；
+                // L1 卡控失败仅阻断凭证不回滚完工）
+                if (agg.get("summary") instanceof com.erp.entity.mrp.CostSummary cs) {
+                    costVoucherService.generateOnAggregation(moId, cs);
+                }
+            } catch (Exception ex) {
+                log.warn("完工归集/凭证未完成（可补数后于 5.11 重跑；关单前须归集完整）：{} - {}",
+                        mo.getMoNo(), ex.getMessage());
+            }
+        }
         log.info("工单完工确认：{} 合格产出={}", mo.getMoNo(), qualifiedQty);
         return mo;
     }
@@ -627,7 +680,10 @@ public class MoServiceImpl implements MoService {
     @Override
     @Transactional
     public MrpMo close(String moId) {
-        requireAny("关闭工单");
+        // 关闭 = 计划侧常规收口 + 质量主管强制报废收口
+        // （change add-rework-management：返工累计两次不合格强制报废由质量侧执行终局关闭）
+        requireAnyRoles("关闭工单", "ROLE_PLANNER", "ROLE_ADMIN",
+                "ROLE_QUALITY_MGR", "ROLE_QUALITY_ENG", "ROLE_INSPECTOR");
         MrpMo mo = requireMo(moId);
         if (!MrpMo.ST_COMPLETED.equals(mo.getStatus())) {
             throw new ServiceException(422,
@@ -686,15 +742,32 @@ public class MoServiceImpl implements MoService {
         return item;
     }
 
-    /** 同产品唯一在途（design D1：任一在途 → 阻断再创建；拆分由 split 自身豁免此校验） */
-    private void requireNoInFlight(String productCode) {
-        long inFlight = moDao.selectCount(new LambdaQueryWrapper<MrpMo>()
+    /** 同产品唯一在途（design D1：任一在途 → 阻断再创建；拆分由 split 自身豁免此校验）
+     *  按工单类型分池（change add-rework-management，work-order delta）：RW 在途不挡 NORMAL、反之亦然；
+     *  试产（TRIAL）再按阶段细分（change add-trial-production-management，trial-order delta：
+     *  同产品不同 TRIAL_STAGE 的试产在途互不阻塞，EVT/DVT/PVT 可并行） */
+    private void requireNoInFlight(String productCode, String moType) {
+        requireNoInFlight(productCode, moType, null);
+    }
+
+    private void requireNoInFlight(String productCode, String moType, String trialStage) {
+        LambdaQueryWrapper<MrpMo> qw = new LambdaQueryWrapper<MrpMo>()
                 .eq(MrpMo::getProductCode, productCode)
+                .eq(MrpMo::getMoType, moType)
                 .in(MrpMo::getStatus, MrpMo.ST_PLANNED, MrpMo.ST_PENDING,
-                        MrpMo.ST_CONFIRMED, MrpMo.ST_RELEASED, MrpMo.ST_HOLD));
+                        MrpMo.ST_CONFIRMED, MrpMo.ST_RELEASED, MrpMo.ST_HOLD);
+        if (MrpMo.MO_TYPE_TRIAL.equals(moType) && trialStage != null && !trialStage.isBlank()) {
+            qw.eq(MrpMo::getTrialStage, trialStage.trim());
+        }
+        long inFlight = moDao.selectCount(qw);
         if (inFlight > 0) {
+            String label = MrpMo.MO_TYPE_RW.equals(moType) ? "返工"
+                    : MrpMo.MO_TYPE_TRIAL.equals(moType) ? "试产" : "";
+            String stageHint = MrpMo.MO_TYPE_TRIAL.equals(moType)
+                    && trialStage != null && !trialStage.isBlank() ? "（阶段 " + trialStage + "）" : "";
             throw new ServiceException(422,
-                    "该产品存在在途工单（计划/待审核/已确认/已释放/挂起），请先处理在途工单");
+                    "该产品存在在途" + label + "工单" + stageHint
+                            + "（计划/待审核/已确认/已释放/挂起），请先处理在途工单");
         }
     }
 
@@ -705,10 +778,19 @@ public class MoServiceImpl implements MoService {
                 .last("FOR UPDATE"));
     }
 
-    /** MO_NO 按日流水：对已赋全字段的实体编号插入，唯一冲突递增重试（run/PMO 号先例） */
+    /** MO_NO 按日流水：对已赋全字段的实体编号插入，唯一冲突递增重试（run/PMO 号先例）；
+     *  前缀按 MO_TYPE 分池（NORMAL=MO- / RW=RW- / TRIAL=TP-，BR-4.5-31 同族，
+     *  change add-trial-production-management） */
     private MrpMo insertMoResolvingConflict(MrpMo mo) {
         String day = LocalDate.now().format(MO_DAY);
-        String prefix = "MO-" + day + "-";
+        String prefix;
+        if (MrpMo.MO_TYPE_RW.equals(mo.getMoType())) {
+            prefix = "RW-" + day + "-";
+        } else if (MrpMo.MO_TYPE_TRIAL.equals(mo.getMoType())) {
+            prefix = "TP-" + day + "-";
+        } else {
+            prefix = "MO-" + day + "-";
+        }
         long today = moDao.selectCount(new LambdaQueryWrapper<MrpMo>()
                 .likeRight(MrpMo::getMoNo, prefix));
         for (int attempt = 0; attempt < 99; attempt++) {
@@ -721,6 +803,18 @@ public class MoServiceImpl implements MoService {
             }
         }
         throw new ServiceException(422, "工单号分配冲突超限，请稍后重试");
+    }
+
+    @Override
+    public MrpMo insertWithMoNo(MrpMo mo) {
+        return insertMoResolvingConflict(mo);
+    }
+
+    @Override
+    public void checkNoInFlight(String productCode, String moType, String trialStage) {
+        lockProduct(productCode);
+        requireNoInFlight(productCode, moType == null || moType.isBlank()
+                ? MrpMo.MO_TYPE_NORMAL : moType, trialStage);
     }
 
     /**
@@ -766,6 +860,19 @@ public class MoServiceImpl implements MoService {
     }
 
     /** 写操作角色门（6.4）：未登录 401、角色不符 403、ADMIN 直通（freeze/BOM requireAny 范式） */
+    private void requireAnyRoles(String action, String... allowed) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+            throw new ServiceException(401, action + "需要登录");
+        }
+        for (String r : allowed) {
+            if (auth.getAuthorities().contains(new SimpleGrantedAuthority(r))) {
+                return;
+            }
+        }
+        throw new ServiceException(403, "无权限：" + action + "（需 " + String.join("/", allowed) + "）");
+    }
+
     private void requireAny(String action) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {

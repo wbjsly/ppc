@@ -57,5 +57,9 @@ public class InvBatch extends BaseEntity {
     /** 1 正常 / 0 关闭 */
     private String status;
 
+    /** 试产标记 1/0（spec batch-master MODIFIED，迁移 125）：工程样品建档人工置位 /
+     *  试产领用过账系统置位（FR-4.5-8-4）；追溯属性不可人工取消，供优先分配与挪用判定 */
+    private String trialFlag;
+
     private String remark;
 }

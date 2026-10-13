@@ -33,9 +33,16 @@
         <el-select v-model="query.status" clearable placeholder="全部" style="width: 130px;" @change="loadData">
           <el-option label="草稿" value="DRAFT" />
           <el-option label="待审核" value="PENDING" />
+          <el-option label="试产已审批" value="TRIAL" />
           <el-option label="已发布" value="PUBLISHED" />
           <el-option label="已变更" value="REVISED" />
           <el-option label="已废止" value="OBSOLETE" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="类型">
+        <el-select v-model="query.routeType" clearable placeholder="全部" style="width: 120px;" @change="loadData">
+          <el-option label="正常" value="NORMAL" />
+          <el-option label="返工" value="REWORK" />
         </el-select>
       </el-form-item>
       <el-form-item label="产品">
@@ -55,9 +62,21 @@
       <el-table-column label="版本" width="80">
         <template #default="{ row }">V{{ row.versionLabel }}</template>
       </el-table-column>
+      <el-table-column label="类型" width="82" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.routeType === 'REWORK'" type="warning" size="small">返工</el-tag>
+          <el-tag v-else size="small" type="info">正常</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="96">
         <template #default="{ row }">
           <el-tag :type="statusTag(row.status)" size="small">{{ statusText(row.status) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="试产版" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.trialStage" size="small" type="warning">{{ row.trialStage }}</el-tag>
+          <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column prop="changeReason" label="变更原因" min-width="140" show-overflow-tooltip />
@@ -70,6 +89,8 @@
                      @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canEdit && row.status === 'DRAFT'" link type="warning" size="small"
                      @click="doSubmit(row)">提交</el-button>
+          <el-button v-if="canEdit && row.trialStage && row.status === 'DRAFT'" link type="warning"
+                     size="small" @click="submitTrial(row)">试产审批</el-button>
           <el-button v-if="canEdit && row.status === 'PUBLISHED'" link type="warning" size="small"
                      @click="openChange(row)">变更</el-button>
           <el-button link type="info" size="small" @click="openDetail(row)">详情</el-button>
@@ -91,6 +112,26 @@
             <el-option v-for="it in productOptions" :key="it.itemCode"
                        :label="`${it.itemCode} ${it.itemName}`" :value="it.itemCode" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="路线类型" required>
+          <el-select v-model="head.routeType" :disabled="!!editingId" style="width: 200px;"
+                     placeholder="正常/返工（创建后不可改）">
+            <el-option label="正常（NORMAL）" value="NORMAL" />
+            <el-option label="返工（REWORK，5.8 选路）" value="REWORK" />
+          </el-select>
+          <span class="tip" style="margin-left: 8px;">返工路线走同一条审核发布链（FR-4.5-7-3）</span>
+        </el-form-item>
+        <el-form-item v-if="!editingId" label="试产版">
+          <el-switch v-model="trialMode" />
+          <el-select v-if="trialMode" v-model="head.trialStage" style="width: 150px; margin-left: 10px;"
+                     placeholder="试产阶段">
+            <el-option label="EVT 工程验证" value="EVT" />
+            <el-option label="DVT 设计验证" value="DVT" />
+            <el-option label="PVT 生产验证" value="PVT" />
+          </el-select>
+          <span class="tip" style="margin-left: 8px;">
+            试产路线须经「试产审批」入 TRIAL 态方可用于试产建单（C-4.5-14）
+          </span>
         </el-form-item>
       </el-form>
 
@@ -257,6 +298,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 import { useUserStore } from '@/store/user'
 import { getQmsApprovalTodoApi, passQmsApprovalApi, rejectQmsApprovalApi } from '@/api/qms/approval'
+import { submitTrialRoutingApi } from '@/api/mrp/trial'
 import {
   getRoutingsApi, getRoutingDetailApi, createRoutingApi, saveRoutingDraftApi,
   changeRoutingApi, submitRoutingApi, obsoleteRoutingApi,
@@ -277,7 +319,7 @@ const canMgr = computed(() => {
 const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
-const query = ref({ status: '', itemCode: '' })
+const query = ref({ status: '', itemCode: '', routeType: '' })
 
 const opOptions = ref([])
 const wcOptions = ref([])
@@ -286,7 +328,8 @@ const standards = ref(new Set())
 const editorVisible = ref(false)
 const editingId = ref('')
 const editingVersion = ref('')
-const head = ref({ itemCode: '', itemName: '' })
+const trialMode = ref(false)
+const head = ref({ itemCode: '', itemName: '', routeType: 'NORMAL', trialStage: null })
 const ops = ref([])
 const productOptions = ref([])
 const productLoading = ref(false)
@@ -310,10 +353,12 @@ const passOpinion = ref('')
 const rejectReason = ref('')
 
 function statusText(s) {
-  return { DRAFT: '草稿', PENDING: '待审核', PUBLISHED: '已发布', REVISED: '已变更', OBSOLETE: '已废止' }[s] || s
+  return { DRAFT: '草稿', PENDING: '待审核', TRIAL: '试产已审批', PUBLISHED: '已发布',
+    REVISED: '已变更', OBSOLETE: '已废止' }[s] || s
 }
 function statusTag(s) {
-  return { DRAFT: 'info', PENDING: 'warning', PUBLISHED: 'success', REVISED: 'info', OBSOLETE: 'danger' }[s] || 'info'
+  return { DRAFT: 'info', PENDING: 'warning', TRIAL: 'warning', PUBLISHED: 'success',
+    REVISED: 'info', OBSOLETE: 'danger' }[s] || 'info'
 }
 function fmtTime(v) {
   if (!v) return '-'
@@ -379,7 +424,8 @@ function checkStandard(row) {
 function openCreate() {
   editingId.value = ''
   editingVersion.value = ''
-  head.value = { itemCode: '', itemName: '' }
+  trialMode.value = false
+  head.value = { itemCode: '', itemName: '', routeType: 'NORMAL', trialStage: null }
   ops.value = []
   editorVisible.value = true
 }
@@ -388,7 +434,8 @@ async function openEdit(row) {
   const res = await getRoutingDetailApi(row.id)
   editingId.value = row.id
   editingVersion.value = row.versionLabel
-  head.value = { itemCode: res.data.itemCode, itemName: res.data.itemName }
+  head.value = { itemCode: res.data.itemCode, itemName: res.data.itemName,
+    routeType: res.data.routeType || 'NORMAL' }
   ops.value = (res.data.ops || []).map(o => ({
     opCode: o.opCode, opName: o.opName, wcCode: o.wcCode, wcName: o.wcName,
     leadTime: o.leadTime === null ? null : Number(o.leadTime),
@@ -402,7 +449,11 @@ async function openEdit(row) {
 
 function payload() {
   return {
-    head: { ...head.value },
+    head: {
+      ...head.value,
+      // 试产版勾选 → 置 TRIAL_STAGE（试产池分池创建，change add-trial-production-management）
+      trialStage: !editingId.value && trialMode.value ? head.value.trialStage : null
+    },
     ops: ops.value.map(o => ({ opCode: o.opCode, wcCode: o.wcCode, leadTime: o.leadTime,
       standardYield: o.standardYield, keyOpFlag: o.keyOpFlag }))
   }
@@ -426,6 +477,10 @@ async function save() {
     ElMessage.warning(`有 ${missing.length} 行（工序 × 工作中心）未维护工时定额，请先在 5.2.3 标准工时页维护`)
     return
   }
+  if (trialMode.value && !editingId.value && !head.value.trialStage) {
+    ElMessage.warning('试产版须选择阶段（EVT/DVT/PVT）')
+    return
+  }
   saving.value = true
   try {
     if (editingId.value) {
@@ -440,6 +495,24 @@ async function save() {
   } catch (e) {
     // 422（唯一在途/无定额/停用等）已由拦截器弹出具体 message
     console.warn('[routing] save failed', e)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function submitTrial(row) {
+  try {
+    await ElMessageBox.confirm(
+      `提交试产特别审批？${row.itemCode} V${row.versionLabel}（${row.trialStage}）通过后入 TRIAL 态`,
+      '试产审批', { type: 'warning' })
+  } catch { return }
+  saving.value = true
+  try {
+    await submitTrialRoutingApi(row.id)
+    ElMessage.success('已提交工艺主管试产审批（TrialRoute）')
+    loadData()
+  } catch (e) {
+    console.warn('[routing] submit trial failed', e)
   } finally {
     saving.value = false
   }

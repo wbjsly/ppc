@@ -181,6 +181,13 @@ public class RoutingController {
         return R.ok(routingService.submit(id));
     }
 
+    @PostMapping("/routings/{id}/submit-trial")
+    @Operation(summary = "提交试产特别审批（仅带 TRIAL_STAGE 草稿；TrialRoute 节点 PROCESS_MGR 签，"
+            + "通过入 TRIAL 态——change add-trial-production-management FR-4.5-8-2）")
+    public R<MrpRouting> submitTrial(@PathVariable String id) {
+        return R.ok(routingService.submitTrial(id));
+    }
+
     @PostMapping("/routings/{id}/obsolete")
     @Operation(summary = "手动废止（PROCESS_MGR/ADMIN，PUBLISHED|REVISED→OBSOLETE）")
     public R<Void> obsolete(@PathVariable String id) {
@@ -190,8 +197,9 @@ public class RoutingController {
 
     @GetMapping("/routings/published")
     @Operation(summary = "下游契约：按产品取已发布路线（有序工序行+四类工时+产能三要素；未发布返回空）")
-    public R<Map<String, Object>> publishedRoute(@RequestParam String itemCode) {
-        return R.ok(routingService.publishedRoute(itemCode));
+    public R<Map<String, Object>> publishedRoute(@RequestParam String itemCode,
+                                                 @RequestParam(required = false) String routeType) {
+        return R.ok(routingService.publishedRoute(itemCode, routeType));
     }
 
     @GetMapping("/routings/{id}")
@@ -201,11 +209,12 @@ public class RoutingController {
     }
 
     @GetMapping("/routings")
-    @Operation(summary = "路线版本列表（状态/产品/关键字；版本历史留痕字段）")
+    @Operation(summary = "路线版本列表（状态/产品/关键字/类型；版本历史留痕字段，routeType 分池 NORMAL/REWORK）")
     public R<List<Map<String, Object>>> query(
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String itemCode,
-            @RequestParam(required = false) String keyword) {
-        return R.ok(routingService.query(status, itemCode, keyword));
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String routeType) {
+        return R.ok(routingService.query(status, itemCode, keyword, routeType));
     }
 }

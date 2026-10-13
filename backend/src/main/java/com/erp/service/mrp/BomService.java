@@ -15,6 +15,8 @@ import java.util.Map;
 public interface BomService {
 
     String BIZ_PUBLISH = "BomPublish";
+    /** 试产特别审批 BIZ_TYPE（change add-trial-production-management，bizId = bomId） */
+    String BIZ_TRIAL = "TrialBom";
 
     /** 新建 BOM 草稿：父项启用校验 + 行校验（用量/损耗率/子项启用）+ 行级替代校验（FR-4.5-1-1/2/3） */
     MrpBom create(MrpBom head, List<MrpBomItem> items);
@@ -37,6 +39,28 @@ public interface BomService {
 
     /** 审批驳回入口（5.1 回调调用）：PENDING→DRAFT + 记录驳回意见 */
     void rejectBackToDraft(String bomId, String reason);
+
+    /**
+     * 提交试产特别审批（change add-trial-production-management，spec bom-management delta，
+     * FR-4.5-8-2）：仅带 TRIAL_STAGE 的草稿可提交（否则 422）；挂审批底座单节点
+     * （BIZ=TrialBom，签署角色 ROLE_PROCESS_MGR）；审批期间状态保持 DRAFT，
+     * 通过回调 onTrialApproved 同事务 DRAFT→TRIAL（由 DRAFT → TRIAL，delta 语义）。
+     */
+    MrpBom submitTrial(String bomId);
+
+    /** 试产审批通过入口（TrialBom 回调调用，同事务）：DRAFT→TRIAL + 同父项旧 TRIAL→REVISED */
+    void onTrialApproved(String bomId);
+
+    /** 试产审批驳回入口（TrialBom 回调调用）：状态保持 DRAFT + 记录驳回意见 */
+    void onTrialRejected(String bomId, String reason);
+
+    /**
+     * 转量产复制（change add-trial-production-management，spec trial-execution
+     * 「转量产复制与发布阻断」FR-4.5-8-7 / design D11）：克隆试产版头行替代为量产 DRAFT
+     * （TRIAL_STAGE=NULL、SRC_TRIAL_NO=TP 单号留痕），原试产版零改动；
+     * 走既有发布流程（submit → BomPublish），发布两处校验来源评审 APPROVED。
+     */
+    MrpBom promoteFromTrial(String sourceId, String trialMoNo);
 
     /**
      * 提交审核（菜单 5.1.3，任务 5.2）：ROLE_PROCESS_ENG，仅草稿可提交（422）；

@@ -208,36 +208,43 @@ const routes = [
         component: () => import('@/views/qms/approval/index.vue'),
         meta: { title: '质量审批待办', group: '质量管理', hidden: true }
       },
-      // 6.1 标准管理（add-quality-collaboration）
+      // 6.1 标准管理（rework-standard-management：两级式，列表共用 + 独立待办 + 详情工作台）
       {
         path: '/m/6.1.1',
         name: 'StandardApply',
-        component: () => import('@/views/qms/standard/index.vue'),
-        meta: { title: '标准申请', group: '质量管理', tab: 'apply' }
+        component: () => import('@/views/qms/standard/StandardList.vue'),
+        meta: { title: '标准申请', group: '质量管理', view: 'apply' }
       },
       {
         path: '/m/6.1.2',
         name: 'StandardApproval',
-        component: () => import('@/views/qms/standard/index.vue'),
-        meta: { title: '标准审批', group: '质量管理', tab: 'approval' }
+        component: () => import('@/views/qms/standard/StandardApproval.vue'),
+        meta: { title: '标准审批', group: '质量管理' }
       },
       {
         path: '/m/6.1.3',
         name: 'StandardPublish',
-        component: () => import('@/views/qms/standard/index.vue'),
-        meta: { title: '版本发布', group: '质量管理', tab: 'publish' }
+        component: () => import('@/views/qms/standard/StandardList.vue'),
+        meta: { title: '版本发布', group: '质量管理', view: 'publish' }
       },
       {
         path: '/m/6.1.4',
         name: 'SamplingPlan',
-        component: () => import('@/views/qms/standard/index.vue'),
-        meta: { title: '抽样方案', group: '质量管理', tab: 'sampling' }
+        component: () => import('@/views/qms/standard/StandardList.vue'),
+        meta: { title: '抽样方案', group: '质量管理', view: 'sampling' }
       },
       {
         path: '/m/6.1.5',
         name: 'StandardRetire',
-        component: () => import('@/views/qms/standard/index.vue'),
-        meta: { title: '标准退役', group: '质量管理', tab: 'retire' }
+        component: () => import('@/views/qms/standard/StandardList.vue'),
+        meta: { title: '标准退役', group: '质量管理', view: 'retire' }
+      },
+      // 6.1 标准详情工作台（不占菜单码，守卫按 6.1.1 叶授权）
+      {
+        path: '/m/6.1.standard/:id',
+        name: 'StandardDetail',
+        component: () => import('@/views/qms/standard/StandardDetail.vue'),
+        meta: { title: '标准详情', group: '质量管理', hidden: true }
       },
       // 2.5 质量协同 + 6.2/6.3/6.4 检验执行（add-quality-collaboration，同组件多路由）
       {
@@ -999,11 +1006,113 @@ const routes = [
         meta: { title: '报工录入', group: '生产管理', perm: 'ROLE_SHOP_FLOOR,ROLE_ADMIN' }
       },
       {
+        // 5.8.1 返工工单（计划侧：判定来源选入建单/返工列表/转在制状态，change add-rework-management）
+        path: '/m/5.8.1',
+        name: 'ReworkOrder',
+        component: () => import('@/views/mrp/rework/ReworkOrder.vue'),
+        meta: { title: '返工工单', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.8.2 返修处理（质量侧：复检跟踪/二次返工审批/强制报废/待入库重试/成本明细，PLANNER 只读）
+        path: '/m/5.8.2',
+        name: 'ReworkProcess',
+        component: () => import('@/views/mrp/rework/ReworkProcess.vue'),
+        meta: { title: '返修处理', group: '生产管理', perm: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN,ROLE_PLANNER' }
+      },
+      {
+        // 5.9.1 工程试产 EVT（三叶共用 TrialStage 组件按 stage 过滤，change add-trial-production-management）
+        path: '/m/5.9.1',
+        name: 'TrialEvt',
+        component: () => import('@/views/mrp/trial/TrialStage.vue'),
+        meta: { title: '工程试产', group: '生产管理', stage: 'EVT',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 5.9.2 设计试产 DVT（同组件 stage=DVT）
+        path: '/m/5.9.2',
+        name: 'TrialDvt',
+        component: () => import('@/views/mrp/trial/TrialStage.vue'),
+        meta: { title: '设计试产', group: '生产管理', stage: 'DVT',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 5.9.3 量产试产 PVT（同组件 stage=PVT；PVT 良率闸口与转量产主战场）
+        path: '/m/5.9.3',
+        name: 'TrialPvt',
+        component: () => import('@/views/mrp/trial/TrialStage.vue'),
+        meta: { title: '量产试产', group: '生产管理', stage: 'PVT',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
         // 5.7.2 报工管理（记录查询 + 冲销发起 + 完工确认 + 良率预警/NCR 入口，偏差 D1 蓝图 4→2 叶）
         path: '/m/5.7.2',
         name: 'ReportAdmin',
         component: () => import('@/views/mrp/reporting/ReportAdmin.vue'),
         meta: { title: '报工管理', group: '生产管理', perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.10.1 外协订单（外协派工单聚合工作台 + 交期/备注/供料维护，spec outsourcing-execution）
+        path: '/m/5.10.1',
+        name: 'OutsourceOrder',
+        component: () => import('@/views/mrp/outsourcing/OutsourceOrder.vue'),
+        meta: { title: '外协订单', group: '生产管理',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN' }
+      },
+      {
+        // 5.10.2 收货检验（外协 PO 来源检验批 + 派工上下文 + SCAR 联动，spec outsourcing-execution）
+        path: '/m/5.10.2',
+        name: 'OutsourceInspection',
+        component: () => import('@/views/mrp/outsourcing/OutsourceInspection.vue'),
+        meta: { title: '收货检验', group: '生产管理',
+          perm: 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.10.3 外协发料（甲供发料单：创建/出库过账/定额冲减提示/余料退回，spec outsourcing-material-supply）
+        path: '/m/5.10.3',
+        name: 'OutsourceMaterial',
+        component: () => import('@/views/mrp/outsourcing/OutsourceMaterial.vue'),
+        meta: { title: '外协发料', group: '生产管理',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN' }
+      },
+      {
+        // 5.10.4 外协对账（按 PO 汇总收货明细 → 审批 → 应付挂账，spec outsourcing-settlement D-OS-02）
+        path: '/m/5.10.4',
+        name: 'OutsourceSettlement',
+        component: () => import('@/views/mrp/outsourcing/OutsourceSettlement.vue'),
+        meta: { title: '外协对账', group: '生产管理',
+          perm: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN' }
+      },
+      {
+        // 5.11.1 直接材料（量产归集要素页，spec production-cost-aggregation；成本会计全权+计划线只读）
+        path: '/m/5.11.1',
+        name: 'CostMaterial',
+        component: () => import('@/views/mrp/cost/CostElement.vue'),
+        meta: { title: '直接材料', group: '生产管理', element: 'MATERIAL',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.11.2 直接人工（同页按 meta.element 分流）
+        path: '/m/5.11.2',
+        name: 'CostLabor',
+        component: () => import('@/views/mrp/cost/CostElement.vue'),
+        meta: { title: '直接人工', group: '生产管理', element: 'LABOR',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.11.3 制造费用（费用池录入 + 三规则分摊结果，FR-4.5-6-3）
+        path: '/m/5.11.3',
+        name: 'OverheadPool',
+        component: () => import('@/views/mrp/cost/OverheadPool.vue'),
+        meta: { title: '制造费用', group: '生产管理',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 5.11.4 完工凭证（标准入账+差异补平、DRAFT 待过账、月度转销，spec completion-cost-voucher）
+        path: '/m/5.11.4',
+        name: 'CostVoucher',
+        component: () => import('@/views/mrp/cost/CostVoucher.vue'),
+        meta: { title: '完工凭证', group: '生产管理',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN' }
       },
       {
         // 4.12.1 仓间调拨（调拨单全生命周期 + 内部往来，spec transfer-order P1）

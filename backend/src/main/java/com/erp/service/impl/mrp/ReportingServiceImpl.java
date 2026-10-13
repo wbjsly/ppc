@@ -78,6 +78,11 @@ public class ReportingServiceImpl implements ReportingService {
     private final MoFreezeService moFreezeService;
     /** 分级 NCR 承接（NcrServiceImpl → MoFreezeService 为 @Lazy，环在彼侧已断） */
     private final com.erp.service.qms.NcrService ncrService;
+    /** 返工完工触发复检（3.5；@Lazy 断环：Rework→Mo→Approval→Dispatch→Reporting） */
+    private final com.erp.service.mrp.ReworkOrderService reworkOrderService;
+    /** 试产完工分支（change add-trial-production-management 3.6：入样品仓 QC+OQC 批+成本归集；
+     *  @Lazy 断环同 rework 先例：Trial→Mo→Approval→Dispatch→Reporting） */
+    private final com.erp.service.mrp.TrialOrderService trialOrderService;
     /** 首件/IPQC 自动建批与断言（inspection-lot D5 兑现；@Lazy 断环） */
     private final InspectionLotService lotService;
     private final InspectionLotDao lotDao;
@@ -98,6 +103,8 @@ public class ReportingServiceImpl implements ReportingService {
                                 NoticeService noticeService,
                                 @org.springframework.context.annotation.Lazy MoFreezeService moFreezeService,
                                 com.erp.service.qms.NcrService ncrService,
+                                @org.springframework.context.annotation.Lazy com.erp.service.mrp.ReworkOrderService reworkOrderService,
+                                @org.springframework.context.annotation.Lazy com.erp.service.mrp.TrialOrderService trialOrderService,
                                 @org.springframework.context.annotation.Lazy InspectionLotService lotService,
                                 InspectionLotDao lotDao,
                                 com.erp.dao.system.SysNoticeDao noticeDao,
@@ -118,6 +125,8 @@ public class ReportingServiceImpl implements ReportingService {
         this.noticeService = noticeService;
         this.moFreezeService = moFreezeService;
         this.ncrService = ncrService;
+        this.reworkOrderService = reworkOrderService;
+        this.trialOrderService = trialOrderService;
         this.lotService = lotService;
         this.lotDao = lotDao;
         this.noticeDao = noticeDao;
@@ -453,6 +462,12 @@ public class ReportingServiceImpl implements ReportingService {
     @Override
     @Transactional
     public MrpFeed addFeed(String rptId, String itemCode, String batchCode, BigDecimal qty) {
+        return addFeed(rptId, itemCode, batchCode, qty, false);
+    }
+
+    @Override
+    public MrpFeed addFeed(String rptId, String itemCode, String batchCode, BigDecimal qty,
+                           boolean overAck) {
         requireEntry("投料记录");
         requireOpen(rptId);
         if (itemCode == null || itemCode.isBlank()) {
@@ -462,6 +477,41 @@ public class ReportingServiceImpl implements ReportingService {
             throw new ServiceException(422, "投料数量必须大于 0");
         }
         MrpReporting rpt = get(rptId);
+        // 追加料超返工 BOM 范围（BR-4.5-32 / FR-4.5-7-5）：RW 工单按 ADDL 行需求上限比对
+        if (rpt.getMoId() != null) {
+            MrpMo rwMo = moDao.selectById(rpt.getMoId());
+            if (rwMo != null && MrpMo.MO_TYPE_RW.equals(rwMo.getMoType())) {
+                MrpMoBom addlRow = moBomDao.selectOne(new LambdaQueryWrapper<MrpMoBom>()
+                        .eq(MrpMoBom::getMoId, rwMo.getId())
+                        .eq(MrpMoBom::getItemCode, itemCode)
+                        .eq(MrpMoBom::getLineType, MrpMoBom.LINE_ADDL)
+                        .last("LIMIT 1"));
+                BigDecimal demand = BigDecimal.ZERO;
+                if (addlRow != null) {
+                    BigDecimal usage = addlRow.getUnitQty() == null ? BigDecimal.ZERO : addlRow.getUnitQty();
+                    BigDecimal loss = addlRow.getLossRate() == null ? BigDecimal.ZERO : addlRow.getLossRate();
+                    BigDecimal base = rwMo.getQty() == null ? BigDecimal.ZERO : rwMo.getQty();
+                    demand = base.multiply(usage).multiply(BigDecimal.ONE.add(loss));
+                }
+                BigDecimal fed = feedDao.selectList(new LambdaQueryWrapper<MrpFeed>()
+                                .eq(MrpFeed::getMoId, rwMo.getId())
+                                .eq(MrpFeed::getItemCode, itemCode)
+                                .eq(MrpFeed::getReturnedFlag, "0"))
+                        .stream().map(MrpFeed::getQty).filter(java.util.Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (fed.add(qty).compareTo(demand) > 0) {
+                    if (!overAck) {
+                        throw new ServiceException(422, "追加物料超返工 BOM 范围：需求 "
+                                + demand.stripTrailingZeros().toPlainString()
+                                + "，已投 " + fed.stripTrailingZeros().toPlainString()
+                                + "，本次 " + qty.stripTrailingZeros().toPlainString()
+                                + "——确认超投后重提（FR-4.5-7-5）");
+                    }
+                    log.info("返工追加料超范围确认放行 {} {} 需求={} 已投={} 本次={}",
+                            rwMo.getMoNo(), itemCode, demand, fed, qty);
+                }
+            }
+        }
         // 行锁 FIFO 扣减 + ge 护栏（预扣同款，防并发扣成负库存）
         List<InvStock> rows = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
                 .eq(InvStock::getItemCode, itemCode)
@@ -886,6 +936,30 @@ public class ReportingServiceImpl implements ReportingService {
                 .set(MrpReporting::getReversedById, mirror.getId())
                 .set(MrpReporting::getReverseBy, operator)
                 .set(MrpReporting::getReverseAt, LocalDateTime.now()));
+        // ④.5 返工成本重建式回拨（RW：冲销后按当前累计重算 COPQ——spec「冲销回拨归集」）
+        MrpMo rwMoForCost = orig.getMoId() == null ? null : moDao.selectById(orig.getMoId());
+        if (rwMoForCost != null && MrpMo.MO_TYPE_RW.equals(rwMoForCost.getMoType())) {
+            java.util.List<MrpMoOp> fops = moOpDao.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MrpMoOp>()
+                            .eq(MrpMoOp::getMoId, rwMoForCost.getId())
+                            .orderByDesc(MrpMoOp::getOpSeq));
+            Integer lastOp = fops.isEmpty() ? null : fops.get(0).getOpSeq();
+            BigDecimal q = lastOp == null ? BigDecimal.ZERO
+                    : (BigDecimal) confirmedTotals(rwMoForCost.getId(), lastOp).get("goodQty");
+            reworkOrderService.aggregateCost(rwMoForCost, q == null ? BigDecimal.ZERO : q);
+        }
+        // ④.6 试产成本重建式回拨（TRIAL：onCompleted 三步幂等——入库/建批锚跳过，归集按当前累计重算，
+        //     design D7「冲销回调 applyReversal 加 TRIAL 分支重算」）
+        if (rwMoForCost != null && MrpMo.MO_TYPE_TRIAL.equals(rwMoForCost.getMoType())) {
+            java.util.List<MrpMoOp> tops = moOpDao.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MrpMoOp>()
+                            .eq(MrpMoOp::getMoId, rwMoForCost.getId())
+                            .orderByDesc(MrpMoOp::getOpSeq));
+            Integer tLastOp = tops.isEmpty() ? null : tops.get(0).getOpSeq();
+            BigDecimal tq = tLastOp == null ? BigDecimal.ZERO
+                    : (BigDecimal) confirmedTotals(rwMoForCost.getId(), tLastOp).get("goodQty");
+            trialOrderService.onCompleted(rwMoForCost, tq == null ? BigDecimal.ZERO : tq);
+        }
         // ⑤ 良率回拨 = 累计自动剔除 REVERSED 单（confirmedTotals 只取 CONFIRMED）；
         //    显式触发冻结评估——回拨 ≤ 阈值时自动解冻 + 通知原接收人（spec「冲销回拨解冻」）
         try {
@@ -1049,12 +1123,32 @@ public class ReportingServiceImpl implements ReportingService {
         }
 
         // Step1 倒冲补足（同事务，design D8：差额防御——已过账部分不重复扣）
-        List<Map<String, Object>> backflush = backflush(mo, ops);
+        // 返工工单豁免（BR-4.5-32 禁倒冲，completion-backflush delta）：追加料逐笔确认，
+        // 完工不生成补投行、不执行差额扣减，其余完工校验照常
+        List<Map<String, Object>> backflush = MrpMo.MO_TYPE_RW.equals(mo.getMoType())
+                ? List.of() : backflush(mo, ops);
 
         // Step2 完工（复用 5.4.5，合格产出 = 末道工序累计合格）
         Integer lastOp = ops.get(ops.size() - 1).getOpSeq();
         BigDecimal qualified = (BigDecimal) confirmedTotals(moId, lastOp).get("goodQty");
         moService.complete(moId, qualified == null ? BigDecimal.ZERO : qualified);
+
+        // RW：完工触发复检（FR-4.5-7-6，rework-execution spec——加严一档批，幂等）
+        Map<String, Object> reworkCost = null;
+        if (MrpMo.MO_TYPE_RW.equals(mo.getMoType())) {
+            var recheck = reworkOrderService.onCompleted(mo, qualified);
+            log.info("返工完工触发复检批 {}（加严 {}）", recheck.getLotNo(), recheck.getStrictness());
+            // 料工费实时归集挂 COPQ（FR-4.5-7-7，同事务；失败阻断完工——归集是完工语义一部分）
+            reworkCost = reworkOrderService.aggregateCost(mo, qualified);
+        }
+
+        // TRIAL：入样品仓 QC + OQC 建批 + 料工费归集（design D7；倒冲照常执行——无豁免条款）
+        Map<String, Object> trialOut = null;
+        if (MrpMo.MO_TYPE_TRIAL.equals(mo.getMoType())) {
+            trialOut = trialOrderService.onCompleted(mo, qualified);
+            log.info("试产完工分支 {}：stockIn={} lot={}", mo.getMoNo(),
+                    trialOut.get("stockIn"), trialOut.get("lotNo"));
+        }
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("moNo", mo.getMoNo());
@@ -1062,6 +1156,12 @@ public class ReportingServiceImpl implements ReportingService {
         out.put("qualifiedQty", qualified);
         out.put("backflushRows", backflush.size());
         out.put("backflush", backflush);
+        if (reworkCost != null) {
+            out.put("reworkCost", reworkCost);
+        }
+        if (trialOut != null) {
+            out.put("trial", trialOut);
+        }
         log.info("报工完工接管 {} 合格={} 倒冲补投 {} 行", mo.getMoNo(), qualified, backflush.size());
         return out;
     }

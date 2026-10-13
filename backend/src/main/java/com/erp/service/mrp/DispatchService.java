@@ -21,6 +21,14 @@ public interface DispatchService {
     List<Map<String, Object>> pending(String keyword);
 
     /**
+     * 待派工行按类型分池查询（change add-trial-production-management，spec trial-order
+     * 「MRP 与排产隔离」：试产不占正式排产优先级）。
+     * moType 空/blank = 全部类型（既有语义，返工链兼容）；NORMAL/RW/TRIAL = 该池，
+     * 试产池内按试产单创建（转开≈申请）时间升序排序，不与正常工单混排。
+     */
+    List<Map<String, Object>> pending(String keyword, String moType);
+
+    /**
      * 已生成派工单列表（5.6.1 确认/取消/重排的操作对象——生成接口只返回本次新增，
      * 刷新页面后须能找回）：状态 + 关键字（单号/工单号/WC）筛选，创建时间倒序。
      */
@@ -98,6 +106,22 @@ public interface DispatchService {
     boolean recallReceived(String poNo);
 
     /**
+     * 外协回联 RECEIVED + 自动报工闭环（change add-outsourcing-processing，spec outsourcing-execution
+     * 「收货自动报工闭环」+ outsourcing-dispatch MODIFIED「收货回联触发自动报工」）：
+     * GR 过账（已强制检验放行 C-4.12-06）后调用——回写收货标记、RECV_QTY 按本次过账量累计、
+     * 同事务生成 AUTO_OUTSOURCE 自动报工（数量=本次收货合格数、工时=派工定额、CONFIRMED 直过，
+     * 幂等锚点 = GR 单号）；累计收足工单计划量时自动完成工序（opStatus → DONE）。
+     */
+    boolean recallReceived(String poNo, String grNo, java.math.BigDecimal receivedQty);
+
+    /**
+     * 外协自动报工冲回（spec「红冲同步冲回」）：外协 PO 退货出库（OUT_DONE）时由退货链调用，
+     * 按退货量冲减自动报工产出与 RECV_QTY；冲回后不再满足收足时工序 DONE → RUNNING 回退。
+     * 幂等锚点 = 退货单号（remark 留痕，重复调用不双冲）。非外协/无自动报工 → 静默 false。
+     */
+    boolean reverseAutoReport(String poNo, String returnNo, java.math.BigDecimal qty);
+
+    /**
      * 5.6.3 外协候选推荐（spec outsourcing-dispatch「可替代外协资源推荐」+「外协报价参考 D8」）：
      * 定额矩阵中该工序存在定额、类型=外协、启用、供应商维护且 QUALIFIED（C-4.5-05 前置过滤）；
      * 每候选附今日负荷率与协议价参考（生效中/临期协议的中标单价，无则 price=null）。
@@ -108,4 +132,20 @@ public interface DispatchService {
      * @param dispatchId  派工单 ID（页面超载下钻入口——内部经 moOp 解析 opCode 与产成品）
      */
     List<Map<String, Object>> outsourceCandidates(String opCode, String productCode, String dispatchId);
+
+    // ---------- 5.10.1 外协订单工作台（change add-outsourcing-processing，spec outsourcing-execution） ----------
+
+    /**
+     * 外协订单工作台聚合（spec outsourcing-execution「外协订单工作台」）：全部外协派工单
+     * （OUTSOURCE_FLAG=1），每行附供应商名与回联状态（按 PR/PO/收货回联字段推导 PENDING_PR/
+     * ORDERED/RECEIVED）；支持回联状态/供应商/工作中心筛选与关键词（单号/工单号/PO 号）搜索，
+     * 按回联状态优先级 + 创建时间倒序。
+     */
+    List<Map<String, Object>> workbench(String linkStatus, String supplierCode, String wcCode, String keyword);
+
+    /**
+     * 维护外协专有字段（spec「外协订单工作台」）：外协交期/备注/供料方式；仅外协派工单可维护
+     * （非外协 422），供料方式枚举校验；角色 PLANNER/PLAN_MGR/PURCHASER/ADMIN（菜单权限线）。
+     */
+    MrpDispatch maintainOsFields(String id, String osDueDate, String osRemark, String osSupplyType);
 }

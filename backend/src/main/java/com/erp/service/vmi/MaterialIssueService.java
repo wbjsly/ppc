@@ -11,6 +11,9 @@ import java.util.Map;
  */
 public interface MaterialIssueService {
 
+    /** 试产挪用量产料双人确认 BIZ_TYPE（change add-trial-production-management，bizId = 领料单号） */
+    String BIZ_TRIAL_BORROW = "TrialBorrow";
+
     /** FIFO 配批预检（创建对话框预览，不落库）：自有按 AVAILABLE、寄售按 vmi_stock.QTY */
     Map<String, Object> preview(Map<String, Object> payload);
 
@@ -26,6 +29,14 @@ public interface MaterialIssueService {
 
     /** 过账（单事务：逐批复核 → OWN 扣减 / VMI 物权转移 → POSTED；失败整体回滚） */
     Map<String, Object> post(String id);
+
+    /**
+     * 试产挪用量产料双人确认（change add-trial-production-management，spec trial-execution
+     * 「试产备料与批次打标」FR-4.5-8-4：挪用量产料须计划员发起、工艺主管签署，C-0-03 发起≠签署）。
+     * 仅试产工单（TP-）领料单可发起；挂 TrialBorrow 单节点 ROLE_PROCESS_MGR；
+     * 通过前全 TRIAL_FLAG=0 领料单过账 422 阻断。
+     */
+    Map<String, Object> applyBorrow(String id);
 
     /** 作废（仅 DRAFT，原因必填；库存无变动） */
     void cancel(String id, String reason);

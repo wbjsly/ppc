@@ -112,6 +112,15 @@ public class InspectionLotController {
         return R.ok(service.board(current, size, status));
     }
 
+    @Operation(summary = "外协收货检验工作台（5.10.2）",
+            description = "外协 PO 来源检验批 + 供应商/派工单/工序/供料上下文；检验动作复用既有检验批 API；不合格联动 SCAR 提示")
+    @GetMapping("/outsource-board")
+    public R<Page<Map<String, Object>>> outsourceBoard(@RequestParam(defaultValue = "1") long current,
+                                                       @RequestParam(defaultValue = "10") long size,
+                                                       @RequestParam(required = false) String status) {
+        return R.ok(service.outsourceBoard(current, size, status));
+    }
+
     @Operation(summary = "手工创建 IPQC/OQC 检验批（偏差 D5：工单/发货触发挂桩）")
     @PostMapping
     public R<InspectionLot> createManual(@RequestBody Map<String, Object> body) {

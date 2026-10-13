@@ -177,6 +177,15 @@ public class MoDataSource {
         if (rootBom == null) {
             return null;
         }
+        return bomSnapshot(rootBom);
+    }
+
+    /**
+     * 自任意根 BOM 版本展平快照（change add-trial-production-management：试产版 TRIAL 态
+     * BOM 亦须入工单快照——BR-4.5-16 隔离语义与已发布版一致）。
+     * 子件展开仍沿「子件已发布 BOM」口径（试产版子件场景罕见，见 design D4 注记）。
+     */
+    public BomSnapshot bomSnapshot(MrpBom rootBom) {
         BomSnapshot snap = new BomSnapshot();
         snap.bomId = rootBom.getId();
         snap.bomVersion = rootBom.getVersionLabel();
@@ -184,10 +193,10 @@ public class MoDataSource {
 
         // BFS：队列元素 = (父件编码, 父 BOM id, 层级, 链单耗, 链 (1+损耗) 乘积)
         Deque<Object[]> queue = new ArrayDeque<>();
-        queue.add(new Object[]{itemCode, rootBom.getId(), 1, BigDecimal.ONE, BigDecimal.ONE});
+        queue.add(new Object[]{rootBom.getParentItemCode(), rootBom.getId(), 1, BigDecimal.ONE, BigDecimal.ONE});
         int seq = 0;
         Set<String> visited = new HashSet<>();
-        visited.add(itemCode);
+        visited.add(rootBom.getParentItemCode());
         while (!queue.isEmpty()) {
             Object[] cur = queue.poll();
             String owner = (String) cur[0];
@@ -269,6 +278,8 @@ public class MoDataSource {
     public RoutingSnapshot publishedRoutingSnapshot(String itemCode) {
         MrpRouting routing = routingDao.selectOne(new LambdaQueryWrapper<MrpRouting>()
                 .eq(MrpRouting::getItemCode, itemCode)
+                // 正常工单只吃 NORMAL 路线（REWORK 版归返工建单选路，routing delta 分池）
+                .eq(MrpRouting::getRouteType, MrpRouting.T_NORMAL)
                 .eq(MrpRouting::getStatus, MrpRouting.ST_PUBLISHED)
                 .orderByDesc(MrpRouting::getVersionMajor)
                 .orderByDesc(MrpRouting::getVersionMinor)

@@ -17,6 +17,10 @@ import java.math.BigDecimal;
 @TableName("erp_mrp_mo_bom")
 public class MrpMoBom extends BaseEntity {
 
+    /** 行类型：返工不合格品投入行（齐套按在制池判满足）/ADDL=追加料（按可用库存）；迁移 124 */
+    public static final String LINE_INPUT = "INPUT";
+    public static final String LINE_ADDL = "ADDL";
+
     private String moId;
     private Integer lineNo;
     /** BOM 层级（1=产品直接子项；多层展平 design D4） */
@@ -25,6 +29,8 @@ public class MrpMoBom extends BaseEntity {
     private String ownerItem;
     private String itemCode;
     private String itemName;
+    /** 行类型 INPUT/ADDL（返工 BOM 快照打标；正常工单恒 ADDL，缺省 DB DEFAULT） */
+    private String lineType;
     /** 单位用量（展平行为相对工单产品的有效单耗=链上乘积） */
     private BigDecimal unitQty;
     /** 损耗率（展平行为有效损耗 Π(1+损耗)−1，保持 REQ=QTY×用量×(1+损耗) 口径） */

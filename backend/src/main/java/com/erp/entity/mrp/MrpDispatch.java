@@ -57,6 +57,14 @@ public class MrpDispatch extends BaseEntity {
     private String poNo;
     /** 外协回联：GR 收货完成 1 */
     private String receiptFlag;
+    /** 外协收货累计（GR 过账回联递增；红冲递减；收足自动闭环依据，迁移 126） */
+    private BigDecimal recvQty;
+    /** 外协交期（供应商交付承诺日，5.10.1 工作台维护，迁移 126） */
+    private LocalDate osDueDate;
+    /** 外协备注（供料/工艺等供应商侧约定，迁移 126） */
+    private String osRemark;
+    /** 供料方式：SUPPLIER_BUY 供应商自购 / COMPANY_SUPPLY 甲供（迁移 126） */
+    private String osSupplyType;
     /** 重排留痕等 */
     private String remark;
 }

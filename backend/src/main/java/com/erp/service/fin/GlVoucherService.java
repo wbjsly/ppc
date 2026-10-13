@@ -28,6 +28,15 @@ public interface GlVoucherService {
                       String sourceType, String sourceDocNo, String supplierId,
                       List<FinVoucherLineSpec> lines);
 
+    /**
+     * 生成凭证（可指定落 DRAFT）：全部校验同上；draft=true 时状态落 DRAFT 不过账，
+     * 供「会计期间已关 → 待下期过账」路径使用（spec completion-cost-voucher 期间卡控；
+     * gl-voucher DRAFT 为既有状态：可作废、不可过账态修改）。
+     */
+    FinVoucher create(String voucherType, LocalDate voucherDate, String summary,
+                      String sourceType, String sourceDocNo, String supplierId,
+                      List<FinVoucherLineSpec> lines, boolean draft);
+
     /** 红字冲销（BR-4.6-09）：同科目反向新凭证 + REVERSES_ID 关联；仅 POSTED 可冲销 */
     FinVoucher reverse(String voucherId, String reason, String sourceDocNo);
 

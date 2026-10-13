@@ -93,8 +93,10 @@ public class ReportingController {
     @PostMapping("/feed")
     @Operation(summary = "投料行保存并即扣", description = "AVAILABLE_QTY −= qty，余量护栏 422；仅 OPEN")
     public R<MrpFeed> feed(@RequestBody Map<String, Object> body) {
+        Object ack = body.get("overAck");
+        boolean overAck = ack instanceof Boolean b ? b : "true".equalsIgnoreCase(String.valueOf(ack));
         return R.ok(service.addFeed((String) body.get("rptId"), (String) body.get("itemCode"),
-                (String) body.get("batchCode"), dec(body.get("qty"))));
+                (String) body.get("batchCode"), dec(body.get("qty")), overAck));
     }
 
     @GetMapping("/feeds/{rptId}")

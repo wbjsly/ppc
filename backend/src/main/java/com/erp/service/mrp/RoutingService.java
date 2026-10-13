@@ -15,6 +15,8 @@ import java.util.Map;
 public interface RoutingService {
 
     String BIZ_PUBLISH = "RoutingPublish";
+    /** 试产特别审批 BIZ_TYPE（change add-trial-production-management，bizId = routingId） */
+    String BIZ_TRIAL = "TrialRoute";
 
     /**
      * 新建路线草稿（菜单 5.2.4）：产品启用校验 + 工序行校验（空行 422、工序/工作中心启用、
@@ -38,6 +40,27 @@ public interface RoutingService {
     void rejectBackToDraft(String routingId, String reason);
 
     /**
+     * 提交试产特别审批（change add-trial-production-management，spec routing-management delta，
+     * FR-4.5-8-2）：仅带 TRIAL_STAGE 的草稿可提交（否则 422）；挂审批底座单节点
+     * （BIZ=TrialRoute，签署角色 ROLE_PROCESS_MGR）；审批期间状态保持 DRAFT，
+     * 通过回调 onTrialApproved 同事务 DRAFT→TRIAL。
+     */
+    MrpRouting submitTrial(String routingId);
+
+    /** 试产审批通过入口（TrialRoute 回调调用，同事务）：DRAFT→TRIAL + 同产品旧 TRIAL→REVISED */
+    void onTrialApproved(String routingId);
+
+    /** 试产审批驳回入口（TrialRoute 回调调用）：状态保持 DRAFT + 记录驳回意见 */
+    void onTrialRejected(String routingId, String reason);
+
+    /**
+     * 转量产复制（change add-trial-production-management，design D11）：
+     * 克隆试产路线为量产 DRAFT（TRIAL_STAGE=NULL、SRC_TRIAL_NO=TP 单号留痕），
+     * 原试产版零改动；发布两处校验来源评审 APPROVED。
+     */
+    MrpRouting promoteFromTrial(String sourceId, String trialMoNo);
+
+    /**
      * 提交审核（任务 5.2）：仅草稿可提交（422）；同事务挂审批底座单节点
      * （BIZ=RoutingPublish，签署角色 ROLE_PROCESS_MGR）+ DRAFT→PENDING；重复提交由底座 422 拒绝。
      */
@@ -55,10 +78,16 @@ public interface RoutingService {
     /** 版本列表：状态/产品/关键字筛选，按产品与版本倒序（版本历史留痕出口） */
     List<Map<String, Object>> query(String status, String itemCode, String keyword);
 
+    /** 列表按路线类型过滤（change add-rework-management：NORMAL/REWORK 分池展示；routeType 空=全部） */
+    List<Map<String, Object>> query(String status, String itemCode, String keyword, String routeType);
+
     /**
      * 下游消费契约（spec「下游消费数据契约」）：按产品取最新 PUBLISHED 版本的
      * 有序工序行 + 每行四类工时（定额） + 工作中心产能三要素与状态；
      * 无已发布版本 → 返回空 Map（不返回未发布数据）。
      */
     Map<String, Object> publishedRoute(String itemCode);
+
+    /** 下游契约按类型取已发布路线（rework-order 选 REWORK 版；routeType 空=NORMAL 缺省口径） */
+    Map<String, Object> publishedRoute(String itemCode, String routeType);
 }

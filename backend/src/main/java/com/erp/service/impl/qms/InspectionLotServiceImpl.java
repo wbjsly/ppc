@@ -73,6 +73,11 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     private final com.erp.dao.qms.GaugeDao gaugeDao;
     private final com.erp.dao.qms.PatrolPlanDao patrolPlanDao;
     private final com.erp.service.qms.NcrService ncrService;
+    /** 放行监听（rework 3.8：返工复检合格→入库解冻关单，同事务） */
+    private final java.util.List<com.erp.service.qms.LotReleaseListener> releaseListeners;
+    /** 外协检验工作台（5.10.2）：GR→PO→外协派工单上下文 */
+    private final com.erp.dao.mrp.MrpDispatchDao dispatchDao;
+    private final com.erp.dao.proc.GoodsReceiptDao grDao;
 
     public InspectionLotServiceImpl(InspectionLotDao lotDao,
                                     LotItemDao lotItemDao,
@@ -86,7 +91,10 @@ public class InspectionLotServiceImpl implements InspectionLotService {
                                     com.erp.dao.qms.NcrDao ncrDao,
                                     com.erp.dao.qms.GaugeDao gaugeDao,
                                     com.erp.dao.qms.PatrolPlanDao patrolPlanDao,
-                                    @Lazy com.erp.service.qms.NcrService ncrService) {
+                                    @Lazy com.erp.service.qms.NcrService ncrService,
+                                    java.util.List<com.erp.service.qms.LotReleaseListener> releaseListeners,
+                                    com.erp.dao.mrp.MrpDispatchDao dispatchDao,
+                                    com.erp.dao.proc.GoodsReceiptDao grDao) {
         this.lotDao = lotDao;
         this.lotItemDao = lotItemDao;
         this.exemptDao = exemptDao;
@@ -100,6 +108,87 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         this.gaugeDao = gaugeDao;
         this.patrolPlanDao = patrolPlanDao;
         this.ncrService = ncrService;
+        this.releaseListeners = releaseListeners == null ? java.util.List.of() : releaseListeners;
+        this.dispatchDao = dispatchDao;
+        this.grDao = grDao;
+    }
+
+    // ================= 外协收货检验工作台（change add-outsourcing-processing） =================
+
+    @Override
+    public Page<Map<String, Object>> outsourceBoard(long current, long size, String status) {
+        // 权限两条线（spec outsourcing-settlement「菜单与权限」）：5.10.2 仅质量线可见，
+        // PLANNER/PURCHASER 调用 403（读接口同样受叶子权限约束）
+        requireRole("查看外协收货检验", "ROLE_INSPECTOR", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
+        // 1) 外协派工单（含 PO 回联）→ poNo → dispatch 上下文
+        java.util.Map<String, com.erp.entity.mrp.MrpDispatch> dispatchByPo = new java.util.HashMap<>();
+        java.util.List<com.erp.entity.mrp.MrpDispatch> ds = dispatchDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.mrp.MrpDispatch>()
+                        .eq(com.erp.entity.mrp.MrpDispatch::getOutsourceFlag, "1")
+                        .isNotNull(com.erp.entity.mrp.MrpDispatch::getPoNo));
+        for (com.erp.entity.mrp.MrpDispatch d : ds) {
+            if (d.getPoNo() != null && !d.getPoNo().isEmpty()) {
+                dispatchByPo.put(d.getPoNo(), d);
+            }
+        }
+        Page<Map<String, Object>> out = new Page<>(current, size, 0);
+        if (dispatchByPo.isEmpty()) {
+            out.setRecords(List.of());
+            return out;
+        }
+        // 2) PO → GR → 检验批（外协批 = GR 来自外协 PO）
+        java.util.List<com.erp.entity.proc.GoodsReceipt> grs = grDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.proc.GoodsReceipt>()
+                        .in(com.erp.entity.proc.GoodsReceipt::getPoNo, dispatchByPo.keySet()));
+        java.util.Map<String, com.erp.entity.proc.GoodsReceipt> grById = new java.util.HashMap<>();
+        java.util.List<String> grIds = new java.util.ArrayList<>();
+        for (com.erp.entity.proc.GoodsReceipt gr : grs) {
+            grById.put(gr.getId(), gr);
+            grIds.add(gr.getId());
+        }
+        if (grIds.isEmpty()) {
+            out.setRecords(List.of());
+            return out;
+        }
+        LambdaQueryWrapper<InspectionLot> qw = new LambdaQueryWrapper<InspectionLot>()
+                .in(InspectionLot::getGrId, grIds)
+                .eq(hasText(status), InspectionLot::getStatus, status)
+                .orderByAsc(InspectionLot::getDueTime);
+        Page<InspectionLot> raw = lotDao.selectPage(new Page<>(current, size), qw);
+        out.setTotal(raw.getTotal());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+        for (InspectionLot l : raw.getRecords()) {
+            com.erp.entity.proc.GoodsReceipt gr = grById.get(l.getGrId());
+            com.erp.entity.mrp.MrpDispatch d = gr == null ? null : dispatchByPo.get(gr.getPoNo());
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", l.getId());
+            m.put("lotNo", l.getLotNo());
+            m.put("status", l.getStatus());
+            m.put("result", l.getResult());
+            m.put("itemCode", l.getItemCode());
+            m.put("itemName", l.getItemName());
+            m.put("supplierName", l.getSupplierName());
+            m.put("batchNo", l.getBatchNo());
+            m.put("lotQty", l.getLotQty());
+            m.put("exemptFlag", l.getExemptFlag());
+            boolean overdue = l.getDueTime() != null && l.getDueTime().isBefore(now);
+            m.put("overdue", overdue);
+            // 外协上下文（spec：供应商/派工单号/工单工序/供料方式）
+            m.put("poNo", gr == null ? null : gr.getPoNo());
+            m.put("grId", l.getGrId());
+            m.put("grLineId", l.getGrLineId());
+            m.put("dispatchNo", d == null ? null : d.getDispatchNo());
+            m.put("moNo", d == null ? null : d.getMoNo());
+            m.put("opSeq", d == null ? null : d.getOpSeq());
+            m.put("opName", d == null ? null : d.getOpName());
+            m.put("osSupplyType", d == null ? null : d.getOsSupplyType());
+            // 不合格联动 SCAR 提示（spec「不合格联动 SCAR 提示」）
+            m.put("scarHint", l.getResult() != null && "FAIL".equals(l.getResult()));
+            rows.add(m);
+        }
+        out.setRecords(rows);
+        return out;
     }
 
     // ================= 生成（GR 登记同事务） =================
@@ -493,6 +582,98 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         lotDao.insert(lot);
         snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
         log.info("recheck lot {} created for NCR {}", lot.getLotNo(), ncr.getNcrNo());
+        return lot;
+    }
+
+    @Override
+    public InspectionLot createReworkRecheck(String refMoId, String itemCode, String itemName,
+                                             String batchNo, java.math.BigDecimal qty) {
+        // 幂等：同 refId 未放行返工复检批 → 返回既有（完工重复触发安全）
+        InspectionLot existed = lotDao.selectOne(new LambdaQueryWrapper<InspectionLot>()
+                .eq(InspectionLot::getRefType, "WORKORDER")
+                .eq(InspectionLot::getRefId, refMoId + "#REWORK")
+                .eq(InspectionLot::getSourceType, "RECHECK")
+                .notIn(InspectionLot::getStatus, "RELEASED", "CANCELLED")
+                .orderByDesc(InspectionLot::getCreateDate)
+                .last("LIMIT 1"));
+        if (existed != null) {
+            return existed;
+        }
+        InspectionLot lot = new InspectionLot();
+        lot.setLotNo(nextLotNo());
+        lot.setLotType("OQC");
+        lot.setSourceType("RECHECK");
+        lot.setRefType("WORKORDER");
+        lot.setRefId(refMoId + "#REWORK");
+        lot.setItemCode(itemCode);
+        lot.setItemName(itemName);
+        lot.setBatchNo(batchNo);
+        lot.setLotQty(qty);
+        lot.setRiskGrade(riskGradeOf(itemCode));
+        lot.setDueTime(LocalDateTime.now().plusHours(hoursOf(lot.getRiskGrade())));
+        lot.setStatus(ST_PENDING);
+        lot.setResult("PENDING");
+        // 加严一档（FR-4.5-7-6 / BR-4.5-02：返工产出按原方案加严——NORMAL→TIGHTENED，已 TIGHTENED 保持）
+        lot.setStrictness("TIGHTENED");
+        lot.setPriority("HIGH");
+        lot.setSampleBasis("返工复检（原检验方案加严一档，FR-4.5-7-6）：" + refMoId);
+        Map<String, Object> hit = standardService.resolveFor(itemCode, null, null, null, null);
+        if (hit.isEmpty()) {
+            lot.setStatus(ST_BLOCKED);
+            lot.setSampleBasis("返工复检：无生效检验标准（BR-4.12-07），请先维护标准后激活");
+            lotDao.insert(lot);
+            return lot;
+        }
+        fillFromStandard(lot, hit);
+        lotDao.insert(lot);
+        snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        log.info("rework recheck lot {} created for {} strictness={}",
+                lot.getLotNo(), refMoId, lot.getStrictness());
+        return lot;
+    }
+
+    @Override
+    public InspectionLot createTrialLot(String refMoId, String itemCode, String itemName,
+                                       String batchNo, java.math.BigDecimal qty) {
+        // 幂等：同 refId 未放行试产批 → 返回既有（完工重复触发/冲销重入安全）
+        InspectionLot existed = lotDao.selectOne(new LambdaQueryWrapper<InspectionLot>()
+                .eq(InspectionLot::getRefType, "WORKORDER")
+                .eq(InspectionLot::getRefId, refMoId + "#TRIAL")
+                .notIn(InspectionLot::getStatus, "RELEASED", "CANCELLED")
+                .orderByDesc(InspectionLot::getCreateDate)
+                .last("LIMIT 1"));
+        if (existed != null) {
+            return existed;
+        }
+        InspectionLot lot = new InspectionLot();
+        lot.setLotNo(nextLotNo());
+        lot.setLotType("OQC");
+        lot.setSourceType("MANUAL");
+        lot.setRefType("WORKORDER");
+        lot.setRefId(refMoId + "#TRIAL");
+        lot.setItemCode(itemCode);
+        lot.setItemName(itemName);
+        lot.setBatchNo(batchNo);
+        lot.setLotQty(qty);
+        lot.setRiskGrade(riskGradeOf(itemCode));
+        lot.setDueTime(LocalDateTime.now().plusHours(hoursOf(lot.getRiskGrade())));
+        lot.setStatus(ST_PENDING);
+        lot.setResult("PENDING");
+        // 试产产出按物料既有方案检验（不加严——试产非复检）
+        lot.setStrictness("NORMAL");
+        lot.setPriority("NORMAL");
+        lot.setSampleBasis("试产产出入库检验（OQC，FR-4.5-8-5/BR-4.5-34）：" + refMoId);
+        Map<String, Object> hit = standardService.resolveFor(itemCode, null, null, null, null);
+        if (hit.isEmpty()) {
+            lot.setStatus(ST_BLOCKED);
+            lot.setSampleBasis("试产产出检验：无生效检验标准（BR-4.12-07），请先维护标准后激活");
+            lotDao.insert(lot);
+            return lot;
+        }
+        fillFromStandard(lot, hit);
+        lotDao.insert(lot);
+        snapshotItems(lot, (List<Map<String, Object>>) hit.get("characteristics"));
+        log.info("trial OQC lot {} created for {}", lot.getLotNo(), refMoId);
         return lot;
     }
 
@@ -954,6 +1135,10 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         updateLot(lot);
         setLineQc(lot, "RELEASED");
         onLotJudged(lot, "PASS");
+        // 放行监听（同事务；返工复检批→入库解冻关单三件套，change add-rework-management FR-4.5-7-8）
+        for (com.erp.service.qms.LotReleaseListener l : releaseListeners) {
+            l.onReleased(lot);
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lot", lot);
         out.put("releasedBy", lot.getReleasedBy());

@@ -84,8 +84,14 @@ public class ReservationServiceImpl implements ReservationService {
         }
         Map<String, BigDecimal> reqByItem = new LinkedHashMap<>();
         Map<String, String> nameByItem = new LinkedHashMap<>();
+        boolean rework = MrpMo.MO_TYPE_RW.equals(mo.getMoType());
         for (MrpMoBom l : bomLines) {
             if (l.getItemCode() == null || l.getItemCode().isEmpty()) {
+                continue;
+            }
+            // 返工投入行（INPUT）在 WIP 池（转在制已持有），不参与可用库存预扣
+            // （change add-rework-management，与 kitting delta 同源口径）
+            if (rework && MrpMoBom.LINE_INPUT.equals(l.getLineType())) {
                 continue;
             }
             BigDecimal req = remaining

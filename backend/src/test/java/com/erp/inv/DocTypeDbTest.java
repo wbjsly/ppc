@@ -51,19 +51,23 @@ class DocTypeDbTest {
     @Test
     void seedHasAllKnownTypes() {
         List<InvDocType> all = service.list();
-        // 104 种子 13 类 + 迁移 115 RECALL_IN（add-trace-recall 召回入库）
-        assertEquals(14, all.size(), "迁移 104 种子 = 7 已建域 + 6 预注册 + 115 RECALL_IN");
+        // 104 种子 13 类 + 迁移 115 RECALL_IN + 迁移 126 外协发料/余料退回两类（add-outsourcing-processing）
+        assertEquals(16, all.size(),
+                "迁移 104 种子 = 7 已建域 + 6 预注册 + 115 RECALL_IN + 126 OS_MAT_OUT/IN");
         List<String> codes = all.stream().map(InvDocType::getTypeCode).toList();
         for (String expect : List.of("PURCHASE_IN", "SALES_OUT", "QUALITY_RETURN_OUT",
                 "OTHER_RETURN_OUT", "SALES_RETURN_IN", "MATERIAL_OUT", "VMI_TRANSFER_IN",
                 "WIP_IN", "SCRAP_OUT", "TRANSFER_IN", "TRANSFER_OUT", "ADJUST_IN", "ADJUST_OUT",
-                "RECALL_IN")) {
+                "RECALL_IN", "OS_MAT_OUT", "OS_MAT_IN")) {
             assertTrue(codes.contains(expect), "缺少类型 " + expect);
         }
         // 方向与分配默认正确
         assertEquals("IN", service.getByCode("PURCHASE_IN").getDirection());
         assertEquals("AUTO_FIFO", service.getByCode("SALES_OUT").getDefaultAlloc());
         assertEquals("MANUAL", service.getByCode("PURCHASE_IN").getDefaultAlloc());
+        // 外协发料出库/余料退回（迁移 126）方向与批次要求
+        assertEquals("OUT", service.getByCode("OS_MAT_OUT").getDirection());
+        assertEquals("IN", service.getByCode("OS_MAT_IN").getDirection());
     }
 
     @Test

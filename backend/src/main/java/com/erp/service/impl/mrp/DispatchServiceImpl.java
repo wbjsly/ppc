@@ -12,6 +12,8 @@ import com.erp.entity.mdm.MdmSupplier;
 import com.erp.entity.mrp.MrpDispatch;
 import com.erp.entity.mrp.MrpMo;
 import com.erp.entity.mrp.MrpMoOp;
+import com.erp.entity.mrp.MrpOutput;
+import com.erp.entity.mrp.MrpReporting;
 import com.erp.entity.mrp.MrpWorkCenter;
 import com.erp.entity.system.ApprovalInstance;
 import com.erp.service.approval.ApprovalEngine;
@@ -88,6 +90,11 @@ public class DispatchServiceImpl implements DispatchService {
     private final com.erp.dao.proc.FrameworkAgreementLineDao agreementLineDao;
     /** 良率冻结挂点（C-4.5-03，5.6 D12 预留由 5.7 add-reporting-management 兑现） */
     private final com.erp.service.mrp.MoFreezeService moFreezeService;
+    /** 外协自动报工闭环（5.10）：收货过账触发 AUTO_OUTSOURCE 报工 + 产出行，收足完成工序 */
+    private final com.erp.dao.mrp.MrpReportingDao reportingDao;
+    private final com.erp.dao.mrp.MrpOutputDao outputDao;
+    /** 甲供在途定额冲减（5.10 task 5.2）：收货过账同事务冲减外协在途，无发料单内部静默跳过 */
+    private final com.erp.service.mrp.OsMaterialService osMaterialService;
 
     public DispatchServiceImpl(MrpDispatchDao dispatchDao, MrpMoDao moDao,
                                MrpMoOpDao moOpDao, MrpWorkCenterDao workCenterDao,
@@ -102,7 +109,10 @@ public class DispatchServiceImpl implements DispatchService {
                                com.erp.service.mrp.CapacityLoadService capacityLoadService,
                                com.erp.dao.proc.FrameworkAgreementDao agreementDao,
                                com.erp.dao.proc.FrameworkAgreementLineDao agreementLineDao,
-                               com.erp.service.mrp.MoFreezeService moFreezeService) {
+                               com.erp.service.mrp.MoFreezeService moFreezeService,
+                               com.erp.dao.mrp.MrpReportingDao reportingDao,
+                               com.erp.dao.mrp.MrpOutputDao outputDao,
+                               com.erp.service.mrp.OsMaterialService osMaterialService) {
         this.dispatchDao = dispatchDao;
         this.moDao = moDao;
         this.moOpDao = moOpDao;
@@ -120,6 +130,9 @@ public class DispatchServiceImpl implements DispatchService {
         this.agreementDao = agreementDao;
         this.agreementLineDao = agreementLineDao;
         this.moFreezeService = moFreezeService;
+        this.reportingDao = reportingDao;
+        this.outputDao = outputDao;
+        this.osMaterialService = osMaterialService;
     }
 
     // ---------- 待派列表 ----------
@@ -139,13 +152,27 @@ public class DispatchServiceImpl implements DispatchService {
 
     @Override
     public List<Map<String, Object>> pending(String keyword) {
+        return pending(keyword, null);
+    }
+
+    @Override
+    public List<Map<String, Object>> pending(String keyword, String moType) {
         requireAny("查看待派工列表");
-        List<MrpMo> mos = moDao.selectList(new LambdaQueryWrapper<MrpMo>()
+        // 类型分池（change add-trial-production-management design D5：moType 空=全部兼容既有链；
+        // TRIAL 池内按试产单创建时间升序——试产不占正式排产优先级，不与 NORMAL 池 priority 混排）
+        boolean trialPool = moType != null && "TRIAL".equalsIgnoreCase(moType.trim());
+        LambdaQueryWrapper<MrpMo> qw = new LambdaQueryWrapper<MrpMo>()
                 .eq(MrpMo::getStatus, MrpMo.ST_RELEASED)
                 .like(keyword != null && !keyword.isEmpty(), MrpMo::getMoNo, keyword)
-                // spec FR-4.5-4-1：priority 升序、planStartDate 升序（D6 客户/金额层无数据）
-                .orderByAsc(MrpMo::getPriority)
-                .orderByAsc(MrpMo::getPlanStartDate));
+                .eq(moType != null && !moType.isBlank(), MrpMo::getMoType,
+                        moType == null ? null : moType.trim().toUpperCase());
+        if (trialPool) {
+            qw.orderByAsc(MrpMo::getCreateDate); // 试产池：按申请（转开）时间升序
+        } else {
+            // spec FR-4.5-4-1：priority 升序、planStartDate 升序（D6 客户/金额层无数据）
+            qw.orderByAsc(MrpMo::getPriority).orderByAsc(MrpMo::getPlanStartDate);
+        }
+        List<MrpMo> mos = moDao.selectList(qw);
         List<Map<String, Object>> out = new ArrayList<>();
         for (MrpMo mo : mos) {
             List<MrpMoOp> ops = moOpDao.selectList(new LambdaQueryWrapper<MrpMoOp>()
@@ -651,9 +678,24 @@ public class DispatchServiceImpl implements DispatchService {
         return true;
     }
 
+    /**
+     * 外协回联 RECEIVED（spec 场景「收货回联」）：外协 PO 的 GR 过账完成时由采购域后置钩子调用，
+     * 按 PO 号回写收货标记并推 OUTSOURCE_PROGRESS 给申请人。非外协/幂等 → 静默 false。
+     */
     @Override
     @Transactional
     public boolean recallReceived(String poNo) {
+        return recallReceived(poNo, null, null);
+    }
+
+    /**
+     * 外协回联 RECEIVED + 自动报工闭环（change add-outsourcing-processing）。
+     * grNo/receivedQty 为空 → 退化为纯回联（兼容旧调用）；非空 → 累计 RECV_QTY 并生成
+     * AUTO_OUTSOURCE 自动报工（幂等锚点 = GR 单号），收足工单计划量自动完成工序。
+     */
+    @Override
+    @Transactional
+    public boolean recallReceived(String poNo, String grNo, BigDecimal receivedQty) {
         if (poNo == null || poNo.isEmpty()) {
             return false;
         }
@@ -663,19 +705,192 @@ public class DispatchServiceImpl implements DispatchService {
         if (d == null || !"1".equals(d.getOutsourceFlag())) {
             return false;
         }
-        if ("1".equals(d.getReceiptFlag())) {
-            return false; // 幂等
+        boolean alreadyReceived = "1".equals(d.getReceiptFlag());
+        if (alreadyReceived && (grNo == null || grNo.isEmpty())) {
+            return false; // 旧签名幂等语义
         }
-        d.setReceiptFlag("1");
+        boolean firstReceipt = !alreadyReceived;
+        if (firstReceipt) {
+            d.setReceiptFlag("1");
+        }
+        boolean autoReported = false;
+        if (grNo != null && !grNo.isEmpty() && receivedQty != null && receivedQty.signum() > 0) {
+            autoReported = createAutoReport(d, grNo, receivedQty);
+            if (autoReported) {
+                // 累计收货量（累加后再判收足，见下）
+                BigDecimal prev = d.getRecvQty() == null ? BigDecimal.ZERO : d.getRecvQty();
+                d.setRecvQty(prev.add(receivedQty));
+            }
+        }
         d.setUpdateBy(SecurityUtils.getCurrentUserId());
         dispatchDao.updateById(d);
-        String applicant = outsourceApplicantOf(d.getId());
-        if (applicant != null) {
-            noticeService.push(null, applicant, "外协已到货",
-                    d.getDispatchNo() + " 的外协物料已收货过账（PO " + poNo.trim()
-                            + "），可安排后续工序/报工", NOTICE_OUTSOURCE_PROGRESS, d.getId() + "#RECEIVED");
+        // 收足判定（RECV_QTY 已累加到新值）
+        if (autoReported) {
+            maybeCompleteOp(d);
+            // 甲供在途定额冲减（task 5.2，spec「收货定额冲减与余料退回」同事务）：
+            // 无发料单/非甲供内部静默跳过，不影响收货主流程
+            osMaterialService.consumeOnReceipt(d.getId(), grNo, receivedQty);
         }
-        log.info("外协回联 RECEIVED {} po={}", d.getDispatchNo(), poNo);
+        // 首次收货推进展通知（部分收货不重复推）
+        if (firstReceipt) {
+            String applicant = outsourceApplicantOf(d.getId());
+            if (applicant != null) {
+                noticeService.push(null, applicant, "外协已到货",
+                        d.getDispatchNo() + " 的外协物料已收货过账（PO " + poNo.trim()
+                                + "），可安排后续工序/报工", NOTICE_OUTSOURCE_PROGRESS, d.getId() + "#RECEIVED");
+            }
+        }
+        log.info("外协回联 RECEIVED {} po={} gr={} auto={}", d.getDispatchNo(), poNo, grNo, autoReported);
+        // 传入 GR 单号时以自动报工结果为返回值（幂等重复 GR → false）；旧签名维持首次 true 语义
+        return (grNo != null && !grNo.isEmpty()) ? autoReported : firstReceipt;
+    }
+
+    /**
+     * 生成 AUTO_OUTSOURCE 自动报工 + 产出行（CONFIRMED 直过——外协工序无内部实绩，
+     * 数量 = 本次收货合格数、工时 = 派工单定额）。幂等锚点 = GR 单号（同 GR 重复过账不双报）。
+     */
+    private boolean createAutoReport(MrpDispatch d, String grNo, BigDecimal qty) {
+        // 幂等：同派工单同 GR 单号已报过 → 跳过
+        Long existing = reportingDao.selectCount(new LambdaQueryWrapper<MrpReporting>()
+                .eq(MrpReporting::getDispatchId, d.getId())
+                .like(MrpReporting::getRptNo, "AO")
+                .eq(MrpReporting::getRemark, "AUTO_OUTSOURCE:" + grNo));
+        if (existing != null && existing > 0) {
+            return false;
+        }
+        String rptNo = nextAutoRptNo();
+        MrpReporting rpt = new MrpReporting();
+        rpt.setRptNo(rptNo);
+        rpt.setDispatchId(d.getId());
+        rpt.setDispatchNo(d.getDispatchNo());
+        rpt.setMoId(d.getMoId());
+        rpt.setMoNo(d.getMoNo());
+        rpt.setOpSeq(d.getOpSeq());
+        rpt.setOpName(d.getOpName());
+        rpt.setWcCode(d.getWcCode());
+        rpt.setMode(MrpReporting.MODE_BATCH);
+        rpt.setStatus(MrpReporting.ST_CONFIRMED);
+        rpt.setStartAt(LocalDateTime.now());
+        rpt.setConfirmAt(LocalDateTime.now());
+        rpt.setConfirmBy("SYSTEM");
+        rpt.setReporter("SYSTEM");
+        rpt.setProdConfirmFlag("0");
+        rpt.setHourAlertFlag("0");
+        rpt.setOverprodFlag("0");
+        // 工时 = 派工单定额（外协无内部实绩）
+        rpt.setRunHours(d.getDurationHours());
+        // 幂等锚点 + 来源标记（前端「外协自动」标签按此识别）
+        rpt.setRemark("AUTO_OUTSOURCE:" + grNo);
+        reportingDao.insert(rpt);
+        // 产出行（合格 = 本次收货数）
+        MrpOutput out = new MrpOutput();
+        out.setRptId(rpt.getId());
+        out.setMoId(d.getMoId());
+        out.setOpSeq(d.getOpSeq());
+        out.setGoodQty(qty);
+        out.setNgQty(BigDecimal.ZERO);
+        out.setOutputAt(LocalDateTime.now());
+        outputDao.insert(out);
+        // 工序状态推进：DISPATCHED/RUNNING → RUNNING（收货即视同开工）
+        moOpDao.update(null, new LambdaUpdateWrapper<MrpMoOp>()
+                .eq(MrpMoOp::getMoId, d.getMoId())
+                .eq(MrpMoOp::getOpSeq, d.getOpSeq())
+                .eq(MrpMoOp::getOpStatus, "DISPATCHED")
+                .set(MrpMoOp::getOpStatus, "RUNNING"));
+        return true;
+    }
+
+    /** 收足判定：RECV_QTY ≥ 工单计划量 → 该工序 DISPATCHED/RUNNING → DONE */
+    private void maybeCompleteOp(MrpDispatch d) {
+        MrpMo mo = moDao.selectById(d.getMoId());
+        if (mo == null || mo.getQty() == null || d.getRecvQty() == null) {
+            return;
+        }
+        if (d.getRecvQty().compareTo(mo.getQty()) >= 0) {
+            moOpDao.update(null, new LambdaUpdateWrapper<MrpMoOp>()
+                    .eq(MrpMoOp::getMoId, d.getMoId())
+                    .eq(MrpMoOp::getOpSeq, d.getOpSeq())
+                    .in(MrpMoOp::getOpStatus, "DISPATCHED", "RUNNING")
+                    .set(MrpMoOp::getOpStatus, "DONE"));
+            log.info("外协工序自动完成 {} op{} recvQty={} planQty={}",
+                    d.getDispatchNo(), d.getOpSeq(), d.getRecvQty(), mo.getQty());
+        }
+    }
+
+    /** AUTO_ 前缀报工单号（与人工 RP 区分，避免同日流水撞号） */
+    private String nextAutoRptNo() {
+        String prefix = "AO" + LocalDate.now().format(NO_FMT);
+        long seq = reportingDao.selectCount(new LambdaQueryWrapper<MrpReporting>()
+                .like(MrpReporting::getRptNo, prefix));
+        return prefix + String.format("%03d", seq + 1);
+    }
+
+    /**
+     * 外协自动报工冲回（spec「红冲同步冲回」）：退货出库（OUT_DONE）时由退货链调用，
+     * 按退货量冲减 RECV_QTY 与对应自动报工产出行；冲回后不再满足收足 → 工序 DONE 回退 RUNNING。
+     * 幂等锚点 = 退货单号（remark 留痕）。非外协/无自动报工 → 静默 false。
+     */
+    @Override
+    @Transactional
+    public boolean reverseAutoReport(String poNo, String returnNo, BigDecimal qty) {
+        if (poNo == null || poNo.isEmpty() || returnNo == null || returnNo.isEmpty()
+                || qty == null || qty.signum() <= 0) {
+            return false;
+        }
+        MrpDispatch d = dispatchDao.selectOne(new LambdaQueryWrapper<MrpDispatch>()
+                .eq(MrpDispatch::getPoNo, poNo.trim())
+                .last("LIMIT 1"));
+        if (d == null || !"1".equals(d.getOutsourceFlag())) {
+            return false;
+        }
+        // 幂等：同退货单已冲回 → 跳过（remark 为 AUTO_OUTSOURCE:xx;REVERSED:yy 追加式，用 like 匹配）
+        Long hit = reportingDao.selectCount(new LambdaQueryWrapper<MrpReporting>()
+                .eq(MrpReporting::getDispatchId, d.getId())
+                .like(MrpReporting::getRptNo, "AO")
+                .like(MrpReporting::getRemark, "REVERSED:" + returnNo));
+        if (hit != null && hit > 0) {
+            return false;
+        }
+        // 找最近一条未冲回的自动报工产出行，按退货量冲减（红字：goodQty 减）
+        List<MrpReporting> autos = reportingDao.selectList(new LambdaQueryWrapper<MrpReporting>()
+                .eq(MrpReporting::getDispatchId, d.getId())
+                .like(MrpReporting::getRptNo, "AO")
+                .likeRight(MrpReporting::getRemark, "AUTO_OUTSOURCE:")
+                .orderByDesc(MrpReporting::getCreateDate));
+        if (autos.isEmpty()) {
+            return false;
+        }
+        MrpReporting latest = autos.get(0);
+        MrpOutput out = outputDao.selectOne(new LambdaQueryWrapper<MrpOutput>()
+                .eq(MrpOutput::getRptId, latest.getId()).last("LIMIT 1"));
+        if (out != null && out.getGoodQty() != null) {
+            // 红冲按量冲减合格产出，下限钳 0（部分退货不得打成负数）；红冲留痕在报工 remark
+            BigDecimal g = out.getGoodQty().subtract(qty);
+            out.setGoodQty(g.signum() < 0 ? BigDecimal.ZERO : g);
+            outputDao.updateById(out);
+        }
+        // RECV_QTY 回拨
+        BigDecimal prev = d.getRecvQty() == null ? BigDecimal.ZERO : d.getRecvQty();
+        BigDecimal next = prev.subtract(qty);
+        if (next.signum() < 0) {
+            next = BigDecimal.ZERO;
+        }
+        d.setRecvQty(next);
+        d.setUpdateBy(SecurityUtils.getCurrentUserId());
+        dispatchDao.updateById(d);
+        // 留痕冲回锚点（写在最新自动报工的 remark 追加，避免覆盖 AUTO 锚）
+        latest.setRemark(latest.getRemark() + ";REVERSED:" + returnNo);
+        reportingDao.updateById(latest);
+        // 冲回后不再收足 → 工序 DONE 回退 RUNNING
+        MrpMo mo = moDao.selectById(d.getMoId());
+        if (mo != null && mo.getQty() != null && next.compareTo(mo.getQty()) < 0) {
+            moOpDao.update(null, new LambdaUpdateWrapper<MrpMoOp>()
+                    .eq(MrpMoOp::getMoId, d.getMoId())
+                    .eq(MrpMoOp::getOpSeq, d.getOpSeq())
+                    .eq(MrpMoOp::getOpStatus, "DONE")
+                    .set(MrpMoOp::getOpStatus, "RUNNING"));
+        }
+        log.info("外协自动报工冲回 {} ret={} qty={} recvQty={}", d.getDispatchNo(), returnNo, qty, next);
         return true;
     }
 
@@ -1045,6 +1260,134 @@ public class DispatchServiceImpl implements DispatchService {
 
     private static BigDecimal nvl(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    // ---------- 5.10.1 外协订单工作台（change add-outsourcing-processing，spec outsourcing-execution） ----------
+
+    @Override
+    public List<Map<String, Object>> workbench(String linkStatus, String supplierCode, String wcCode,
+                                               String keyword) {
+        requireAnyRole("查看外协订单工作台", "ROLE_PLANNER", "ROLE_PLAN_MGR", "ROLE_PURCHASER", "ROLE_ADMIN");
+        LambdaQueryWrapper<MrpDispatch> qw = new LambdaQueryWrapper<MrpDispatch>()
+                .eq(MrpDispatch::getOutsourceFlag, "1")
+                .eq(wcCode != null && !wcCode.isEmpty(), MrpDispatch::getWcCode,
+                        wcCode == null ? null : wcCode.trim())
+                .and(keyword != null && !keyword.isEmpty(), w -> w
+                        .like(MrpDispatch::getDispatchNo, keyword)
+                        .or().like(MrpDispatch::getMoNo, keyword)
+                        .or().like(MrpDispatch::getPoNo, keyword))
+                .orderByAsc(MrpDispatch::getReceiptFlag)      // RECEIVED 最后
+                .orderByAsc(MrpDispatch::getPoNo)             // ORDERED 次之（NULL 最前=PENDING_PR）
+                .orderByDesc(MrpDispatch::getCreateDate);
+        List<MrpDispatch> rows = dispatchDao.selectList(qw);
+        // 工单数量/产成品解析（工作台「数量」= 工单计划量，工序级派工单自身无数量列）
+        Map<String, MrpMo> moById = new HashMap<>();
+        Set<String> moIds = new LinkedHashSet<>();
+        for (MrpDispatch d : rows) {
+            if (d.getMoId() != null) {
+                moIds.add(d.getMoId());
+            }
+        }
+        if (!moIds.isEmpty()) {
+            for (MrpMo mo : moDao.selectBatchIds(moIds)) {
+                moById.put(mo.getId(), mo);
+            }
+        }
+        // 供应商名称解析（WC 关联）：外协 WC → supplierCode → 供应商名
+        Set<String> wcCodes = new LinkedHashSet<>();
+        for (MrpDispatch d : rows) {
+            if (d.getWcCode() != null) {
+                wcCodes.add(d.getWcCode());
+            }
+        }
+        Map<String, String> supplierNameByWc = new HashMap<>();
+        Map<String, String> supplierCodeByWc = new HashMap<>();
+        if (!wcCodes.isEmpty()) {
+            List<MrpWorkCenter> wcs = workCenterDao.selectList(
+                    new LambdaQueryWrapper<MrpWorkCenter>().in(MrpWorkCenter::getWcCode, wcCodes));
+            Set<String> supCodes = new LinkedHashSet<>();
+            for (MrpWorkCenter wc : wcs) {
+                if (wc.getSupplierCode() != null && !wc.getSupplierCode().isEmpty()) {
+                    supplierCodeByWc.put(wc.getWcCode(), wc.getSupplierCode());
+                    supCodes.add(wc.getSupplierCode());
+                }
+            }
+            if (!supCodes.isEmpty()) {
+                List<MdmSupplier> sups = supplierDao.selectList(
+                        new LambdaQueryWrapper<MdmSupplier>().in(MdmSupplier::getSupplierCode, supCodes));
+                for (MdmSupplier s : sups) {
+                    supplierNameByWc.put(s.getSupplierCode(), s.getSupplierName());
+                }
+            }
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (MrpDispatch d : rows) {
+            String supCode = supplierCodeByWc.get(d.getWcCode());
+            if (supplierCode != null && !supplierCode.isEmpty()
+                    && !supplierCode.equals(supCode)) {
+                continue; // 供应商筛选在 WC 关联解析后应用
+            }
+            String link = d.getReceiptFlag() != null && "1".equals(d.getReceiptFlag()) ? "RECEIVED"
+                    : (d.getPoNo() != null && !d.getPoNo().isEmpty() ? "ORDERED" : "PENDING_PR");
+            if (linkStatus != null && !linkStatus.isEmpty() && !linkStatus.equals(link)) {
+                continue;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", d.getId());
+            m.put("dispatchNo", d.getDispatchNo());
+            m.put("moNo", d.getMoNo());
+            m.put("opSeq", d.getOpSeq());
+            m.put("opName", d.getOpName());
+            m.put("wcCode", d.getWcCode());
+            m.put("wcName", d.getWcName());
+            MrpMo mo = d.getMoId() == null ? null : moById.get(d.getMoId());
+            m.put("qty", mo == null || mo.getQty() == null ? BigDecimal.ZERO : mo.getQty());
+            m.put("productCode", mo == null ? null : mo.getProductCode());
+            m.put("productName", mo == null ? null : mo.getProductName());
+            m.put("durationHours", d.getDurationHours());
+            m.put("status", d.getStatus());
+            m.put("linkStatus", link);
+            m.put("prNo", d.getPrNo());
+            m.put("poNo", d.getPoNo());
+            m.put("recvQty", d.getRecvQty());
+            m.put("supplierCode", supCode);
+            m.put("supplierName", supCode == null ? null : supplierNameByWc.get(supCode));
+            m.put("osDueDate", d.getOsDueDate());
+            m.put("osRemark", d.getOsRemark());
+            m.put("osSupplyType", d.getOsSupplyType());
+            out.add(m);
+        }
+        return out;
+    }
+
+    @Override
+    @Transactional
+    public MrpDispatch maintainOsFields(String id, String osDueDate, String osRemark, String osSupplyType) {
+        requireAnyRole("维护外协字段", "ROLE_PLANNER", "ROLE_PLAN_MGR", "ROLE_PURCHASER", "ROLE_ADMIN");
+        MrpDispatch d = dispatchDao.selectById(id);
+        if (d == null) {
+            throw new ServiceException(404, "派工单不存在：" + id);
+        }
+        if (!"1".equals(d.getOutsourceFlag())) {
+            throw new ServiceException(422, "仅外协派工单可维护外协字段（spec outsourcing-execution）");
+        }
+        if (osSupplyType != null && !osSupplyType.isEmpty()
+                && !"SUPPLIER_BUY".equals(osSupplyType) && !"COMPANY_SUPPLY".equals(osSupplyType)) {
+            throw new ServiceException(422, "供料方式仅支持 SUPPLIER_BUY / COMPANY_SUPPLY");
+        }
+        if (osDueDate != null && !osDueDate.isEmpty()) {
+            d.setOsDueDate(LocalDate.parse(osDueDate));
+        }
+        if (osRemark != null) {
+            d.setOsRemark(osRemark);
+        }
+        if (osSupplyType != null && !osSupplyType.isEmpty()) {
+            d.setOsSupplyType(osSupplyType);
+        }
+        d.setUpdateBy(SecurityUtils.getCurrentUserId());
+        dispatchDao.updateById(d);
+        log.info("外协字段维护 {} due={} supply={}", d.getDispatchNo(), osDueDate, osSupplyType);
+        return d;
     }
 
     // ---------- 权限 ----------

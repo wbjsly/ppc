@@ -126,8 +126,15 @@ const PERM = {
   reportEntry: 'ROLE_SHOP_FLOOR,ROLE_ADMIN',
   // M5-7-2 报工管理：计划两方（记录/冲销/完工/预警），操作工不参与管理动作
   reportAdmin: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-8-1 返工工单：计划两方（建单/路线/转在制/进度），质量侧不建单（change add-rework-management）
+  reworkEntry: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-8-2 返修处理：质量两方+管理员+计划员只读（复检/审批/报废/入库执行侧）
+  reworkAdmin: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN,ROLE_PLANNER',
   // 16.11 工作日历：管理员维护、计划员只读（capacity-load 日历菜单权限）
-  calendar: 'ROLE_ADMIN,ROLE_PLANNER'
+  calendar: 'ROLE_ADMIN,ROLE_PLANNER',
+  // M5-9 试产管理 5.9.1~5.9.3：计划两方 + 工艺两方 + 项目经理 + 管理员
+  // 三叶为同一阶段视图按 TRIAL_STAGE 过滤（change add-trial-production-management，spec trial-order 菜单需求/D9）
+  trial: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN'
 }
 const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
 const EXTRA_PERM = {
@@ -202,6 +209,24 @@ const EXTRA_PERM = {
   ...leaf(['M5-7'], 'ROLE_SHOP_FLOOR,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'),
   ...leaf(['M5-7-1'], PERM.reportEntry),
   ...leaf(['M5-7-2'], PERM.reportAdmin),
+  // M5-8 返工返修 5.8.1/5.8.2（change add-rework-management）：按使用者切两半
+  // 5.8.1 返工工单=计划侧；5.8.2 返修处理=质量侧（计划员只读）；父节点 M5-8 取两子并集防孤儿
+  ...leaf(['M5-8'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'),
+  ...leaf(['M5-8-1'], PERM.reworkEntry),
+  ...leaf(['M5-8-2'], PERM.reworkAdmin),
+  // M5-9 试产管理 5.9.1~5.9.3（change add-trial-production-management）：三叶同一阶段视图按 TRIAL_STAGE 过滤
+  // 权限相同（计划两方+工艺两方+PM+管理员）；父节点 M5-9 与子同权防孤儿
+  ...leaf(['M5-9', 'M5-9-1', 'M5-9-2', 'M5-9-3'], PERM.trial),
+  // M5-10 外协加工 5.10.1~5.10.4（change add-outsourcing-processing）：权限两条线
+  // 5.10.1/3/4=计划采购（订单/发料/对账），5.10.2=质量（专检）；父节点取子超集防孤儿
+  ...leaf(['M5-10'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN,ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'),
+  ...leaf(['M5-10-1', 'M5-10-3', 'M5-10-4'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN'),
+  ...leaf(['M5-10-2'], 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN'),
+  // M5-11 成本归集 5.11.1~5.11.4（change add-cost-aggregation）：生产成本会计全权 + 计划线只读
+  // 5.11.4 完工凭证加财务只读（spec completion-cost-voucher）；父节点 M5-11 取子超集防孤儿
+  ...leaf(['M5-11'], 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-11-1', 'M5-11-2', 'M5-11-3'], 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-11-4'], 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN'),
   // 16.11 工作日历 16.11.1~16.11.2（change add-dispatch-management；16 域默认 ADMIN，此映射加计划员只读）
   // 父节点 M16 取并集（ADMIN + PLANNER 只读），否则计划员视图下 16.11 被提升为顶级孤儿（M3 域先例）
   ...leaf(['M16'], 'ROLE_ADMIN,ROLE_PLANNER'),

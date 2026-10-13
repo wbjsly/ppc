@@ -34,6 +34,12 @@ public interface StockPostingEngine {
         public String bizDocNo;
         public String remark;
         public List<Line> lines;
+        /**
+         * 试产放行上下文（change add-trial-production-management，design D8）：
+         * 目标列为 AVAILABLE 且批次存在未放行试产检验批时，携带已放行检验批 ID 方可过账
+         * （放行回调唯一合法路径；空 = 按 C-4.5-14 后半阻断）。
+         */
+        public String releasedLotId;
 
         public static Request of(String typeCode, String bizDocType, String bizDocNo, List<Line> lines) {
             Request r = new Request();
@@ -57,6 +63,8 @@ public interface StockPostingEngine {
         public BigDecimal qty;
         /** IN：true 入让步锁定列 QC_QTY（否则 AVAILABLE_QTY） */
         public boolean intoQc;
+        /** IN：true 入外协在途列 OS_QTY（甲供发料出库，迁移 126；与 intoQc 互斥，ownership 留厂内） */
+        public boolean intoOs;
         /** OUT：true 先核销 QC_QTY 再扣 AVAILABLE（退货链 qcFirst） */
         public boolean qcFirst;
         /** 序列号清单（判重/可用性校验） */

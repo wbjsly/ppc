@@ -164,7 +164,13 @@ public class SysParamServiceImpl implements SysParamService {
             return "[" + entry + "]";
         }
         String body = h.substring(1, h.length() - 1).trim();
-        return body.isEmpty() ? "[" + entry + "]" : "[" + body + "," + entry + "]";
+        String next = body.isEmpty() ? "[" + entry + "]" : "[" + body + "," + entry + "]";
+        // 历史封顶：HISTORY_JSON 为 TEXT（64KB），无限追加曾把 FAI_ENFORCE 撑到
+        // Data too long（5.11 回归教训）。超过 24KB 即重置为仅最新条目，保住可读性。
+        if (next.length() > 24576) {
+            return "[" + entry + "]";
+        }
+        return next;
     }
 
     private String escape(String s) {
