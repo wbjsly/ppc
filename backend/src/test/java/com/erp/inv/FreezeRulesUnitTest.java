@@ -71,11 +71,15 @@ class FreezeRulesUnitTest {
         when(sysParamService.getInt(eq("FREEZE_IMPACT_RATIO"), anyInt())).thenReturn(50);
         service = new FreezeServiceImpl(freezeDao, stockDao, engine, reservationService,
                 reservationDao, sysParamService,
-                mock(com.erp.dao.inv.TraceOrderDao.class), mock(com.erp.dao.inv.TraceFlowDao.class));
+                mock(com.erp.dao.inv.TraceOrderDao.class), mock(com.erp.dao.inv.TraceFlowDao.class),
+                new com.erp.service.inv.FreezeImpactBuilder(reservationDao, poLineDao, poDao,
+                        new com.fasterxml.jackson.databind.ObjectMapper()));
         var pauseService = mock(com.erp.service.inv.FreezePauseService.class);
         callback = new FreezeCallback(freezeDao, stockDao, reservationDao,
                 reservationService, noticeService, poLineDao, poDao, pauseService,
-                new com.fasterxml.jackson.databind.ObjectMapper());
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                new com.erp.service.inv.FreezeImpactBuilder(reservationDao, poLineDao, poDao,
+                        new com.fasterxml.jackson.databind.ObjectMapper()));
         // 影响面快照 PO 查询：单测无 PO 夹具，返回空表即 pos=[]
         when(poLineDao.selectList(any())).thenReturn(java.util.Collections.emptyList());
         when(poDao.selectBatchIds(any())).thenReturn(java.util.Collections.emptyList());

@@ -1579,6 +1579,8 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         }
         // OQC 完工批放行联动 WIP_IN 入库 + 合格证（rework-inspection-tasks design D1/D6，失败整体回滚）
         releaseFgLinked(lot);
+        // 放行通知（rework-qualified-release，spec 合格放行通知）：同事务发送，失败降级不回滚
+        sendReleaseNotice(lot);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lot", lot);
         out.put("releasedBy", lot.getReleasedBy());
@@ -1587,12 +1589,18 @@ public class InspectionLotServiceImpl implements InspectionLotService {
     }
 
     @Override
-    public Page<Map<String, Object>> board(long current, long size, String status) {
+    public Page<Map<String, Object>> board(long current, long size, String status,
+                                           Boolean samplingDone, Boolean releaseMode) {
         LambdaQueryWrapper<InspectionLot> qw = new LambdaQueryWrapper<InspectionLot>()
                 .eq(hasText(status), InspectionLot::getStatus, status)
                 .in(InspectionLot::getStatus,
                         hasText(status) ? List.of(status)
                                 : List.of(ST_BLOCKED, ST_PENDING, "INPUTTING", "REVIEWING"))
+                // 6.3.1 抽样模式：false = 仅未抽样在途批（SAMPLED_FLAG IS NULL）
+                .isNull(Boolean.FALSE.equals(samplingDone), InspectionLot::getSampledFlag)
+                // 6.4.1 放行模式：true = 仅待放行批（判定合格待确认，confirmRelease 合法入口态）
+                .eq(Boolean.TRUE.equals(releaseMode), InspectionLot::getResult, "PASS")
+                .eq(Boolean.TRUE.equals(releaseMode), InspectionLot::getStatus, "INPUTTING")
                 // spec 紧急批次优先级：紧急优先、其次超时、再按创建时间
                 .orderByDesc(InspectionLot::getPriority)
                 .orderByDesc(InspectionLot::getOverdueFlag)
@@ -1622,6 +1630,7 @@ public class InspectionLotServiceImpl implements InspectionLotService {
             m.put("exemptFlag", l.getExemptFlag());
             m.put("dueTime", l.getDueTime());
             m.put("overdueFlag", l.getOverdueFlag());
+            m.put("sampledFlag", l.getSampledFlag());
             m.put("priority", l.getPriority());
             m.put("inspectorId", l.getInspectorId());
             m.put("inspectorName", l.getInspectorName());
@@ -1669,8 +1678,43 @@ public class InspectionLotServiceImpl implements InspectionLotService {
         throw new ServiceException(403, "当前角色无权" + action);
     }
 
-    private void setLineQc(InspectionLot lot, String qcStatus) {
-        if (lot.getGrLineId() == null) {
+    /**
+     * 放行通知（FR-4.12-3-1 ①③，spec 合格放行通知）：
+     * IQC → 仓库上架待办；OQC → 仓库+销售跟单可发货（携带合格证号）；IPQC 不发（偏差 D-3）。
+     * 同事务发送；异常降级为告警日志，不回滚放行（spec：通知失败不回滚放行）。
+     */
+    private void sendReleaseNotice(InspectionLot lot) {
+        try {
+            String base = "批号 " + lot.getLotNo() + "（" + lot.getItemCode() + " " + lot.getItemName()
+                    + "，数量 " + lot.getLotQty() + "）已检验合格放行，放行人 " + lot.getReleasedBy();
+            if ("IQC".equals(lot.getLotType())) {
+                noticeService.push("ROLE_WAREHOUSE", null,
+                        "IQC 放行待上架：" + lot.getLotNo(),
+                        base + "，请安排入库上架", "QMS_RELEASE", lot.getId());
+            } else if ("OQC".equals(lot.getLotType())) {
+                String certNo = "";
+                try {
+                    com.erp.entity.qms.Certificate c = certificateOf(lot.getId());
+                    if (c != null && hasText(c.getCertNo())) {
+                        certNo = "，合格证号 " + c.getCertNo();
+                    }
+                } catch (Exception ignore) {
+                    // 合格证查询失败不阻断通知
+                }
+                noticeService.push("ROLE_WAREHOUSE", null,
+                        "OQC 放行可发货：" + lot.getLotNo(),
+                        base + certNo + "，可安排发货出库", "QMS_RELEASE", lot.getId());
+                noticeService.push("ROLE_SALES", null,
+                        "OQC 放行可发货：" + lot.getLotNo(),
+                        base + certNo + "，客户订单可安排发货", "QMS_RELEASE", lot.getId());
+            }
+            // IPQC 不发（偏差 D-3：报工阻断由未决批断言隐式解除）
+        } catch (Exception e) {
+            log.warn("放行通知发送失败（降级不回滚，lot={}）：{}", lot.getLotNo(), e.getMessage());
+        }
+    }
+
+    private void setLineQc(InspectionLot lot, String qcStatus) {        if (lot.getGrLineId() == null) {
             return;
         }
         GoodsReceiptLine line = lineDao.selectById(lot.getGrLineId());

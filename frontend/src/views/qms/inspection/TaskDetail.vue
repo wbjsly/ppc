@@ -35,6 +35,33 @@
           <el-descriptions-item label="抽样依据" :span="4">{{ lot.sampleBasis }}</el-descriptions-item>
         </el-descriptions>
 
+        <!-- 抽样执行记录（6.3.1，可选留痕） -->
+        <el-card shadow="never" style="margin-bottom: 12px;">
+          <template #header>
+            <div class="card-header">
+              <span>抽样执行记录</span>
+              <el-button v-if="editable" size="small" type="success" @click="samplingVisible = true">记录抽样</el-button>
+            </div>
+          </template>
+          <el-table v-if="samplingRecords.length" :data="samplingRecords" size="small" border>
+            <el-table-column prop="seq" label="#" width="50" />
+            <el-table-column label="方法" width="120">
+              <template #default="{ row }">{{ methodName(row.sampleMethod) }}</template>
+            </el-table-column>
+            <el-table-column prop="actualSampleQty" label="实际数量" width="90" align="right" />
+            <el-table-column label="触发原因" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.triggerReason === 'INITIAL' ? 'info' : 'warning'">
+                  {{ reasonName(row.triggerReason) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="samplerName" label="抽样人" width="100" />
+            <el-table-column prop="sampledTime" label="抽样时间" width="160" />
+            <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+          </el-table>
+          <span v-else style="color: #909399; font-size: 12px;">未记录抽样（可选留痕，不阻断检验）</span>
+        </el-card>
+
         <!-- 分派历史时间线 -->
         <el-collapse style="margin-bottom: 12px;">
           <el-collapse-item title="分派/改派历史" name="assign">
@@ -149,6 +176,9 @@
         <el-button type="success" :loading="busy" @click="submitReview(true)">复核通过</el-button>
       </template>
     </el-dialog>
+
+    <!-- 抽样记录弹窗（6.3.1，与看板同一组件） -->
+    <SamplingDialog v-model="samplingVisible" :lot="lot" @saved="load" />
   </div>
 </template>
 
@@ -160,6 +190,7 @@ import { useUserStore } from '@/store/user'
 import {
   getLotDetailApi, inputLotApi, judgeLotApi, reviewLotApi, releaseLotApi, getCertificateApi
 } from '@/api/qms/inspection'
+import SamplingDialog from './components/SamplingDialog.vue'
 
 const route = useRoute()
 const userStore = useUserStore()
@@ -177,6 +208,16 @@ const abnormal = ref([])
 const cert = ref(null)
 const reviewVisible = ref(false)
 const reviewOpinion = ref('')
+// 抽样执行记录（6.3.1，可选留痕）
+const samplingRecords = ref([])
+const samplingVisible = ref(false)
+
+function methodName(m) {
+  return { RANDOM: '随机抽样', NINE_POINT: '九点取样', FULL: '逐件全检', OTHER: '其他' }[m] || m
+}
+function reasonName(r) {
+  return { INITIAL: '首次', ESCALATE: '加大', RESAMPLE: '补抽' }[r] || r
+}
 
 const editable = computed(() => {
   const s = lot.value?.status
@@ -226,6 +267,7 @@ async function load() {
       instrumentCode: i.instrumentCode || ''
     }))
     abnormal.value = []
+    samplingRecords.value = res.data?.samplingRecords || []
     // 合格证（放行后可查）
     try {
       const c = await getCertificateApi(id)

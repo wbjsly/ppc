@@ -48,6 +48,9 @@ public class TraceOrder extends BaseEntity {
     /** 缺陷描述（发起必填） */
     private String defectReason;
 
+    /** 来源 NCR ID（漏检召回评估入口创建，rework-ncr-control D5；常规发起为空） */
+    private String sourceNcrId;
+
     private String status;
 
     /** 双段：①五类流向快照 ②结案报告（召回率+未召回明细） */

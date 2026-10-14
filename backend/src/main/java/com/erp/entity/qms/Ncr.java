@@ -186,8 +186,70 @@ public class Ncr extends BaseEntity {
     @TableField("REF_ID")
     private String refId;
 
+    /** 前序 NCR ID（二次不合格关联，复检仍不合格上调——rework-ncr-control D4；首单为空） */
+    @TableField("REF_NCR_ID")
+    private String refNcrId;
+
     /** 备注 */
     @TableField("REMARK")
     private String remark;
+
+    // ========== 6.5 标识隔离与处置跟踪（change rework-ncr-identification-disposition） ==========
+
+    /** 1=已隔离确认（6.5.1，隔离确认不改状态机） */
+    @TableField("ISOLATED_FLAG")
+    private String isolatedFlag;
+
+    /** 隔离区货位 */
+    @TableField("ISOLATE_BIN")
+    private String isolateBin;
+
+    /** 贴标人（隔离确认人） */
+    @TableField("ISOLATED_BY")
+    private String isolatedBy;
+
+    /** 隔离确认时间 */
+    @TableField("ISOLATED_TIME")
+    private LocalDateTime isolatedTime;
+
+    /** 挑选总数量（结构化，spec 处置执行确认） */
+    @TableField("SORT_TOTAL_QTY")
+    private BigDecimal sortTotalQty;
+
+    /** 挑选合格数量 */
+    @TableField("SORT_OK_QTY")
+    private BigDecimal sortOkQty;
+
+    /** 挑选不合格数量 */
+    @TableField("SORT_NG_QTY")
+    private BigDecimal sortNgQty;
+
+    /** 挑选工时（小时） */
+    @TableField("SORT_HOURS")
+    private BigDecimal sortHours;
+
+    /** 返工工序步骤（结构化） */
+    @TableField("REWORK_STEPS")
+    private String reworkSteps;
+
+    /** 返工关键工艺参数（结构化） */
+    @TableField("REWORK_PARAMS")
+    private String reworkParams;
+
+    /** 返工后检验要求（至少含原检验标准全部 CTQ 项） */
+    @TableField("REWORK_CHECK_REQ")
+    private String reworkCheckReq;
+
+    /** 1=已勾选确认返工检验标准含原 CTQ 全部项 */
+    @TableField("REWORK_CTQ_CONFIRMED")
+    private String reworkCtqConfirmed;
+
+    /** 处置成本（COPQ 内部失败归集额，可选） */
+    @TableField("DISPOSE_COST_AMOUNT")
+    private BigDecimal disposeCostAmount;
+
+    /** 1=CTQ 处置待质量经理审批（阶段标识，非状态机新状态，design D2） */
+    @TableField("DISPO_PENDING_FLAG")
+    private String dispoPendingFlag;
 
 }

@@ -28,8 +28,11 @@ public class NcrSweepScheduler {
         try {
             int review = ncrService.sweepReviewTimeouts();
             int overdue = ncrService.sweepOverdueEscalation();
-            if (review > 0 || overdue > 0) {
-                log.info("NCR sweep done: reviewEscalated={}, overdueHandled={}", review, overdue);
+            // 重复 NCR 升级链（rework-ncr-control 4.2，spec C-4.12-16 三维度 ≥3 强制 CAPA 待办）
+            int repeat = ncrService.sweepRepeatNcrCapaTodos();
+            if (review > 0 || overdue > 0 || repeat > 0) {
+                log.info("NCR sweep done: reviewEscalated={}, overdueHandled={}, repeatCapaTodos={}",
+                        review, overdue, repeat);
             }
         } catch (Exception e) {
             log.warn("NCR sweep failed (will retry next tick): {}", e.getMessage());

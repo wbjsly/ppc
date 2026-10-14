@@ -88,6 +88,11 @@ public class SecurityConfig {
                 // 质量协同（add-quality-collaboration）：六角色写权限。必须先于下方 /api/proc/** 的 ADMIN 规则，
                 // 否则 POST /api/proc/returns/** 会把仓库/质量角色先拦成 403。
                 // 细粒度（如双签节点必须由 ROLE_REQUIRED 角色签）在 ApprovalServiceImpl 内二次校验。
+                // 抽样执行记录（rework-sampling-inspection）：质检员/质量工程师/质量经理可写
+                .antMatchers(HttpMethod.POST, "/api/qms/lots/*/sampling-records")
+                .hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.GET, "/api/qms/lots/history").hasAnyRole("ADMIN", "INSPECTOR",
+                        "QUALITY_ENG", "QUALITY_MGR", "QUALITY_DIRECTOR")
                 .antMatchers(HttpMethod.POST, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
                 .antMatchers(HttpMethod.PUT, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
                 .antMatchers(HttpMethod.POST, "/api/qms/standards/**").hasAnyRole("ADMIN", "QUALITY_ENG")
@@ -96,6 +101,10 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/qms/agreements/**").hasAnyRole("ADMIN", "QUALITY_ENG",
                         "QUALITY_MGR")
                 .antMatchers(HttpMethod.POST, "/api/qms/exempts/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                // 6.5.1 隔离确认（rework-ncr-identification-disposition）：质检员贴标作业，
+                // 须先于下方 ncrs 通用写规则放行 INSPECTOR（细粒度在服务层 requireRole 二次校验）
+                .antMatchers(HttpMethod.POST, "/api/qms/ncrs/*/isolate")
+                .hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR")
                 .antMatchers(HttpMethod.POST, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
                 .antMatchers(HttpMethod.PUT, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
                 // 让步接收：申请/提交（ENG/MGR）+ 核销放行（质检员/仓库）；双签签署走 approvals 规则

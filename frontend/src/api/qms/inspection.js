@@ -117,3 +117,18 @@ export function logComplaintApi(id, reason) {
 export function clearStreakApi(id, reason) {
   return request.post(`/qms/agreements/${id}/clear`, { reason })
 }
+
+// ================= 抽样执行记录（6.3.1，rework-sampling-inspection） =================
+
+export function getSamplingRecordsApi(lotId) {
+  return request.get(`/qms/lots/${lotId}/sampling-records`)
+}
+
+export function createSamplingRecordApi(lotId, data) {
+  return request.post(`/qms/lots/${lotId}/sampling-records`, data)
+}
+
+/** 检验记录全状态历史（6.3.2，与在途 /board 分离） */
+export function getLotHistoryApi(params) {
+  return request.get('/qms/lots/history', { params })
+}

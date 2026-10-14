@@ -25,8 +25,41 @@ ITEM=SMKI001; ITEM2=SMKI002
 
 echo "== 0. 前置清理（检验冒烟族 SMKI，可重跑）=="
 SQL "
-DELETE FROM erp_inv_transaction WHERE BIZ_DOC_TYPE='MO_FINISH' AND BIZ_DOC_NO LIKE 'IL-SMKI%';
+DELETE FROM erp_inv_transaction WHERE BIZ_DOC_TYPE='MO_FINISH';
+DELETE FROM erp_qms_certificate WHERE ITEM_CODE LIKE 'SMKI%' OR LOT_NO LIKE 'IL-SMKI%';
 DELETE FROM erp_qms_certificate WHERE LOT_NO LIKE 'IL-SMKI%';
+DELETE FROM erp_qms_concession_writeoff WHERE CONCESSION_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_concession WHERE ITEM_CODE LIKE 'SMKI%') t7);
+DELETE FROM erp_qms_concession WHERE ITEM_CODE LIKE 'SMKI%';
+DELETE FROM erp_inv_freeze WHERE ITEM_CODE LIKE 'SMKI%' AND SOURCE='NCR';
+DELETE FROM erp_inv_stock WHERE ID='stk-smki-ncr';
+DELETE FROM erp_inv_stock WHERE ID='stk-smki-ctq';
+-- CTQ 处置审批与 COPQ 清理须在 ncr 行删除之前（按 BIZ_ID/SOURCE_ID 关联）
+DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID
+ WHERE a.BIZ_TYPE='NcrDisposition' AND a.BIZ_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_ncr WHERE ITEM_CODE LIKE 'SMKI%') t9);
+DELETE FROM erp_sys_approval WHERE BIZ_TYPE='NcrDisposition' AND BIZ_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_ncr WHERE ITEM_CODE LIKE 'SMKI%') t10);
+DELETE FROM erp_qms_copq_entry WHERE SOURCE_TYPE='NCR' AND SOURCE_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_ncr WHERE ITEM_CODE LIKE 'SMKI%') t11);
+DELETE FROM erp_qms_ncr_log WHERE NCR_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_ncr WHERE ITEM_CODE LIKE 'SMKI%') t8);
+DELETE FROM erp_qms_ncr WHERE ITEM_CODE LIKE 'SMKI%';
+DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID
+ WHERE a.BIZ_TYPE='Concession' AND a.TITLE LIKE '%SMKI%';
+DELETE FROM erp_sys_approval WHERE BIZ_TYPE='Concession' AND TITLE LIKE '%SMKI%';
+-- 20 重复升级：CAPA 待办通知（段 0 清，防跨轮幂等锚短路）
+DELETE FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_REPEAT' AND BIZ_ID LIKE 'CAPA_TODO:%';
+-- 21 召回评估：追溯单三表 + 批次台账（按批次锚，须在 lot/ncr 删除前无依赖问题）
+DELETE FROM erp_inv_trace_flow WHERE TRACE_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_inv_trace_order WHERE BATCH_NO IN ('BATCH-SMK21')) t14);
+DELETE FROM erp_inv_trace_log WHERE TRACE_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_inv_trace_order WHERE BATCH_NO IN ('BATCH-SMK21')) t15);
+DELETE FROM erp_inv_trace_order WHERE BATCH_NO IN ('BATCH-SMK21');
+DELETE FROM erp_inv_batch WHERE BATCH_NO IN ('BATCH-SMK21','BATCH-SMK21B','BATCH-SMK20');
+DELETE FROM erp_qms_sampling_record WHERE LOT_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_inspection_lot WHERE ITEM_CODE LIKE 'SMKI%') t);
+UPDATE erp_qms_inspection_lot SET SAMPLED_FLAG=NULL WHERE ITEM_CODE LIKE 'SMKI%';
 DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID
  WHERE a.BIZ_TYPE IN ('Exempt') AND a.TITLE LIKE '%SMKI%';
 DELETE FROM erp_sys_approval WHERE BIZ_TYPE='Exempt' AND TITLE LIKE '%SMKI%';
@@ -266,7 +299,384 @@ EQ "计划线 POST /qms/lots 403" "$(HTTP -X POST -H "$(A $TPLAN)" -H 'Content-T
 EQ "计划线 POST /qms/agreements 403" "$(HTTP -X POST -H "$(A $TPLAN)" -H 'Content-Type: application/json' -d '{}' $B/api/qms/agreements)" "403"
 EQ "计划线 GET board 200" "$(HTTP -H "$(A $TPLAN)" "$B/api/qms/lots/board?current=1&size=5")" "200"
 
+echo "== 10. 抽样执行记录（6.3.1，首次 + 加大留痕 + FLAG）=="
+# LOT1 已放行；补录抽样（可选留痕，不影响既有状态）
+SR1=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"sampleMethod":"RANDOM","triggerReason":"INITIAL","actualSampleQty":20,"remark":"冒烟首次抽样"}' \
+  $B/api/qms/lots/$LOT1_ID/sampling-records | J "d['data']['seq']")
+EQ "首次抽样 seq=1" "$SR1" "1"
+FLAG1=$(SQL "SELECT SAMPLED_FLAG FROM erp_qms_inspection_lot WHERE ID='$LOT1_ID'")
+EQ "SAMPLED_FLAG 置位" "$FLAG1" "1"
+SR2=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"sampleMethod":"NINE_POINT","triggerReason":"ESCALATE","actualSampleQty":40,"remark":"冒烟加大抽样"}' \
+  $B/api/qms/lots/$LOT1_ID/sampling-records | J "d['data']['seq']")
+EQ "加大抽样 seq=2（不覆盖）" "$SR2" "2"
+SR_CNT=$(C -H "$(A $TQC)" $B/api/qms/lots/$LOT1_ID/sampling-records | J "len(d['data'])")
+EQ "两条记录并存" "$SR_CNT" "2"
+SR_FIRST=$(C -H "$(A $TQC)" $B/api/qms/lots/$LOT1_ID/sampling-records | J "float(d['data'][0]['actualSampleQty'])")
+EQ "首次数量未被覆盖" "$SR_FIRST" "20.0"
+# 校验 422
+SR_BAD=$(BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"sampleMethod":"BAD","triggerReason":"INITIAL","actualSampleQty":5}' \
+  $B/api/qms/lots/$LOT1_ID/sampling-records)
+EQ "非法方法 422" "$SR_BAD" "422"
+SR_BAD2=$(BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"sampleMethod":"RANDOM","triggerReason":"INITIAL","actualSampleQty":0}' \
+  $B/api/qms/lots/$LOT1_ID/sampling-records)
+EQ "数量 0 → 422" "$SR_BAD2" "422"
+
+echo "== 11. 检验记录全状态历史（6.3.2）=="
+H_ALL=$(C -H "$(A $TQC)" "$B/api/qms/lots/history?current=1&size=100" | J "len([r for r in d['data']['records'] if r['lotType'] in ('IQC','IPQC','OQC')])")
+[ "${H_ALL:-0}" -ge 2 ] && ok "全状态可查（含已放行，$H_ALL 条）" || bad "历史查询为空"
+H_REL=$(C -H "$(A $TQC)" "$B/api/qms/lots/history?current=1&size=100&status=RELEASED" | J "len([r for r in d['data']['records'] if r['status']=='RELEASED'])")
+[ "${H_REL:-0}" -ge 1 ] && ok "RELEASED 可筛（$H_REL 条）" || bad "RELEASED 筛选为空"
+H_PASS=$(C -H "$(A $TQC)" "$B/api/qms/lots/history?current=1&size=100&result=PASS" | J "len([r for r in d['data']['records'] if r['result']=='PASS'])")
+[ "${H_PASS:-0}" -ge 1 ] && ok "结果=PASS 筛选（$H_PASS 条）" || bad "PASS 筛选为空"
+H_MISS=$(C -H "$(A $TQC)" "$B/api/qms/lots/history?current=1&size=10&keyword=NOBODY-LOT" | J "d['data']['total']")
+EQ "关键字不命中 0" "$H_MISS" "0"
+H_DATE=$(C -H "$(A $TQC)" "$B/api/qms/lots/history?current=1&size=100&dateFrom=$(date -v-1d +%Y-%m-%d)&dateTo=$(date +%Y-%m-%d)" | J "d['data']['total']")
+[ "${H_DATE:-0}" -ge 1 ] && ok "日期区间筛选（$H_DATE 条）" || bad "日期筛选为空"
+
+echo "== 12. 6.3.1 抽样模式（samplingDone=false 过滤）=="
+B_UNSAMPLED=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100&samplingDone=false" \
+  | J "len([r for r in d['data']['records'] if r.get('sampledFlag')=='1'])")
+EQ "仅未抽样：无已抽样批混入" "$B_UNSAMPLED" "0"
+B_ALL=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100" \
+  | J "len([r for r in d['data']['records'] if r.get('sampledFlag')=='1'])")
+[ "${B_ALL:-0}" -ge 0 ] && ok "不传 samplingDone 行为不变（已抽样 $B_ALL 条可出现）" || bad "board 查询失败"
+
+echo "== 13. 抽样记录权限（401 / 403）=="
+EQ "POST sampling-records 401" "$(HTTP -X POST $B/api/qms/lots/$LOT1_ID/sampling-records)" "401"
+EQ "GET history 401" "$(HTTP $B/api/qms/lots/history)" "401"
+EQ "计划线 POST sampling-records 403" "$(HTTP -X POST -H "$(A $TPLAN)" -H 'Content-Type: application/json' \
+  -d '{"sampleMethod":"RANDOM","triggerReason":"INITIAL","actualSampleQty":5}' \
+  $B/api/qms/lots/$LOT1_ID/sampling-records)" "403"
+EQ "计划线 GET history 403" "$(HTTP -H "$(A $TPLAN)" $B/api/qms/lots/history)" "403"
+
 echo ""
 echo "=============================="
+echo "== 14. 放行通知（IQC→仓库 / OQC→仓库+跟单，rework-qualified-release）=="
+# 第 4 段 IQC 放行 LOT1、第 5 段 OQC 放行 LOT2 → 本段查通知落表
+N_IQC=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_RELEASE' AND BIZ_ID='$LOT1_ID' AND TARGET_ROLE='ROLE_WAREHOUSE' AND TITLE LIKE '%上架%'")
+EQ "IQC 放行→仓库上架通知 1 条" "$N_IQC" "1"
+N_OQC=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_RELEASE' AND BIZ_ID='$LOT2_ID' AND TARGET_ROLE IN ('ROLE_WAREHOUSE','ROLE_SALES')")
+EQ "OQC 放行→仓库+跟单 2 条" "$N_OQC" "2"
+CERT0=$(SQL "SELECT CERT_NO FROM erp_qms_certificate WHERE LOT_ID='$LOT2_ID' LIMIT 1")
+N_SALES_C=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_RELEASE' AND BIZ_ID='$LOT2_ID' AND TARGET_ROLE='ROLE_SALES' AND CONTENT LIKE CONCAT('%',IFNULL('$CERT0','__空__'),'%')")
+[ -n "$CERT0" ] && EQ "跟单通知含合格证号" "$N_SALES_C" "1" || ok "OQC 无合格证（跳过证号断言）"
+
+echo "== 15. 6.4.1 放行模式（board?releaseMode=true）=="
+# 造待放行批（PASS+INPUTTING）与 FAIL 批
+SQL "INSERT IGNORE INTO erp_qms_inspection_lot (ID, LOT_NO, LOT_TYPE, SOURCE_TYPE, ITEM_CODE, ITEM_NAME, LOT_QTY, RISK_GRADE, STATUS, RESULT, PRIORITY, STRICTNESS, STANDARD_ID, STANDARD_CODE, STANDARD_VERSION, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('lot-smki-rls','IL-SMKI-RLS','IPQC','MANUAL','SMKI002','检验冒烟产品',20,'C','INPUTTING','PASS','NORMAL','NORMAL','sv-smki-1','SMKI-STD-1',1,'smoke','0',0),('lot-smki-fail','IL-SMKI-FAIL','IPQC','MANUAL','SMKI002','检验冒烟产品',20,'C','PENDING','FAIL','NORMAL','NORMAL','sv-smki-1','SMKI-STD-1',1,'smoke','0',0);" >/dev/null 2>&1
+RLS_IDS=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100&releaseMode=true" | J "[r['id'] for r in d['data']['records'] if str(r['id']).startswith('lot-smki')]")
+CONTAINS "待放行批在列" "$RLS_IDS" "lot-smki-rls"
+RLS_BAD=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100&releaseMode=true" | J "len([r for r in d['data']['records'] if r.get('result')!='PASS' or r.get('status')!='INPUTTING'])")
+EQ "releaseMode 无越态批混入" "$RLS_BAD" "0"
+RLS_REL=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100&status=RELEASED" | J "len([r for r in d['data']['records'] if r['id']=='$LOT1_ID'])")
+EQ "已放行历史可查（status=RELEASED）" "$RLS_REL" "1"
+RLS_NORMAL=$(C -H "$(A $TQC)" "$B/api/qms/lots/board?current=1&size=100" | J "len([r for r in d['data']['records'] if r['id']=='lot-smki-rls'])")
+EQ "不传 releaseMode 行为不变（PASS/INPUTTING 在途可见）" "$RLS_NORMAL" "1"
+
+echo "== 16. NCR 处置通知 + 冻结影响快照 + 让步接收全链 =="
+# 库存（已入库分支 freezeStock 需 WH-MAIN 批次库存）
+SQL "INSERT IGNORE INTO erp_inv_stock (ID, WAREHOUSE_CODE, ITEM_CODE, ITEM_NAME, BATCH_NO, BIN_CODE, QTY, AVAILABLE_QTY, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('stk-smki-ncr','WH-MAIN','SMKI002','检验冒烟产品','BATCH-SMK2','A-01',50,50,'smoke','0',0);" >/dev/null 2>&1
+# 手工批（line=null → freezeStock）→ 录入全 FAIL → 判定 FAIL → NCR 自动
+LOT16=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":20,"batchNo":"BATCH-SMK2","refType":"MANUAL","refId":"smk16"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+[ -n "${LOT16:-}" ] && ok "NCR 溯源批创建（$LOT16）" || bad "建批失败"
+LOT16_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT16'")
+IT16=$(SQL "SELECT GROUP_CONCAT(CONCAT('{\"itemId\":\"',ID,'\",\"judge\":\"FAIL\"}') SEPARATOR ',') FROM erp_qms_lot_item WHERE LOT_ID='$LOT16_ID'")
+C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' -d "{\"items\":[$IT16]}" $B/api/qms/lots/$LOT16_ID/input >/dev/null
+BIZ -X POST -H "$(A $TQC)" $B/api/qms/lots/$LOT16_ID/judge >/dev/null
+NCR16=$(SQL "SELECT ID FROM erp_qms_ncr WHERE LOT_ID='$LOT16_ID'")
+NCR16_NO=$(SQL "SELECT NCR_NO FROM erp_qms_ncr WHERE LOT_ID='$LOT16_ID'")
+[ -n "$NCR16" ] && ok "不合格自动生成 NCR（$NCR16_NO）" || bad "NCR 未生成"
+# 处置通知 → 质量工程师
+DN=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_NCR' AND BIZ_ID='$NCR16' AND TARGET_ROLE='ROLE_QUALITY_ENG' AND TITLE LIKE CONCAT('%','$NCR16_NO','%')")
+EQ "NCR 处置通知→质量工程师" "$DN" "1"
+DN_C=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_NCR' AND BIZ_ID='$NCR16' AND CONTENT LIKE '%前完成评审%'")
+EQ "通知含评审时限" "$DN_C" "1"
+# 冻结影响快照 + 计划通知
+IMPACT=$(SQL "SELECT IMPACT_JSON FROM erp_inv_freeze WHERE NCR_ID='$NCR16' AND SOURCE='NCR' LIMIT 1")
+CONTAINS "台账影响快照（moDataSource 标记）" "${IMPACT:-}" "moDataSource"
+PN=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_NCR_FREEZE' AND BIZ_ID='$NCR16' AND TARGET_ROLE='ROLE_PLANNER'")
+EQ "冻结计划通知→计划员" "$PN" "1"
+QCB=$(SQL "SELECT QC_QTY>0 FROM erp_inv_stock WHERE ID='stk-smki-ncr'")
+EQ "库存 QC 锁定生效" "$QCB" "1"
+# 让步接收全链：评审 CONCESSION →（CTQ 单先过 NcrDisposition 审批）→ 申请 → 双签 → 核销 → 越界 422
+EQ "评审为让步 200" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"CONCESSION","opinion":"评估可用，走让步"}' $B/api/qms/ncrs/$NCR16/review)" "200"
+# NCR16 为 CTQ 单（外观 CTQ FAIL）→ 评审提交进审批，经理通过后才流转（rework-ncr-identification-disposition）
+APP16=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='NcrDisposition' AND BIZ_ID='$NCR16' AND STATUS='PENDING'")
+[ -n "${APP16:-}" ] && ok "CTQ 让步评审进 NcrDisposition 审批" || bad "CTQ 审批实例缺失"
+T16=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APP16' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_QUALITY_MGR' LIMIT 1")
+EQ "CTQ 审批通过 200" "$(BIZ -X POST -H "$(A $TMGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T16\",\"opinion\":\"同意让步评估\"}" $B/api/qms/approvals/pass)" "200"
+EQ "审批通过后转 CONCESSION" "$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR16'")" "CONCESSION"
+CS=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d "{\"ncrId\":\"$NCR16\",\"reason\":\"冒烟让步：外观轻微划伤\",\"techAssess\":\"非功能面可用\",\"riskAssess\":\"低风险\",\"limitUntil\":\"$(date -v+30d +%Y-%m-%d)\",\"limitQty\":\"15\",\"limitScope\":\"SMKI002\"}" \
+  $B/api/qms/concessions | J "d['data']['id']")
+[ -n "${CS:-}" ] && ok "让步申请创建（要素全）" || bad "让步申请失败"
+CS_BAD=$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d "{\"ncrId\":\"$NCR16\"}" $B/api/qms/concessions)
+EQ "要素缺失 422" "$CS_BAD" "422"
+EQ "提交双签 200" "$(BIZ -X POST -H "$(A $TENG)" $B/api/qms/concessions/$CS/submit)" "200"
+# 双签（按节点角色签）
+CS_APPR=$(SQL "SELECT APPROVAL_ID FROM erp_qms_concession WHERE ID='$CS'")
+T_MGR=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$CS_APPR' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_QUALITY_MGR' LIMIT 1")
+T_TECH=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$CS_APPR' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_TECH_OWNER' LIMIT 1")
+EQ "第 1 签（质量经理）200" "$(BIZ -X POST -H "$(A $TMGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T_MGR\",\"opinion\":\"同意\"}" $B/api/qms/approvals/pass)" "200"
+CS_ST1=$(SQL "SELECT STATUS FROM erp_qms_concession WHERE ID='$CS'")
+EQ "单签不生效" "$CS_ST1" "PENDING_APPROVE"
+EQ "第 2 签（技术负责人）200" "$(BIZ -X POST -H "$(A $TTECH)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T_TECH\",\"opinion\":\"同意\"}" $B/api/qms/approvals/pass)" "200"
+CS_ST2=$(SQL "SELECT STATUS FROM erp_qms_concession WHERE ID='$CS'")
+EQ "双签全过批准" "$CS_ST2" "APPROVED"
+# 核销成功 + 越界 422
+WO=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"qty":10,"scope":"SMKI002 批次内部领用"}' $B/api/qms/concessions/$CS/writeoffs | J "float(d['data']['remainQty'])")
+EQ "核销 10 后剩余 5.0" "$WO" "5.0"
+WO_BAD=$(BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"qty":20,"scope":"SMKI002 批次内部领用"}' $B/api/qms/concessions/$CS/writeoffs)
+EQ "越界核销 422" "$WO_BAD" "422"
+WO_REJ=$(SQL "SELECT COUNT(*) FROM erp_qms_concession_writeoff WHERE CONCESSION_ID='$CS' AND STATUS='REJECTED'")
+EQ "越界尝试留 REJECTED 记录" "$WO_REJ" "1"
+
+echo "=============================="
+echo "== 17. CTQ 处置审批链（rework-ncr-identification-disposition：提交不流转/通过流转/驳回改选）=="
+# 造 CTQ 判不合格 NCR：IQC 批（CTQ 外观 FAIL → NCR ctqFlag=1）
+SQL "INSERT IGNORE INTO erp_inv_stock (ID, WAREHOUSE_CODE, ITEM_CODE, ITEM_NAME, BATCH_NO, BIN_CODE, QTY, AVAILABLE_QTY, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('stk-smki-ctq','WH-MAIN','SMKI002','检验冒烟产品','BATCH-SMKCTQ','A-02',30,30,'smoke','0',0);" >/dev/null 2>&1
+LOT17=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":20,"batchNo":"BATCH-SMKCTQ","refType":"MANUAL","refId":"smk17"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+[ -n "${LOT17:-}" ] && ok "CTQ 链批创建（$LOT17）" || bad "建批失败"
+LOT17_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT17'")
+# CTQ 外观 FAIL + 尺寸 FAIL → 整批不合格，CTQ 不合格 → NCR ctqFlag=1
+IT17=$(SQL "SELECT GROUP_CONCAT(CONCAT('{\"itemId\":\"',ID,'\",\"judge\":\"FAIL\"}') SEPARATOR ',') FROM erp_qms_lot_item WHERE LOT_ID='$LOT17_ID'")
+C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' -d "{\"items\":[$IT17]}" $B/api/qms/lots/$LOT17_ID/input >/dev/null
+BIZ -X POST -H "$(A $TQC)" $B/api/qms/lots/$LOT17_ID/judge >/dev/null
+NCR17=$(SQL "SELECT ID FROM erp_qms_ncr WHERE LOT_ID='$LOT17_ID'")
+CTQ_FLAG=$(SQL "SELECT CTQ_FLAG FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "CTQ 不合格 NCR ctqFlag=1" "$CTQ_FLAG" "1"
+# CTQ 单评审提交 → 不流转，进审批
+EQ "CTQ 评审提交 200" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"REWORK","opinion":"CTQ 外观+尺寸超差，返工修复"}' $B/api/qms/ncrs/$NCR17/review)" "200"
+NCR17_ST=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "提交后不流转（仍 CREATED）" "$NCR17_ST" "CREATED"
+NCR17_PEND=$(SQL "SELECT DISPO_PENDING_FLAG FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "待审批标记落库" "$NCR17_PEND" "1"
+# 重复提交 422
+EQ "审批中重复提交 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"RETURN","opinion":"想改退货"}' $B/api/qms/ncrs/$NCR17/review)" "422"
+# 审批实例 + 经理待办
+APP17=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='NcrDisposition' AND BIZ_ID='$NCR17' AND STATUS='PENDING'")
+[ -n "${APP17:-}" ] && ok "NcrDisposition 审批实例生成" || bad "审批实例缺失"
+T17=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APP17' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_QUALITY_MGR' LIMIT 1")
+[ -n "${T17:-}" ] && ok "质量经理待办生成" || bad "待办缺失"
+# 质量经理通过 → 流转 REWORKING
+EQ "经理审批通过 200" "$(BIZ -X POST -H "$(A $TMGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T17\",\"opinion\":\"同意返工\"}" $B/api/qms/approvals/pass)" "200"
+NCR17_ST2=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "审批通过 → REWORKING" "$NCR17_ST2" "REWORKING"
+NCR17_PEND2=$(SQL "SELECT DISPO_PENDING_FLAG FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "pending 标记清除" "${NCR17_PEND2:-NULL}" "NULL"
+NCR17_LOG=$(SQL "SELECT COUNT(*) FROM erp_qms_ncr_log WHERE NCR_ID='$NCR17' AND ACTION='REVIEW_APPROVE'")
+EQ "审批通过日志留痕" "$NCR17_LOG" "1"
+# 驳回链：第二张 CTQ 单提交 → 经理驳回 → 回 CREATED 可改选
+LOT17B=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":10,"batchNo":"BATCH-SMKCTQ","refType":"MANUAL","refId":"smk17b"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+LOT17B_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT17B'")
+IT17B=$(SQL "SELECT GROUP_CONCAT(CONCAT('{\"itemId\":\"',ID,'\",\"judge\":\"FAIL\"}') SEPARATOR ',') FROM erp_qms_lot_item WHERE LOT_ID='$LOT17B_ID'")
+C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' -d "{\"items\":[$IT17B]}" $B/api/qms/lots/$LOT17B_ID/input >/dev/null
+BIZ -X POST -H "$(A $TQC)" $B/api/qms/lots/$LOT17B_ID/judge >/dev/null
+NCR17B=$(SQL "SELECT ID FROM erp_qms_ncr WHERE LOT_ID='$LOT17B_ID'")
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"SCRAP","opinion":"判定报废"}' $B/api/qms/ncrs/$NCR17B/review >/dev/null
+APP17B=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='NcrDisposition' AND BIZ_ID='$NCR17B' AND STATUS='PENDING'")
+T17B=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APP17B' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_QUALITY_MGR' LIMIT 1")
+EQ "经理驳回 200" "$(BIZ -X POST -H "$(A $TMGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T17B\",\"reason\":\"建议改选退货处置\"}" $B/api/qms/approvals/reject)" "200"
+NCR17B_ST=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR17B'")
+EQ "驳回回 CREATED" "$NCR17B_ST" "CREATED"
+NCR17B_DISP=$(SQL "SELECT DISPOSITION FROM erp_qms_ncr WHERE ID='$NCR17B'")
+EQ "处置选择清除（可改选）" "${NCR17B_DISP:-NULL}" "NULL"
+# 改选重提（非让步/报废不触禁令）→ 再次进审批
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"RETURN","opinion":"按驳回意见改选退货"}' $B/api/qms/ncrs/$NCR17B/review >/dev/null
+NCR17B_ST3=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR17B'")
+EQ "改选重提仍待审批" "$NCR17B_ST3" "CREATED"
+
+echo "=============================="
+echo "== 18. 6.5.1 隔离确认 + 标识卡（rework-ncr-identification-disposition）=="
+# 隔离清单：frozenOnly=true 只看冻结中（排除已作废/关闭）
+ISO_ROWS=$(C -H "$(A $TENG)" "$B/api/qms/ncrs?frozenOnly=true&size=100" | J "len(d['data']['records'])")
+[ "${ISO_ROWS:-0}" -gt 0 ] && ok "隔离清单返回冻结中单据（${ISO_ROWS} 条）" || bad "隔离清单为空"
+# 隔离确认（质检员）→ 落列 + 日志，状态不变
+EQ "隔离确认 200" "$(BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"bin":"Q-HOLD-01"}' $B/api/qms/ncrs/$NCR17/isolate)" "200"
+ISO_FLAG=$(SQL "SELECT ISOLATED_FLAG FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "隔离标记落库" "$ISO_FLAG" "1"
+ISO_BIN=$(SQL "SELECT ISOLATE_BIN FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "隔离货位落库" "$ISO_BIN" "Q-HOLD-01"
+ISO_LOG=$(SQL "SELECT COUNT(*) FROM erp_qms_ncr_log WHERE NCR_ID='$NCR17' AND ACTION='ISOLATE'")
+EQ "隔离日志留痕" "$ISO_LOG" "1"
+ISO_ST=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "隔离确认不改状态机（仍 REWORKING）" "$ISO_ST" "REWORKING"
+# 越权：计划员隔离 → Security 层 HTTP 403（非业务码，用 HTTP 断言）
+EQ "计划员隔离 HTTP 403" "$(HTTP -X POST -H "$(A $TPLAN)" -H 'Content-Type: application/json' \
+  -d '{"bin":"Q-HOLD-01"}' $B/api/qms/ncrs/$NCR17/isolate)" "403"
+# 货位缺失 422
+EQ "货位缺失 422" "$(BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"bin":" "}' $B/api/qms/ncrs/$NCR17/isolate)" "422"
+# 重复确认覆盖留痕
+BIZ -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"bin":"Q-HOLD-02"}' $B/api/qms/ncrs/$NCR17/isolate >/dev/null
+ISO_BIN2=$(SQL "SELECT ISOLATE_BIN FROM erp_qms_ncr WHERE ID='$NCR17'")
+EQ "重复确认覆盖货位" "$ISO_BIN2" "Q-HOLD-02"
+ISO_LOG2=$(SQL "SELECT COUNT(*) FROM erp_qms_ncr_log WHERE NCR_ID='$NCR17' AND ACTION='ISOLATE'")
+EQ "重复确认再留痕（日志 2 条）" "$ISO_LOG2" "2"
+# 详情含隔离字段（标识卡数据源）
+ISO_DET=$(C -H "$(A $TENG)" $B/api/qms/ncrs/$NCR17 | J "d['data']['ncr']['isolateBin']")
+EQ "详情返回隔离字段" "$ISO_DET" "Q-HOLD-02"
+
+echo "=============================="
+echo "== 19. 6.5.2 多态队列 + 处置阶段（rework-ncr-identification-disposition）=="
+# 五态 in 查询 + withStage 阶段推导
+STAGE_ROWS=$(C -H "$(A $TENG)" "$B/api/qms/ncrs?statuses=RETURNING,SORTING,REWORKING,CONCESSION,SCRAPPING&withStage=true&size=100" | J "len(d['data']['records'])")
+[ "${STAGE_ROWS:-0}" -gt 0 ] && ok "五态在途队列返回（${STAGE_ROWS} 条）" || bad "五态队列为空"
+# 阶段列存在且非空（REWORKING 无方案 → 待方案录入）
+STAGE17=$(C -H "$(A $TENG)" "$B/api/qms/ncrs?statuses=REWORKING&withStage=true&size=100" \
+  | J "[r.get('disposeStage') for r in d['data']['records'] if r['id']=='$NCR17'][0]")
+EQ "返工无方案阶段=待方案录入" "${STAGE17:-}" "待方案录入"
+# 录方案 → 阶段变待处置确认（返工结构化三字段 + CTQ 勾选）
+EQ "返工结构化方案缺字段 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"plan":"返工概述"}' $B/api/qms/ncrs/$NCR17/disposition-plan)" "422"
+EQ "返工未勾 CTQ 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"plan":"返工概述","reworkSteps":"拆解→换轴→复测","reworkParams":"扭矩 3.2±0.2N·m","reworkCheckReq":"原 CTQ 全项+外观","ctqConfirmed":false}' \
+  $B/api/qms/ncrs/$NCR17/disposition-plan)" "422"
+EQ "返工结构化方案 200" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"plan":"返工概述","reworkSteps":"拆解→换轴→复测","reworkParams":"扭矩 3.2±0.2N·m","reworkCheckReq":"原 CTQ 全项+外观","ctqConfirmed":true}' \
+  $B/api/qms/ncrs/$NCR17/disposition-plan)" "200"
+STAGE17B=$(C -H "$(A $TENG)" "$B/api/qms/ncrs?statuses=REWORKING&withStage=true&size=100" \
+  | J "[r.get('disposeStage') for r in d['data']['records'] if r['id']=='$NCR17'][0]")
+EQ "返工有方案阶段=待处置确认" "${STAGE17B:-}" "待处置确认"
+# 挑选结构化：造挑选单 + 数量不平 422 + 低合格率软提示 + 成本归集
+# 手工建批仅支持 IPQC/OQC；全项 FAIL → CTQ 单 → 评审进审批（经理通过后转 SORTING）
+LOT18=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":100,"batchNo":"BATCH-SMKSRT","refType":"MANUAL","refId":"smk18"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+[ -n "${LOT18:-}" ] && ok "挑选链批创建（$LOT18）" || bad "挑选链建批失败"
+LOT18_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT18'")
+IT18=$(SQL "SELECT GROUP_CONCAT(CONCAT('{\"itemId\":\"',ID,'\",\"judge\":\"FAIL\"}') SEPARATOR ',') FROM erp_qms_lot_item WHERE LOT_ID='$LOT18_ID'")
+C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' -d "{\"items\":[$IT18]}" $B/api/qms/lots/$LOT18_ID/input >/dev/null
+BIZ -X POST -H "$(A $TQC)" $B/api/qms/lots/$LOT18_ID/judge >/dev/null
+NCR18=$(SQL "SELECT ID FROM erp_qms_ncr WHERE LOT_ID='$LOT18_ID'")
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"disposition":"SORT","opinion":"部分可挑选使用"}' $B/api/qms/ncrs/$NCR18/review >/dev/null
+# CTQ 单评审进审批 → 经理通过 → SORTING
+APP18=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='NcrDisposition' AND BIZ_ID='$NCR18' AND STATUS='PENDING'")
+T18=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APP18' AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_QUALITY_MGR' LIMIT 1")
+EQ "挑选 CTQ 审批通过 200" "$(BIZ -X POST -H "$(A $TMGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T18\",\"opinion\":\"同意挑选\"}" $B/api/qms/approvals/pass)" "200"
+EQ "审批后转 SORTING" "$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR18'")" "SORTING"
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"plan":"挑选范围：A 区全检"}' $B/api/qms/ncrs/$NCR18/disposition-plan >/dev/null
+# 挑选结果数量不平 → 422
+EQ "挑选数量不平 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"result":"挑选完成","sortTotalQty":100,"sortOkQty":70,"sortNgQty":20,"sortHours":6}' \
+  $B/api/qms/ncrs/$NCR18/dispose-confirm)" "422"
+# 低合格率（40/100）→ 200 + warnings 软提示 + 成本归集
+SRT_OUT=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"result":"挑选完成","sortTotalQty":100,"sortOkQty":40,"sortNgQty":60,"sortHours":8,"costAmount":3000}' \
+  $B/api/qms/ncrs/$NCR18/dispose-confirm)
+SRT_CODE=$(echo "$SRT_OUT" | J "d['code']")
+EQ "低合格率软提示 200（不阻断）" "$SRT_CODE" "200"
+SRT_WARN=$(echo "$SRT_OUT" | J "len(d['data'].get('warnings') or [])")
+EQ "低合格率 warnings 1 条" "$SRT_WARN" "1"
+SRT_ST=$(SQL "SELECT STATUS FROM erp_qms_ncr WHERE ID='$NCR18'")
+EQ "挑选确认 → DISPOSED" "$SRT_ST" "DISPOSED"
+SRT_OK=$(SQL "SELECT SORT_OK_QTY FROM erp_qms_ncr WHERE ID='$NCR18'")
+EQ "挑选结构化落库（合格 40）" "$SRT_OK" "40.0000"
+COPQ18=$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='NCR' AND SOURCE_ID='$NCR18' AND CATEGORY='INTERNAL_FAILURE'")
+EQ "COPQ 内部失败归集（成本 3000）" "$COPQ18" "1"
+# 挑选已确认 → 复检批阶段（DISPOSED 不在在途五态，用 stage 查询验证复检批已生成）
+RC18=$(SQL "SELECT COUNT(*) FROM erp_qms_inspection_lot WHERE REF_TYPE='NCR' AND REF_ID='$NCR18' AND SOURCE_TYPE='RECHECK'")
+EQ "挑选完成生成复检批" "$RC18" "1"
+# 让步中阶段=待双签批准（NCR16 已 CONCESSION 且双签完成 → 双签完成待确认）
+STAGE16=$(C -H "$(A $TENG)" "$B/api/qms/ncrs?statuses=CONCESSION&withStage=true&size=100" \
+  | J "[r.get('disposeStage') for r in d['data']['records'] if r['id']=='$NCR16'][0]")
+EQ "让步双签完成阶段=双签完成待确认" "${STAGE16:-}" "双签完成待确认"
+
+echo "=============================="
+echo "== 20. 重复 NCR 升级链（rework-ncr-control：二次 NCR 上调 + 3 月 3 张 CAPA 待办）=="
+# 造同批复检链：首单（关闭）+ 复检批仍不合格 → 二次 NCR 上调关联
+SQL "INSERT IGNORE INTO erp_qms_ncr (ID, NCR_NO, LOT_ID, ITEM_CODE, ITEM_NAME, QTY, BATCH_NO, STATUS, SEVERITY, CTQ_FLAG, REGULATORY_FLAG, FROZEN_FLAG, FREEZE_SCOPE, CREATE_BY) VALUES ('smk20-first','NCR-SMK20-1','lot-smk20-0','SMKI002','重复升级冒烟',10,'BATCH-SMK20','CLOSED','MINOR','0','0','0','NONE','smoke');" >/dev/null
+LOT20=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":10,"batchNo":"BATCH-SMK20","refType":"NCR","refId":"smk20-first"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+[ -n "${LOT20:-}" ] && ok "复检链批创建（$LOT20）" || bad "复检链建批失败"
+LOT20_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT20'")
+# 仅非 CTQ 项 FAIL（CTQ 外观 PASS）→ 基线 MINOR，验证上调 MINOR→MAJOR
+IT20=$(SQL "SELECT GROUP_CONCAT(CONCAT('{\"itemId\":\"',ID,'\",\"judge\":\"',IF(CTQ_FLAG='1','PASS','FAIL'),'\"}') SEPARATOR ',') FROM erp_qms_lot_item WHERE LOT_ID='$LOT20_ID'")
+C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' -d "{\"items\":[$IT20]}" $B/api/qms/lots/$LOT20_ID/input >/dev/null
+BIZ -X POST -H "$(A $TQC)" $B/api/qms/lots/$LOT20_ID/judge >/dev/null
+NCR20=$(SQL "SELECT ID FROM erp_qms_ncr WHERE LOT_ID='$LOT20_ID'")
+SEV20=$(SQL "SELECT SEVERITY FROM erp_qms_ncr WHERE ID='$NCR20'")
+EQ "二次 NCR 严重度上调（MINOR→MAJOR）" "$SEV20" "MAJOR"
+REF20=$(SQL "SELECT REF_NCR_ID FROM erp_qms_ncr WHERE ID='$NCR20'")
+EQ "关联前序 NCR" "$REF20" "smk20-first"
+# 三维度扫描触发 CAPA 待办（同供应商 3 张近 90 天）
+SQL "INSERT IGNORE INTO erp_qms_ncr (ID, NCR_NO, LOT_ID, ITEM_CODE, ITEM_NAME, QTY, SUPPLIER_ID, SUPPLIER_NAME, STATUS, SEVERITY, CTQ_FLAG, REGULATORY_FLAG, FROZEN_FLAG, FREEZE_SCOPE, CREATE_BY) VALUES ('smk20-s1','NCR-SMK20-S1','l20s1','SMKI003','三张扫描物料',5,'sup-smk20','冒烟供应商20','CLOSED','MAJOR','0','0','0','NONE','smoke'),('smk20-s2','NCR-SMK20-S2','l20s2','SMKI003','三张扫描物料',5,'sup-smk20','冒烟供应商20','CLOSED','MAJOR','0','0','0','NONE','smoke'),('smk20-s3','NCR-SMK20-S3','l20s3','SMKI003','三张扫描物料',5,'sup-smk20','冒烟供应商20','CLOSED','MAJOR','0','0','0','NONE','smoke');" >/dev/null
+BIZ -X POST -H "$(A $TADM)" $B/api/qms/ncrs/sweeps >/dev/null
+sleep 1
+BIZ -X POST -H "$(A $TADM)" $B/api/qms/ncrs/sweeps >/dev/null
+CAPA_TODO=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_REPEAT' AND BIZ_ID LIKE 'CAPA_TODO:SUPPLIER:sup-smk20%'")
+[ "${CAPA_TODO:-0}" -ge 1 ] && ok "3 月 3 张触发 CAPA 立项待办（$CAPA_TODO 行）" || bad "CAPA 待办未生成"
+CAPA_SQE=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_REPEAT' AND TARGET_ROLE='ROLE_SQE' AND BIZ_ID LIKE 'CAPA_TODO:SUPPLIER:sup-smk20%'")
+EQ "供应商维度加推 SQE" "$CAPA_SQE" "1"
+CAPA_TODO2=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_REPEAT' AND BIZ_ID LIKE 'CAPA_TODO:SUPPLIER:sup-smk20%'")
+EQ "重扫幂等（待办数不变）" "$CAPA_TODO2" "$CAPA_TODO"
+
+echo "=============================="
+echo "== 21. 漏检召回评估（rework-ncr-control：已放行建单 + 召回评估双向关联）=="
+# 手工放行批建 NCR（走已放行入口）
+SQL "INSERT IGNORE INTO erp_qms_inspection_lot (ID, LOT_NO, LOT_TYPE, ITEM_CODE, ITEM_NAME, LOT_QTY, BATCH_NO, STATUS, RESULT, RISK_GRADE, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('lot-smk21','IL-SMK21','IQC','SMKI001','召回评估冒烟物料',50,'BATCH-SMK21','RELEASED','PASS','C','smoke','0',0);" >/dev/null
+SQL "INSERT IGNORE INTO erp_inv_batch (ID, BATCH_NO, ITEM_CODE, ITEM_NAME, PRODUCTION_DATE, EXPIRY_DATE, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('bt-smk21','BATCH-SMK21','SMKI001','召回评估冒烟物料',CURDATE(),DATE_ADD(CURDATE(),INTERVAL 90 DAY),'smoke','0',0);" >/dev/null
+NCR21=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"lotId":"lot-smk21","defectItem":"放行后外观漏检","defectDesc":"客户投诉划伤，追溯为放行漏检","severity":"MAJOR","ctqFlag":"0"}' \
+  $B/api/qms/ncrs/released-lots | J "d['data']['ncrNo']")
+[ -n "${NCR21:-}" ] && ok "已放行批次建 NCR（$NCR21）" || bad "放行后建单失败"
+NCR21_ID=$(SQL "SELECT ID FROM erp_qms_ncr WHERE NCR_NO='$NCR21'")
+REF21=$(SQL "SELECT REF_TYPE FROM erp_qms_ncr WHERE ID='$NCR21_ID'")
+EQ "refType=RELEASED_LOT" "$REF21" "RELEASED_LOT"
+# 未放行批 422
+LOT21B=$(C -X POST -H "$(A $TQC)" -H 'Content-Type: application/json' \
+  -d '{"lotType":"IPQC","itemCode":"SMKI002","itemName":"检验冒烟产品","qty":5,"batchNo":"BATCH-SMK21B","refType":"MANUAL","refId":"smk21b"}' \
+  $B/api/qms/lots | J "d['data']['lotNo']")
+LOT21B_ID=$(SQL "SELECT ID FROM erp_qms_inspection_lot WHERE LOT_NO='$LOT21B'")
+EQ "未放行批建单 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d "{\"lotId\":\"$LOT21B_ID\",\"defectItem\":\"x\",\"defectDesc\":\"未放行试探\"}" \
+  $B/api/qms/ncrs/released-lots)" "422"
+# 发起召回评估 → 追溯单双向关联
+EVAL=$(C -X POST -H "$(A $TENG)" $B/api/qms/ncrs/$NCR21_ID/recall-evaluation)
+EVAL_CODE=$(echo "$EVAL" | J "d['code']")
+EQ "发起召回评估 200" "$EVAL_CODE" "200"
+TRACE21=$(echo "$EVAL" | J "d['data']['traceNo']")
+[ -n "${TRACE21:-}" ] && ok "追溯单创建（$TRACE21）" || bad "追溯单未返回"
+TRACE21_ID=$(echo "$EVAL" | J "d['data']['traceId']")
+SRC_NCR=$(SQL "SELECT SOURCE_NCR_ID FROM erp_inv_trace_order WHERE ID='$TRACE21_ID'")
+EQ "追溯单侧回写来源 NCR" "$SRC_NCR" "$NCR21_ID"
+# NCR 详情反查追溯单号
+DET_TRACE=$(C -H "$(A $TENG)" $B/api/qms/ncrs/$NCR21_ID | J "d['data'].get('recallTraceNo')")
+EQ "NCR 详情可见追溯单号" "$DET_TRACE" "$TRACE21"
+# 重复入口返既有
+EVAL2_EXIST=$(C -X POST -H "$(A $TENG)" $B/api/qms/ncrs/$NCR21_ID/recall-evaluation | J "d['data'].get('existing')")
+EQ "重复入口返既有单" "$EVAL2_EXIST" "True"
+# 非 RELEASED_LOT 拒绝（用 NCR16：GR 触发的普通 NCR，refType != RELEASED_LOT）
+EQ "普通 NCR 评估 422" "$(BIZ -X POST -H "$(A $TENG)" $B/api/qms/ncrs/$NCR16/recall-evaluation)" "422"
+
 echo "检验任务冒烟：PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then echo "ALL GREEN"; else echo "HAS FAILURES"; exit 1; fi

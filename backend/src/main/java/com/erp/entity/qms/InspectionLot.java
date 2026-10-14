@@ -159,6 +159,10 @@ public class InspectionLot extends BaseEntity {
     @TableField("OVERDUE_FLAG")
     private String overdueFlag;
 
+    /** 1=已完成抽样（冗余标记，与 erp_qms_sampling_record 存在性一致） */
+    @TableField("SAMPLED_FLAG")
+    private String sampledFlag;
+
     /** 分派/改派留痕 JSON [{ts,action:ASSIGN|REASSIGN,from,to,reason}]（design D2） */
     @TableField("ASSIGN_LOG")
     private String assignLog;

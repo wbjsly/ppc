@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.erp.service.inv.FreezeImpactBuilder;
 import java.util.Set;
 
 /**
@@ -50,12 +51,15 @@ public class FreezeServiceImpl implements FreezeService {
     /** C-4.4-07 召回未结案解冻拦截（spec trace-recall / freeze-management MODIFIED） */
     private final com.erp.dao.inv.TraceOrderDao traceOrderDao;
     private final com.erp.dao.inv.TraceFlowDao traceFlowDao;
+    /** NCR 冻结影响面快照（rework-qualified-release D2，与手工冻结同构复用） */
+    private final FreezeImpactBuilder impactBuilder;
 
     public FreezeServiceImpl(InvFreezeDao freezeDao, InvStockDao stockDao,
                              ApprovalEngine approvalEngine, ReservationService reservationService,
                              ReservationDao reservationDao, SysParamService sysParamService,
                              com.erp.dao.inv.TraceOrderDao traceOrderDao,
-                             com.erp.dao.inv.TraceFlowDao traceFlowDao) {
+                             com.erp.dao.inv.TraceFlowDao traceFlowDao,
+                             FreezeImpactBuilder impactBuilder) {
         this.freezeDao = freezeDao;
         this.stockDao = stockDao;
         this.approvalEngine = approvalEngine;
@@ -64,6 +68,7 @@ public class FreezeServiceImpl implements FreezeService {
         this.sysParamService = sysParamService;
         this.traceOrderDao = traceOrderDao;
         this.traceFlowDao = traceFlowDao;
+        this.impactBuilder = impactBuilder;
     }
 
     // ---------- 冻结申请 ----------
@@ -357,9 +362,16 @@ public class FreezeServiceImpl implements FreezeService {
         f.setSource(InvFreeze.SRC_NCR);
         f.setNcrId(ncrId);
         f.setApplyBy("system:ncr");
+        // 影响面快照（FR-4.12-3-2 异常①，rework-qualified-release D2）：与手工冻结同构，
+        // 挂台账行供 4.9.4 展开；失败降级告警不阻断 NCR 主链（spec：失败不回滚 NCR）
+        try {
+            f.setImpactJson(impactBuilder.build(f));
+        } catch (Exception e) {
+            log.warn("NCR 冻结影响快照生成失败（降级不阻断，ncr={}）：{}", ncrId, e.getMessage());
+        }
         freezeDao.insert(f);
-        log.info("ncr freeze ledger: {} {} {} qty={} ncr={}", f.getFreezeNo(),
-                itemCode, batchNo, qty, ncrId);
+        log.info("ncr freeze ledger: {} {} {} qty={} ncr={} impact={}", f.getFreezeNo(),
+                itemCode, batchNo, qty, ncrId, f.getImpactJson() == null ? "-" : "Y");
     }
 
     @Override

@@ -193,7 +193,7 @@ class AtpShipmentRulesUnitTest {
                         mock(com.erp.dao.inv.InvSerialDao.class), reservationDao,
                         mock(com.erp.dao.mdm.MdmItemDao.class), mock(OutboxPublisher.class),
                         sysParamForEngine(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
-                mock(com.erp.dao.qms.InspectionLotDao.class));
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         shipment = new ShipmentServiceImpl(shipDao, shipLineDao, soDao, soLineDao,
                 mock(SdReturnDao.class), mock(SdReturnLineDao.class), stockDao, reservationDao,
                 mock(OutboxPublisher.class), mock(NoticeService.class),

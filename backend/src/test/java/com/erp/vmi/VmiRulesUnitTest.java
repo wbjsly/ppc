@@ -279,7 +279,7 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.mdm.MdmItemDao.class),
                         mock(com.erp.ops.OutboxPublisher.class),
                         sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
-                mock(com.erp.dao.qms.InspectionLotDao.class));
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         return new MaterialIssueServiceImpl(mock(MaterialIssueDao.class),
                 mock(MaterialIssueLineDao.class), stockDao, mock(VmiStockDao.class),
                 mock(MdmSupplierDao.class), mock(VmiAgreementService.class),
@@ -355,7 +355,7 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.mdm.MdmItemDao.class),
                         mock(com.erp.ops.OutboxPublisher.class),
                         sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
-                mock(com.erp.dao.qms.InspectionLotDao.class));
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         MaterialIssueServiceImpl svc = new MaterialIssueServiceImpl(
                 mock(MaterialIssueDao.class), mock(MaterialIssueLineDao.class), stockDao,
                 mock(VmiStockDao.class), mock(MdmSupplierDao.class),

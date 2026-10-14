@@ -45,7 +45,7 @@ class StockPostingEngineUnitTest {
                 mock(InvSerialDao.class), mock(ReservationDao.class),
                 mock(MdmItemDao.class), mock(OutboxPublisher.class),
                 sysParamForEngine(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
-                mock(com.erp.dao.qms.InspectionLotDao.class));
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
     }
 
     private InvDocType type(String code, int enabled) {

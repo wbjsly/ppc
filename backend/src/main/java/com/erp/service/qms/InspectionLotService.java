@@ -67,9 +67,23 @@ public interface InspectionLotService {
      */
     java.util.Map<String, Object> confirmRelease(String lotId);
 
-    /** 待检看板（2.4.2 数据源 = 检验批，D1 起算点 = 登记提交时间） */
+    /** 待检看板（2.4.2 数据源 = 检验批，D1 起算点 = 登记提交时间）。
+     *  samplingDone：null = 不过滤（现状，6.2 三叶）；false = 仅未抽样批（6.3.1 抽样模式）。
+     *  releaseMode：null = 不过滤（现状）；true = 仅待放行批（6.4.1 放行模式，RESULT=PASS 且 STATUS=INPUTTING）。 */
     com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
-            board(long current, long size, String status);
+            board(long current, long size, String status, Boolean samplingDone, Boolean releaseMode);
+
+    /** 兼容重载：不过滤抽样/放行模式（等价参数全 null） */
+    default com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
+            board(long current, long size, String status, Boolean samplingDone) {
+        return board(current, size, status, samplingDone, null);
+    }
+
+    /** 兼容重载：不过滤（等价参数全 null） */
+    default com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
+            board(long current, long size, String status) {
+        return board(current, size, status, null, null);
+    }
 
     /**
      * 外协收货检验工作台（change add-outsourcing-processing，spec outsourcing-execution

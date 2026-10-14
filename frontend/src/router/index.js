@@ -1357,19 +1357,19 @@ const routes = [
         path: '/m/6.3.1',
         name: 'SamplingExecute',
         component: () => import('@/views/qms/inspection/TaskBoard.vue'),
-        meta: { title: '抽样执行', group: '质量管理' }
+        meta: { title: '抽样执行', group: '质量管理', samplingMode: true }
       },
       {
         path: '/m/6.3.2',
         name: 'InspectionRecord',
-        component: () => import('@/views/qms/inspection/TaskBoard.vue'),
+        component: () => import('@/views/qms/inspection/RecordList.vue'),
         meta: { title: '检验记录', group: '质量管理' }
       },
       {
         path: '/m/6.4.1',
         name: 'QualifiedRelease',
         component: () => import('@/views/qms/inspection/TaskBoard.vue'),
-        meta: { title: '合格放行', group: '质量管理' }
+        meta: { title: '合格放行', group: '质量管理', releaseMode: true }
       },
       // 6.8 供应质量 SCAR / 6.9 器具校准 / 6.10 过程控制（add-quality-collaboration）
       {

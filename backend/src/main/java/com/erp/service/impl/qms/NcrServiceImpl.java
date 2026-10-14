@@ -90,8 +90,19 @@ public class NcrServiceImpl implements NcrService {
     private final com.erp.service.qms.CopqService copqService;
     private final com.erp.service.qms.ScarService scarService;
     private final com.erp.service.inv.FreezeService freezeService;
+    private final com.erp.service.system.NoticeService noticeService;
     /** 报工来源在制冻结解冻回调（5.7；@Lazy 断环：MoFreezeService → NcrService → 本服务） */
     private final com.erp.service.mrp.MoFreezeService moFreezeService;
+    /** 审批底座（CTQ 处置审批 NcrDisposition；@Lazy 断环：ApprovalServiceImpl →
+     *  ConcessionCallback/NcrDispositionCallback → NcrService → ApprovalEngine） */
+    private final com.erp.service.approval.ApprovalEngine approvalEngine;
+    /** 退货单 DAO（6.5.2 处置阶段推导批量反查） */
+    private final com.erp.dao.proc.ReturnOrderDao returnOrderDao;
+    /** 通知 DAO（重复 NCR 待办去重锚，rework-ncr-control 4.2） */
+    private final com.erp.dao.system.SysNoticeDao noticeDao;
+    /** 追溯单 DAO + 追溯服务（漏检召回评估双向关联，rework-ncr-control 6.1/6.2） */
+    private final com.erp.dao.inv.TraceOrderDao traceOrderDao;
+    private final com.erp.service.inv.TraceService traceService;
 
     public NcrServiceImpl(NcrDao ncrDao,
                           NcrLogDao logDao,
@@ -107,7 +118,13 @@ public class NcrServiceImpl implements NcrService {
                           @Lazy com.erp.service.qms.CopqService copqService,
                           @Lazy com.erp.service.qms.ScarService scarService,
                           @Lazy com.erp.service.inv.FreezeService freezeService,
-                          @Lazy com.erp.service.mrp.MoFreezeService moFreezeService) {
+                          @Lazy com.erp.service.mrp.MoFreezeService moFreezeService,
+                          @Lazy com.erp.service.approval.ApprovalEngine approvalEngine,
+                          com.erp.dao.proc.ReturnOrderDao returnOrderDao,
+                          com.erp.dao.system.SysNoticeDao noticeDao,
+                          com.erp.dao.inv.TraceOrderDao traceOrderDao,
+                          @Lazy com.erp.service.inv.TraceService traceService,
+                          com.erp.service.system.NoticeService noticeService) {
         this.ncrDao = ncrDao;
         this.logDao = logDao;
         this.lineDao = lineDao;
@@ -123,6 +140,12 @@ public class NcrServiceImpl implements NcrService {
         this.scarService = scarService;
         this.freezeService = freezeService;
         this.moFreezeService = moFreezeService;
+        this.approvalEngine = approvalEngine;
+        this.returnOrderDao = returnOrderDao;
+        this.noticeDao = noticeDao;
+        this.traceOrderDao = traceOrderDao;
+        this.traceService = traceService;
+        this.noticeService = noticeService;
     }
 
     // ================= 6.1 生成 + 两阶段冻结 =================
@@ -168,6 +191,21 @@ public class NcrServiceImpl implements NcrService {
             gradeBasis = "一般不合格（缺陷数 " + defectCount + " < Re " + re + "）→ Minor";
         }
 
+        // ---- 二次 NCR 上调（rework-ncr-control 4.1，spec 重复 NCR 升级链①/C-4.12-16）----
+        // 复检仍不合格（复检链 refType=NCR，或同批已有历史 NCR）→ 严重度封顶上调一级
+        Ncr priorNcr = findPriorNcr(lot);
+        if (priorNcr != null) {
+            String up = severityUpOne(severity);
+            if (!up.equals(severity)) {
+                gradeBasis = gradeBasis + "；复检/重复不合格→上调 " + severity + "→" + up
+                        + "（C-4.12-16，前单 " + priorNcr.getNcrNo() + "）";
+                severity = up;
+            } else {
+                gradeBasis = gradeBasis + "；复检/重复不合格（已达 Critical 封顶，前单 "
+                        + priorNcr.getNcrNo() + "）";
+            }
+        }
+
         Ncr ncr = new Ncr();
         ncr.setNcrNo(nextNcrNo());
         ncr.setLotId(lot.getId());
@@ -181,6 +219,8 @@ public class NcrServiceImpl implements NcrService {
         ncr.setBatchNo(lot.getBatchNo());
         ncr.setQty(lot.getLotQty());
         ncr.setSeverity(severity);
+        // 二次不合格关联前单（rework-ncr-control 4.1，spec 重复 NCR 升级链①）
+        ncr.setRefNcrId(priorNcr == null ? null : priorNcr.getId());
         ncr.setDefectItem(defectNames.isEmpty() ? null : String.join("、", defectNames));
         ncr.setDefectDesc("检验批 " + lot.getLotNo() + " 判定不合格（缺陷 " + defectCount
                 + " 项 / Ac=" + ac + " / Re=" + re + "）");
@@ -196,6 +236,9 @@ public class NcrServiceImpl implements NcrService {
         ncr.setPerfFrozenFlag("0");
         ncr.setReviewDueTime(LocalDateTime.now().plusHours(hoursOf(severity)));
         ncr.setCreateBy(SecurityUtils.getCurrentUserId());
+        // 先落库取 ID（freezeStock 的台账归集与计划通知需 ncr.getId() 关联，rework-qualified-release 修复）
+        ncr.setFreezeScope("PENDING");
+        ncrDao.insert(ncr);
 
         // ---- 两阶段冻结（design D6）----
         GoodsReceiptLine line = lot.getGrLineId() == null ? null : lineDao.selectById(lot.getGrLineId());
@@ -214,7 +257,7 @@ public class NcrServiceImpl implements NcrService {
             scope = frozenStock ? "STOCK" : "NONE";
         }
         ncr.setFreezeScope(scope);
-        ncrDao.insert(ncr);
+        ncrDao.updateById(ncr);
 
         if (line != null) {
             line.setQcStatus("FROZEN");
@@ -229,6 +272,21 @@ public class NcrServiceImpl implements NcrService {
         if (capa != null) {
             writeLog(ncr, "CAPA", ST_CREATED, ST_CREATED,
                     "CAPA 自动立项：" + capa.getCapaNo() + "（BR-4.12-31）", null, null);
+        }
+        // 处置通知（FR-4.12-3-2 ④，rework-qualified-release）：同事务发质量工程师，评审时效起算锚点；
+        // 异常降级告警不回滚 NCR（spec：通知失败不回滚 NCR）
+        try {
+            noticeService.push("ROLE_QUALITY_ENG", null,
+                    "NCR 待处置：" + ncr.getNcrNo(),
+                    "严重度 " + severity + "，物料 " + ncr.getItemCode() + "（批号 "
+                            + (ncr.getBatchNo() == null ? "-" : ncr.getBatchNo()) + "），不合格项："
+                            + (ncr.getDefectItem() == null ? "-" : ncr.getDefectItem())
+                            + (priorNcr != null ? "；重复不合格，关联前单 " + priorNcr.getNcrNo()
+                                    + "，严重度已上调" : "")
+                            + "；请于 " + ncr.getReviewDueTime() + " 前完成评审（48h 常规/4h 紧急）",
+                    "QMS_NCR", ncr.getId());
+        } catch (Exception e) {
+            log.warn("NCR 处置通知发送失败（降级不回滚，ncr={}）：{}", ncr.getNcrNo(), e.getMessage());
         }
         log.info("NCR {} created: lot={} severity={} scope={} ({}), capa={}", ncr.getNcrNo(), lot.getLotNo(),
                 severity, scope, gradeBasis, capa == null ? "-" : capa.getCapaNo());
@@ -296,6 +354,9 @@ public class NcrServiceImpl implements NcrService {
         if (!ST_CREATED.equals(ncr.getStatus()) && !"REVIEWING".equals(ncr.getStatus())) {
             throw new ServiceException(422, "当前状态不可评审：" + ncr.getStatus());
         }
+        if ("1".equals(ncr.getDispoPendingFlag())) {
+            throw new ServiceException(422, "CTQ 处置审批中，不可重复提交评审（可在审批中心撤回或等待审批结果）");
+        }
         if (opinion == null || opinion.trim().length() < 2) {
             throw new ServiceException(422, "评审意见必填（至少 2 字）");
         }
@@ -312,6 +373,38 @@ public class NcrServiceImpl implements NcrService {
             throw new ServiceException(422, "安全/法规 CTQ 不合格禁止让步接收与报废，仅可退货或返工（BR-4.12-26）");
         }
 
+        // CTQ 处置审批（spec CTQ 处置质量经理审批，FR-4.12-4-1 要点④）：
+        // 提交不流转——评审暂存 + DISPO_PENDING_FLAG='1' + 审批底座单节点质量经理
+        if ("1".equals(ncr.getCtqFlag())) {
+            ncr.setDisposition(disp);
+            ncr.setReviewBy(SecurityUtils.getCurrentUserId());
+            ncr.setReviewTime(LocalDateTime.now());
+            ncr.setReviewOpinion(opinion);
+            ncr.setDispoPendingFlag("1");
+            updateNcr(ncr);
+            writeLog(ncr, "REVIEW_SUBMIT", ncr.getStatus(), ncr.getStatus(),
+                    "CTQ 处置提交审批：处置=" + disp + "；意见：" + opinion + "（待质量经理审批）",
+                    "ROLE_QUALITY_MGR", null);
+            try {
+                approvalEngine.submit("NcrDisposition", ncr.getId(),
+                        "CTQ 处置审批：" + ncr.getNcrNo() + "（" + disp + "）",
+                        "ROLE_QUALITY_DIRECTOR",
+                        List.of(List.of(com.erp.service.approval.ApprovalNodeSpec
+                                .sign("ROLE_QUALITY_MGR", "质量经理"))));
+            } catch (RuntimeException ex) {
+                // 提交审批失败回滚暂存标记（同事务，抛出即整体回滚）
+                throw ex;
+            }
+            return ncr;
+        }
+        return applyReviewTransition(ncr, disp, opinion, "REVIEW");
+    }
+
+    /**
+     * 评审流转段（非 CTQ 直接走 / CTQ 审批通过回调复用）：
+     * 状态按处置转入 + 退货单/SCAR 自动带出。
+     */
+    Ncr applyReviewTransition(Ncr ncr, String disp, String opinion, String logAction) {
         String from = ncr.getStatus();
         String to = switch (disp) {
             case D_RETURN -> "RETURNING";
@@ -322,11 +415,22 @@ public class NcrServiceImpl implements NcrService {
         };
         ncr.setStatus(to);
         ncr.setDisposition(disp);
-        ncr.setReviewBy(SecurityUtils.getCurrentUserId());
-        ncr.setReviewTime(LocalDateTime.now());
-        ncr.setReviewOpinion(opinion);
-        updateNcr(ncr);
-        writeLog(ncr, "REVIEW", from, to, "评审选定处置=" + disp + "；意见：" + opinion, null, null);
+        // CTQ 审批通过回调场景：评审人/时间已在提交时暂存，不被审批人覆盖
+        if (ncr.getReviewTime() == null) {
+            ncr.setReviewBy(SecurityUtils.getCurrentUserId());
+            ncr.setReviewTime(LocalDateTime.now());
+            ncr.setReviewOpinion(opinion);
+        }
+        // updateById 忽略 null 字段，pending 清除须显式 set（驳回同理）
+        ncrDao.update(null, new LambdaUpdateWrapper<Ncr>()
+                .eq(Ncr::getId, ncr.getId())
+                .set(Ncr::getStatus, to)
+                .set(Ncr::getDisposition, disp)
+                .set(Ncr::getReviewBy, ncr.getReviewBy())
+                .set(Ncr::getReviewTime, ncr.getReviewTime())
+                .set(Ncr::getReviewOpinion, ncr.getReviewOpinion())
+                .set(Ncr::getDispoPendingFlag, null));
+        writeLog(ncr, logAction, from, to, "评审选定处置=" + disp + "；意见：" + opinion, null, null);
         // 退货处置 → 同事务自动带出退货单（tasks 8.1，BR-4.2-32：PO/收货单/数量/PO 单价）
         if (D_RETURN.equals(disp)) {
             var ro = returnService.createFromNcr(ncr);
@@ -348,11 +452,59 @@ public class NcrServiceImpl implements NcrService {
         return ncr;
     }
 
+    @Override
+    @Transactional
+    public Ncr applyDispositionApproval(String ncrId, String approvalOpinion) {
+        Ncr ncr = require(ncrId);
+        if (!"1".equals(ncr.getDispoPendingFlag())) {
+            return ncr; // 幂等：非待审批态跳过
+        }
+        if (!ST_CREATED.equals(ncr.getStatus()) && !"REVIEWING".equals(ncr.getStatus())) {
+            throw new ServiceException(422, "CTQ 审批通过但 NCR 状态不可流转：" + ncr.getStatus());
+        }
+        String disp = ncr.getDisposition();
+        if (!List.of(D_RETURN, D_SORT, D_REWORK, D_CONCESSION, D_SCRAP).contains(disp)) {
+            throw new ServiceException(422, "CTQ 审批通过但处置方式缺失：" + disp);
+        }
+        Ncr out = applyReviewTransition(ncr, disp, ncr.getReviewOpinion(), "REVIEW");
+        writeLog(ncr, "REVIEW_APPROVE", null, null,
+                "CTQ 处置审批通过：" + (approvalOpinion == null ? "" : approvalOpinion),
+                null, null);
+        return out;
+    }
+
+    @Override
+    @Transactional
+    public Ncr rejectDispositionApproval(String ncrId, String reason) {
+        Ncr ncr = require(ncrId);
+        if (!"1".equals(ncr.getDispoPendingFlag())) {
+            return ncr; // 幂等
+        }
+        String from = ncr.getStatus();
+        // null 字段须显式 set（updateById 忽略 null）
+        ncrDao.update(null, new LambdaUpdateWrapper<Ncr>()
+                .eq(Ncr::getId, ncr.getId())
+                .set(Ncr::getDispoPendingFlag, null)
+                .set(Ncr::getDisposition, null));
+        ncr.setDispoPendingFlag(null);
+        ncr.setDisposition(null);
+        writeLog(ncr, "REVIEW_REJECT", from, from,
+                "CTQ 处置审批驳回，可改选处置重新提交：" + (reason == null ? "" : reason), null, null);
+        return ncr;
+    }
+
     // ================= 6.3 处置方案录入 =================
 
     @Override
     @Transactional
     public Ncr planDisposition(String id, String plan) {
+        return planDisposition(id, plan, null, null, null, null);
+    }
+
+    @Override
+    @Transactional
+    public Ncr planDisposition(String id, String plan, String reworkSteps, String reworkParams,
+                               String reworkCheckReq, Boolean ctqConfirmed) {
         requireRole("录入处置方案", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
         Ncr ncr = require(id);
         if (ncr.getDisposition() == null) {
@@ -367,10 +519,35 @@ public class NcrServiceImpl implements NcrService {
         if (plan == null || plan.trim().length() < 2) {
             throw new ServiceException(422, "处置方案必填（挑选范围/返工方式/责任方等）");
         }
+        // 返工方案结构化（spec MODIFIED 处置执行确认：三字段必填 + CTQ 全含勾选）
+        if (D_REWORK.equals(ncr.getDisposition())) {
+            List<String> miss = new ArrayList<>();
+            if (!hasText(reworkSteps)) {
+                miss.add("返工工序步骤");
+            }
+            if (!hasText(reworkParams)) {
+                miss.add("关键工艺参数");
+            }
+            if (!hasText(reworkCheckReq)) {
+                miss.add("返工后检验要求（至少含原检验标准全部 CTQ 项）");
+            }
+            if (!miss.isEmpty()) {
+                throw new ServiceException(422, "返工方案结构化字段必填：" + String.join("、", miss));
+            }
+            if (!Boolean.TRUE.equals(ctqConfirmed)) {
+                throw new ServiceException(422, "须勾选确认「返工检验标准含原 CTQ 全部项」");
+            }
+            ncr.setReworkSteps(reworkSteps);
+            ncr.setReworkParams(reworkParams);
+            ncr.setReworkCheckReq(reworkCheckReq);
+            ncr.setReworkCtqConfirmed("1");
+        }
         ncr.setDisposePlan(plan);
         updateNcr(ncr);
         writeLog(ncr, "DISPOSE", ncr.getStatus(), ncr.getStatus(),
-                (D_SORT.equals(ncr.getDisposition()) ? "挑选" : "返工") + "方案：" + plan, null, null);
+                (D_SORT.equals(ncr.getDisposition()) ? "挑选" : "返工") + "方案：" + plan
+                        + (D_REWORK.equals(ncr.getDisposition())
+                        ? "；返工工序：" + reworkSteps + "；CTQ 全含已确认" : ""), null, null);
         return ncr;
     }
 
@@ -385,10 +562,20 @@ public class NcrServiceImpl implements NcrService {
     @Override
     @Transactional
     public Ncr confirmDisposed(String id, String result, java.math.BigDecimal costAmount) {
+        Map<String, Object> out = confirmDisposed(id, result, costAmount, null, null, null, null);
+        return (Ncr) out.get("ncr");
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> confirmDisposed(String id, String result, java.math.BigDecimal costAmount,
+                                               java.math.BigDecimal sortTotal, java.math.BigDecimal sortOk,
+                                               java.math.BigDecimal sortNg, java.math.BigDecimal sortHours) {
         requireRole("确认处置执行", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
         Ncr ncr = require(id);
         String disp = ncr.getDisposition();
         List<String> missing = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
         if (disp == null) {
             missing.add("未评审选定处置");
         }
@@ -401,10 +588,38 @@ public class NcrServiceImpl implements NcrService {
                 if (!hasText(result)) {
                     missing.add("挑选执行结果未录入（合格/隔离/报废数量）");
                 }
+                // 挑选结果结构化（spec MODIFIED 处置执行确认）：四字段必填 + 合计校验
+                if (sortTotal == null || sortOk == null || sortNg == null || sortHours == null) {
+                    missing.add("挑选结果结构化字段必填（总数量/合格数量/不合格数量/挑选工时）");
+                } else {
+                    if (sortTotal.signum() <= 0) {
+                        missing.add("挑选总数量必须大于 0");
+                    }
+                    if (sortOk.signum() < 0 || sortNg.signum() < 0) {
+                        missing.add("挑选合格/不合格数量不可为负");
+                    }
+                    if (sortHours.signum() < 0) {
+                        missing.add("挑选工时不可为负");
+                    }
+                    if (missing.isEmpty() && sortOk.add(sortNg).compareTo(sortTotal) != 0) {
+                        missing.add("挑选数量不平：合格 " + sortOk + " + 不合格 " + sortNg
+                                + " ≠ 总数量 " + sortTotal);
+                    }
+                    // 低合格率软提示（规格 2b「建议转退货」，不阻断）
+                    if (missing.isEmpty() && sortTotal.signum() > 0
+                            && sortOk.divide(sortTotal, 4, java.math.RoundingMode.HALF_UP)
+                                    .compareTo(new BigDecimal("0.5")) < 0) {
+                        warnings.add("挑选合格率低于 50%，建议转退货处置（规格 2b 建议口径，不阻断）");
+                    }
+                }
             }
             case D_REWORK -> {
                 if (!hasText(ncr.getDisposePlan())) {
                     missing.add("返工方案未录入");
+                }
+                if (!hasText(ncr.getReworkSteps()) || !hasText(ncr.getReworkCheckReq())
+                        || !"1".equals(ncr.getReworkCtqConfirmed())) {
+                    missing.add("返工方案结构化未完成（工序/检验要求/CTQ 全含勾选，见方案录入）");
                 }
                 if (!hasText(result)) {
                     missing.add("返工完成凭证未录入（返工批号/完成时间）");
@@ -450,8 +665,23 @@ public class NcrServiceImpl implements NcrService {
         ncr.setDisposeBy(SecurityUtils.getCurrentUserId());
         ncr.setDisposedDate(LocalDateTime.now());
         ncr.setStatus(ST_DISPOSED);
+        // 挑选结构化结果 + 成本落库（spec MODIFIED 处置执行确认）
+        if (D_SORT.equals(disp) && sortTotal != null) {
+            ncr.setSortTotalQty(sortTotal);
+            ncr.setSortOkQty(sortOk);
+            ncr.setSortNgQty(sortNg);
+            ncr.setSortHours(sortHours);
+        }
+        if (costAmount != null) {
+            ncr.setDisposeCostAmount(costAmount);
+        }
         updateNcr(ncr);
-        writeLog(ncr, "CONFIRM", from, ST_DISPOSED, "处置执行确认：" + result, null, null);
+        writeLog(ncr, "CONFIRM", from, ST_DISPOSED, "处置执行确认：" + result
+                + (D_SORT.equals(disp) && sortTotal != null
+                ? "；挑选结果 总" + sortTotal + "/合格" + sortOk + "/不合格" + sortNg
+                        + "/工时" + sortHours + "h" : "")
+                + (costAmount != null && costAmount.signum() > 0 ? "；成本 " + costAmount + " 元" : ""),
+                null, null);
         // COPQ 归集（tasks 9.6）：处置成本（内部失败类），成本额由业务方带入，未带不归集
         if (costAmount != null && costAmount.signum() > 0) {
             try {
@@ -472,7 +702,10 @@ public class NcrServiceImpl implements NcrService {
                 log.warn("COPQ record failed for NCR {}: {}", ncr.getNcrNo(), ex.getMessage());
             }
         }
-        return ncr;
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ncr", ncr);
+        out.put("warnings", warnings);
+        return out;
     }
 
     // ================= 6.5 关闭校验 + 解冻 =================
@@ -704,13 +937,285 @@ public class NcrServiceImpl implements NcrService {
         return handled;
     }
 
+    // ================= 重复 NCR 升级链扫描（rework-ncr-control 4.2，spec C-4.12-16） =================
+
+    @Override
+    public int sweepRepeatNcrCapaTodos() {
+        LocalDateTime since = LocalDateTime.now().minusDays(90);
+        List<Ncr> recent = ncrDao.selectList(new LambdaQueryWrapper<Ncr>()
+                .ge(Ncr::getCreateDate, since)
+                .notIn(Ncr::getStatus, ST_CANCELLED)
+                .last("LIMIT 500"));
+        if (recent.size() < 3) {
+            return 0;
+        }
+        // 三维度分组：物料 / 供应商 / 工序（报工来源 refType=WORKORDER 的 moId#opSeq 段）
+        Map<String, List<Ncr>> byItem = new LinkedHashMap<>();
+        Map<String, List<Ncr>> bySupplier = new LinkedHashMap<>();
+        Map<String, List<Ncr>> byProcess = new LinkedHashMap<>();
+        for (Ncr n : recent) {
+            if (hasText(n.getItemCode())) {
+                byItem.computeIfAbsent(n.getItemCode(), k -> new ArrayList<>()).add(n);
+            }
+            if (hasText(n.getSupplierId())) {
+                bySupplier.computeIfAbsent(n.getSupplierId(), k -> new ArrayList<>()).add(n);
+            }
+            if ("WORKORDER".equals(n.getRefType()) && hasText(n.getRefId())) {
+                // refId = moId#opSeq#rptNo → 工序键取 moId#opSeq
+                String ref = n.getRefId();
+                int second = ref.indexOf('#', ref.indexOf('#') + 1);
+                String opKey = second > 0 ? ref.substring(0, second) : ref;
+                byProcess.computeIfAbsent(opKey, k -> new ArrayList<>()).add(n);
+            }
+        }
+        int handled = 0;
+        String monthKey = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMM"));
+        handled += fireRepeatCapaTodo("MATERIAL", byItem, monthKey, false);
+        handled += fireRepeatCapaTodo("SUPPLIER", bySupplier, monthKey, true);
+        handled += fireRepeatCapaTodo("PROCESS", byProcess, monthKey, false);
+        return handled;
+    }
+
+    /**
+     * 单维度触发：count≥3 → 查在途 CAPA（有则跳过）→ 查窗口去重锚（已有待办跳过）
+     * → 推 CAPA 立项待办（质量经理必达，供应商维度加 SQE）。
+     * 待办正文携带：维度计数明细 + 全部 NCR 单号 + 严重度上调一级建议（C-4.12-16）。
+     */
+    private int fireRepeatCapaTodo(String dimType, Map<String, List<Ncr>> dims,
+                                   String monthKey, boolean alsoSqe) {
+        int fired = 0;
+        for (Map.Entry<String, List<Ncr>> e : dims.entrySet()) {
+            List<Ncr> group = e.getValue();
+            if (group.size() < 3) {
+                continue;
+            }
+            String dimKey = dimType + ":" + e.getKey();
+            String bizId = "CAPA_TODO:" + dimKey + ":" + monthKey;
+            // 幂等锚①：同维度键+月窗口已有待办 → 跳过
+            Long pushed = noticeDao.selectCount(new LambdaQueryWrapper<com.erp.entity.system.SysNotice>()
+                    .eq(com.erp.entity.system.SysNotice::getBizType, "QMS_CAPA_REPEAT")
+                    .eq(com.erp.entity.system.SysNotice::getBizId, bizId));
+            if (pushed != null && pushed > 0) {
+                continue;
+            }
+            // 幂等锚②：组内任一 NCR 存在未关闭 CAPA → 跳过（在途 CAPA 已覆盖）
+            List<String> ids = group.stream().map(Ncr::getId).toList();
+            Long openCapa = capaDao.selectCount(new LambdaQueryWrapper<Capa>()
+                    .in(Capa::getNcrId, ids)
+                    .notIn(Capa::getStatus, "CLOSED"));
+            if (openCapa != null && openCapa > 0) {
+                continue;
+            }
+            // 严重度上调一级建议：组内最高严重度 → 上调（封顶 Critical）
+            String maxSev = "MINOR";
+            for (Ncr n : group) {
+                if ("CRITICAL".equals(n.getSeverity())) {
+                    maxSev = "CRITICAL";
+                    break;
+                }
+                if ("MAJOR".equals(n.getSeverity())) {
+                    maxSev = "MAJOR";
+                }
+            }
+            String uplifted = severityUpOne(maxSev);
+            String ncrNos = group.stream().map(Ncr::getNcrNo).sorted().reduce((a, b) -> a + "、" + b)
+                    .orElse("");
+            String title = "CAPA 立项待办：" + dimType + " " + e.getKey()
+                    + " 近 3 个月 NCR " + group.size() + " 张";
+            String content = "重复不合格触发强制 CAPA 立项（C-4.12-16）：维度 " + dimKey
+                    + "，滚动 3 个月累计 NCR " + group.size() + " 张（" + ncrNos + "）。"
+                    + "建议 CAPA 严重度 " + uplifted + "（组内最高 " + maxSev + " 上调一级，封顶 Critical）。"
+                    + "请质量工程师完成 CAPA 立项并关联上述历史 NCR——本待办不代建 CAPA 单。";
+            try {
+                noticeService.push("ROLE_QUALITY_MGR", null, title, content,
+                        "QMS_CAPA_REPEAT", bizId);
+                if (alsoSqe) {
+                    noticeService.push("ROLE_SQE", null, title, content,
+                            "QMS_CAPA_REPEAT", bizId);
+                }
+                fired++;
+                log.info("repeat NCR CAPA todo fired: {} (count={}, sev {}→{})",
+                        dimKey, group.size(), maxSev, uplifted);
+            } catch (Exception ex) {
+                log.warn("repeat NCR CAPA todo push failed（降级不回滚，dim={}）：{}",
+                        dimKey, ex.getMessage());
+            }
+        }
+        return fired;
+    }
+
+    // ================= 漏检召回评估（rework-ncr-control 6.1/6.2，spec 6753①） =================
+
+    @Override
+    @Transactional
+    public Ncr createForReleasedLot(String lotId, String defectItem, String defectDesc,
+                                    String severity, String ctqFlag) {
+        requireRole("创建放行后发现 NCR", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
+        InspectionLot lot = hasText(lotId) ? lotDao.selectById(lotId) : null;
+        if (lot == null) {
+            throw new ServiceException(404, "检验批不存在：" + lotId);
+        }
+        if (!"RELEASED".equals(lot.getStatus())) {
+            throw new ServiceException(422, "该批次未放行，请走检验判定自动建单（当前状态 "
+                    + lot.getStatus() + "）");
+        }
+        // 幂等：该批存在未关闭的手工 NCR → 422 返回既有单号（spec 幂等拒绝重复创建）
+        Ncr existed = ncrDao.selectOne(new LambdaQueryWrapper<Ncr>()
+                .eq(Ncr::getRefType, "RELEASED_LOT")
+                .eq(Ncr::getRefId, lotId)
+                .notIn(Ncr::getStatus, ST_CLOSED, ST_CANCELLED)
+                .last("LIMIT 1"));
+        if (existed != null) {
+            throw new ServiceException(422, "该批次已存在未关闭的手工 NCR：" + existed.getNcrNo());
+        }
+        String sev = hasText(severity) ? severity.trim().toUpperCase() : "MAJOR";
+        if (!List.of("CRITICAL", "MAJOR", "MINOR").contains(sev)) {
+            sev = "MAJOR";
+        }
+        boolean ctq = "1".equals(ctqFlag);
+        String markedDesc = (defectDesc == null ? "" : defectDesc.trim());
+        if (!markedDesc.contains("放行后发现")) {
+            markedDesc = "【放行后发现】" + (markedDesc.isEmpty() ? "放行后漏检/误判" : markedDesc);
+        }
+
+        Ncr ncr = new Ncr();
+        ncr.setNcrNo(nextNcrNo());
+        ncr.setRefType("RELEASED_LOT");
+        ncr.setRefId(lotId);
+        ncr.setLotId(lot.getId());
+        ncr.setLotNo(lot.getLotNo());
+        ncr.setGrId(lot.getGrId());
+        ncr.setGrLineId(lot.getGrLineId());
+        ncr.setItemCode(lot.getItemCode());
+        ncr.setItemName(lot.getItemName());
+        ncr.setSupplierId(lot.getSupplierId());
+        ncr.setSupplierName(lot.getSupplierName());
+        ncr.setBatchNo(lot.getBatchNo());
+        ncr.setQty(lot.getLotQty());
+        ncr.setSeverity(sev);
+        ncr.setDefectItem(hasText(defectItem) ? defectItem.trim() : "放行后发现不合格");
+        ncr.setDefectDesc(markedDesc);
+        ncr.setCtqFlag(ctq ? "1" : "0");
+        ncr.setRegulatoryFlag("0");
+        ncr.setStatus(ST_CREATED);
+        ncr.setFrozenFlag("1");
+        ncr.setReviewEscalatedFlag("0");
+        ncr.setReviewRemindCount(0);
+        ncr.setOverdueRemindCount(0);
+        ncr.setOverdueFlag("0");
+        ncr.setEscalatedFlag("0");
+        ncr.setPerfFrozenFlag("0");
+        ncr.setReviewDueTime(LocalDateTime.now().plusHours(hoursOf(sev)));
+        ncr.setCreateBy(SecurityUtils.getCurrentUserId());
+        // 先落库取 ID（freezeStock 台账归集需 ncr.getId()，同 createFromLot 修复口径）
+        ncr.setFreezeScope("PENDING");
+        ncrDao.insert(ncr);
+
+        // 冻结：复用 createFromLot 两阶段降级路径（POSTED→冻库存 / 未过账→GR 行 / 无库存→仅标记）
+        GoodsReceiptLine line = lot.getGrLineId() == null ? null : lineDao.selectById(lot.getGrLineId());
+        boolean frozenStock = false;
+        String scope;
+        if (line != null && "POSTED".equals(line.getStatus())) {
+            frozenStock = freezeStock(ncr);
+            scope = "STOCK";
+        } else if (line != null) {
+            scope = "GR_LINE";
+        } else {
+            frozenStock = freezeStock(ncr);
+            scope = frozenStock ? "STOCK" : "NONE";
+        }
+        ncr.setFreezeScope(scope);
+        updateNcr(ncr);
+        if (line != null) {
+            line.setQcStatus("FROZEN");
+            lineDao.updateById(line);
+        }
+
+        writeLog(ncr, "CREATE", null, ST_CREATED,
+                "手工创建（放行后发现）：" + markedDesc + "；批次 " + lot.getLotNo()
+                        + " 冻结=" + scope + (frozenStock ? "（库存 AVAILABLE→QC）" : ""),
+                null, null);
+        log.info("NCR {} created: released-lot={} sev={} scope={} (manual, missed-defect)",
+                ncr.getNcrNo(), lotId, sev, scope);
+        return ncr;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> recallEvaluation(String ncrId) {
+        requireRole("发起召回评估", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
+        Ncr ncr = require(ncrId);
+        if (!"RELEASED_LOT".equals(ncr.getRefType())) {
+            throw new ServiceException(422, "仅「放行后发现」的 NCR 可发起召回评估（refType=RELEASED_LOT）");
+        }
+        InspectionLot lot = hasText(ncr.getLotId()) ? lotDao.selectById(ncr.getLotId()) : null;
+        String batchNo = lot != null && hasText(lot.getBatchNo()) ? lot.getBatchNo() : ncr.getBatchNo();
+        if (!hasText(batchNo)) {
+            throw new ServiceException(422, "批次号缺失，无法发起召回评估");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        // 命中既有未结案追溯单 → 不重复建单（关联后返回既有供跳转）
+        com.erp.entity.inv.TraceOrder existing = traceOrderDao.selectOne(
+                new LambdaQueryWrapper<com.erp.entity.inv.TraceOrder>()
+                        .eq(com.erp.entity.inv.TraceOrder::getBatchNo, batchNo)
+                        .ne(com.erp.entity.inv.TraceOrder::getStatus, "CLOSED")
+                        .last("LIMIT 1"));
+        if (existing != null) {
+            if (!hasText(existing.getSourceNcrId())) {
+                existing.setSourceNcrId(ncr.getId());
+                traceOrderDao.updateById(existing);
+            }
+            writeLog(ncr, "RECALL_EVAL", ncr.getStatus(), ncr.getStatus(),
+                    "召回评估关联既有追溯单：" + existing.getTraceNo() + "（不重复建单）", null, null);
+            out.put("traceId", existing.getId());
+            out.put("traceNo", existing.getTraceNo());
+            out.put("existing", true);
+            return out;
+        }
+        // 发起追溯（批次索引，缺陷描述携带 NCR 号）；analyze 只物化流向，不执行冻结
+        String reason = "漏检召回评估：" + ncr.getNcrNo() + "（"
+                + (ncr.getDefectItem() == null ? "" : ncr.getDefectItem()) + "）"
+                + (ncr.getDefectDesc() == null ? "" : ncr.getDefectDesc());
+        Map<String, Object> trace = traceService.analyze("BATCH", batchNo, reason);
+        String traceId = String.valueOf(trace.get("id"));
+        // 双向关联：追溯单回写来源 NCR
+        com.erp.entity.inv.TraceOrder t = traceOrderDao.selectById(traceId);
+        if (t != null) {
+            t.setSourceNcrId(ncr.getId());
+            traceOrderDao.updateById(t);
+        }
+        writeLog(ncr, "RECALL_EVAL", ncr.getStatus(), ncr.getStatus(),
+                "发起召回评估追溯单：" + trace.get("traceNo")
+                        + "（评估权留人：冻结等重动作由追溯流程按流向分析决策）", null, null);
+        out.put("traceId", traceId);
+        out.put("traceNo", trace.get("traceNo"));
+        out.put("existing", false);
+        return out;
+    }
+
     // ================= 查询 =================
 
     @Override
     public Page<Map<String, Object>> page(long current, long size, String keyword, String status, String severity) {
+        return page(current, size, keyword, status, null, severity, null, null);
+    }
+
+    @Override
+    public Page<Map<String, Object>> page(long current, long size, String keyword, String status,
+                                          String statuses, String severity, Boolean frozenOnly, Boolean withStage) {
+        List<String> statusList = null;
+        if (hasText(statuses)) {
+            statusList = java.util.Arrays.stream(statuses.split(","))
+                    .map(String::trim).filter(s -> !s.isEmpty()).toList();
+        }
         LambdaQueryWrapper<Ncr> qw = new LambdaQueryWrapper<Ncr>()
                 .eq(hasText(status), Ncr::getStatus, status)
+                .in(statusList != null && !statusList.isEmpty(), Ncr::getStatus, statusList)
                 .eq(hasText(severity), Ncr::getSeverity, severity)
+                // 6.5.1 隔离清单：冻结中且未作废/未关闭（spec 不合格品隔离确认与标识卡）
+                .eq(Boolean.TRUE.equals(frozenOnly), Ncr::getFrozenFlag, "1")
+                .ne(Boolean.TRUE.equals(frozenOnly), Ncr::getStatus, ST_CANCELLED)
+                .ne(Boolean.TRUE.equals(frozenOnly), Ncr::getStatus, ST_CLOSED)
                 .and(hasText(keyword), w -> w.like(Ncr::getNcrNo, keyword)
                         .or().like(Ncr::getItemCode, keyword)
                         .or().like(Ncr::getSupplierName, keyword)
@@ -720,6 +1225,9 @@ public class NcrServiceImpl implements NcrService {
         Page<Map<String, Object>> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         List<Map<String, Object>> rows = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
+        // 6.5.2 处置阶段：批量反查关联单据（IN 批查防 N+1，design D4）
+        Map<String, Map<String, Object>> stages = Boolean.TRUE.equals(withStage)
+                ? deriveDisposeStages(raw.getRecords()) : Map.of();
         for (Ncr n : raw.getRecords()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", n.getId());
@@ -736,6 +1244,11 @@ public class NcrServiceImpl implements NcrService {
             m.put("regulatoryFlag", n.getRegulatoryFlag());
             m.put("frozenFlag", n.getFrozenFlag());
             m.put("freezeScope", n.getFreezeScope());
+            m.put("isolatedFlag", n.getIsolatedFlag());
+            m.put("isolateBin", n.getIsolateBin());
+            m.put("isolatedBy", n.getIsolatedBy());
+            m.put("isolatedTime", n.getIsolatedTime());
+            m.put("dispoPendingFlag", n.getDispoPendingFlag());
             m.put("reviewDueTime", n.getReviewDueTime());
             boolean reviewOverdue = ST_CREATED.equals(n.getStatus()) && n.getReviewDueTime() != null
                     && n.getReviewDueTime().isBefore(now);
@@ -744,10 +1257,177 @@ public class NcrServiceImpl implements NcrService {
             m.put("overdueFlag", n.getOverdueFlag());
             m.put("perfFrozenFlag", n.getPerfFrozenFlag());
             m.put("createDate", n.getCreateDate());
+            Map<String, Object> st = stages.get(n.getId());
+            if (st != null) {
+                m.put("disposeStage", st.get("disposeStage"));
+                m.put("disposeStageDetail", st.get("disposeStageDetail"));
+            }
             rows.add(m);
         }
         out.setRecords(rows);
         return out;
+    }
+
+    /**
+     * 处置阶段推导（spec 处置跟踪多态视图，design D4）：批量反查，实时计算不落库；
+     * 反查异常降级为处置方式原文（不影响列表主流程）。
+     */
+    private Map<String, Map<String, Object>> deriveDisposeStages(List<Ncr> records) {
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        try {
+            // CTQ 审批中（DISPO_PENDING_FLAG=1）优先于状态分支——即便状态为 CREATED 也纳入推导
+            List<Ncr> inflow = records.stream()
+                    .filter(n -> List.of("RETURNING", "SORTING", "REWORKING", "CONCESSION", ST_SCRAPPING)
+                            .contains(n.getStatus()) || "1".equals(n.getDispoPendingFlag()))
+                    .toList();
+            if (inflow.isEmpty()) {
+                return out;
+            }
+            List<String> ids = inflow.stream().map(Ncr::getId).toList();
+            // 退货：批量反查退货单出库状态
+            Map<String, String> returnStatus = new LinkedHashMap<>();
+            if (inflow.stream().anyMatch(n -> D_RETURN.equals(n.getDisposition()))) {
+                var roDao = returnOrderDao;
+                roDao.selectList(new LambdaQueryWrapper<com.erp.entity.proc.ReturnOrder>()
+                                .in(com.erp.entity.proc.ReturnOrder::getNcrId, ids))
+                        .forEach(r -> returnStatus.putIfAbsent(r.getNcrId(), r.getStatus()));
+            }
+            // 让步：批量反查 APPROVED 让步单
+            java.util.Set<String> concessionApproved = new java.util.HashSet<>();
+            if (inflow.stream().anyMatch(n -> D_CONCESSION.equals(n.getDisposition()))) {
+                concessionDao.selectList(new LambdaQueryWrapper<Concession>()
+                                .in(Concession::getNcrId, ids)
+                                .eq(Concession::getStatus, "APPROVED"))
+                        .forEach(c -> concessionApproved.add(c.getNcrId()));
+            }
+            // 挑选/返工已确认未放行：复检批统计
+            Map<String, long[]> recheckStat = new LinkedHashMap<>();
+            if (inflow.stream().anyMatch(n -> D_SORT.equals(n.getDisposition())
+                    || D_REWORK.equals(n.getDisposition()))) {
+                lotDao.selectList(new LambdaQueryWrapper<InspectionLot>()
+                                .eq(InspectionLot::getRefType, "NCR")
+                                .in(InspectionLot::getRefId, ids)
+                                .eq(InspectionLot::getSourceType, "RECHECK"))
+                        .forEach(l -> {
+                            long[] c = recheckStat.computeIfAbsent(l.getRefId(), k -> new long[2]);
+                            c[0]++;
+                            if ("RELEASED".equals(l.getStatus())) {
+                                c[1]++;
+                            }
+                        });
+            }
+            for (Ncr n : inflow) {
+                String stage;
+                String detail = "";
+                if ("1".equals(n.getDispoPendingFlag())) {
+                    // CTQ 处置待质量经理审批（spec 阶段标识，优先于状态分支）
+                    stage = "处置待质量经理审批";
+                    String disp = switch (n.getDisposition() == null ? "" : n.getDisposition()) {
+                        case D_RETURN -> "退货";
+                        case D_SORT -> "挑选";
+                        case D_REWORK -> "返工";
+                        case D_CONCESSION -> "让步接收";
+                        case D_SCRAP -> "报废";
+                        default -> "未选处置";
+                    };
+                    detail = "CTQ 单评审已提交，审批通过后按所选处置流转（" + disp + "）";
+                    Map<String, Object> pst = new LinkedHashMap<>();
+                    pst.put("disposeStage", stage);
+                    pst.put("disposeStageDetail", detail);
+                    out.put(n.getId(), pst);
+                    continue;
+                }
+                switch (n.getStatus()) {
+                    case "RETURNING" -> {
+                        String rs = returnStatus.get(n.getId());
+                        if ("OUT_DONE".equals(rs)) {
+                            stage = "退货出库完成待确认";
+                        } else {
+                            stage = "待退货出库";
+                        }
+                        detail = "退货单状态：" + (rs == null ? "未生成" : rs);
+                    }
+                    case "SORTING", "REWORKING" -> {
+                        boolean planned = hasText(n.getDisposePlan());
+                        long[] c = recheckStat.getOrDefault(n.getId(), new long[2]);
+                        if (!planned) {
+                            stage = "待方案录入";
+                            detail = "请录入" + (D_SORT.equals(n.getDisposition()) ? "挑选" : "返工") + "方案";
+                        } else {
+                            stage = "待处置确认";
+                            detail = "方案已录入，待执行确认";
+                        }
+                        if (c[1] > 0) {
+                            stage = "复检已放行待关闭";
+                            detail = "复检批已放行，可关闭 NCR";
+                        } else if (c[0] > 0) {
+                            stage = "待复检放行";
+                            detail = "复检批已生成未放行（" + c[0] + " 批）";
+                        }
+                    }
+                    case "CONCESSION" -> {
+                        if (concessionApproved.contains(n.getId())) {
+                            stage = "双签完成待确认";
+                            detail = "让步双签已批准，待处置确认";
+                        } else {
+                            stage = "待双签批准";
+                            detail = "让步单待质量经理+技术负责人双签（2.5.2）";
+                        }
+                    }
+                    case "SCRAPPING" -> {
+                        if (hasText(n.getDisposeResult())) {
+                            stage = "待处置确认";
+                            detail = "报废单号已回填";
+                        } else {
+                            stage = "待回填报废单号";
+                            detail = "先在 4.5.4 创建报废单并完成会签过账，再回填";
+                        }
+                    }
+                    default -> stage = n.getDisposition();
+                }
+                Map<String, Object> st = new LinkedHashMap<>();
+                st.put("disposeStage", stage);
+                st.put("disposeStageDetail", detail);
+                out.put(n.getId(), st);
+            }
+        } catch (Exception ex) {
+            log.warn("disposeStage derive failed, fallback to disposition text: {}", ex.getMessage());
+            out.clear();
+            for (Ncr n : records) {
+                if (n.getDisposition() != null) {
+                    Map<String, Object> st = new LinkedHashMap<>();
+                    st.put("disposeStage", n.getDisposition());
+                    st.put("disposeStageDetail", "");
+                    out.put(n.getId(), st);
+                }
+            }
+        }
+        return out;
+    }
+
+    // ================= 6.5.1 隔离确认 =================
+
+    @Override
+    @Transactional
+    public Ncr isolate(String id, String bin) {
+        requireRole("隔离确认", "ROLE_INSPECTOR", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
+        Ncr ncr = require(id);
+        if (ST_CLOSED.equals(ncr.getStatus()) || ST_CANCELLED.equals(ncr.getStatus())) {
+            throw new ServiceException(422, "已关闭/已作废的 NCR 不可隔离确认：" + ncr.getStatus());
+        }
+        if (bin == null || bin.trim().isEmpty()) {
+            throw new ServiceException(422, "隔离区货位必填");
+        }
+        String userId = SecurityUtils.getCurrentUserId();
+        boolean repeated = "1".equals(ncr.getIsolatedFlag());
+        ncr.setIsolatedFlag("1");
+        ncr.setIsolateBin(bin.trim());
+        ncr.setIsolatedBy(userId);
+        ncr.setIsolatedTime(LocalDateTime.now());
+        updateNcr(ncr);
+        writeLog(ncr, "ISOLATE", ncr.getStatus(), ncr.getStatus(),
+                (repeated ? "隔离确认更新" : "隔离确认") + "：货位 " + bin.trim() + "；贴标人 " + userId, null, null);
+        return ncr;
     }
 
     @Override
@@ -777,6 +1457,19 @@ public class NcrServiceImpl implements NcrService {
                 .orderByDesc(InspectionLot::getCreateDate)));
         out.put("returns", returnNos(ncr.getId()));
         out.put("concessions", concessionNos(ncr.getId()));
+        // 漏检召回评估关联（rework-ncr-control 6.2：追溯单 SOURCE_NCR_ID 反查）
+        if ("RELEASED_LOT".equals(ncr.getRefType())) {
+            com.erp.entity.inv.TraceOrder recall = traceOrderDao.selectOne(
+                    new LambdaQueryWrapper<com.erp.entity.inv.TraceOrder>()
+                            .eq(com.erp.entity.inv.TraceOrder::getSourceNcrId, ncr.getId())
+                            .orderByDesc(com.erp.entity.inv.TraceOrder::getCreateDate)
+                            .last("LIMIT 1"));
+            if (recall != null) {
+                out.put("recallTraceId", recall.getId());
+                out.put("recallTraceNo", recall.getTraceNo());
+                out.put("recallTraceStatus", recall.getStatus());
+            }
+        }
         out.put("logs", logs(id));
         return out;
     }
@@ -820,6 +1513,16 @@ public class NcrServiceImpl implements NcrService {
         // 台账归集（spec ncr-management MODIFIED，SOURCE=NCR 即时生效）
         freezeService.recordNcrFreeze(rows.get(0).getWarehouseCode(), ncr.getItemCode(),
                 ncr.getBatchNo(), available, ncr.getId());
+        // 下游计划通知（FR-4.12-3-2 异常①，rework-qualified-release）：受影响计划调整
+        try {
+            noticeService.push("ROLE_PLANNER", null,
+                    "冻结影响计划：" + ncr.getNcrNo(),
+                    "物料 " + ncr.getItemCode() + " 批次 " + ncr.getBatchNo() + " 因 NCR "
+                            + ncr.getNcrNo() + " 冻结 " + available + "，请调整受影响工单与领用计划",
+                    "QMS_NCR_FREEZE", ncr.getId());
+        } catch (Exception e) {
+            log.warn("NCR 冻结计划通知发送失败（降级不回滚，ncr={}）：{}", ncr.getNcrNo(), e.getMessage());
+        }
         return true;
     }
 
@@ -925,6 +1628,38 @@ public class NcrServiceImpl implements NcrService {
             throw new ServiceException(404, "NCR 不存在：" + id);
         }
         return ncr;
+    }
+
+    /**
+     * 前序 NCR 查找（rework-ncr-control 4.1，spec 重复 NCR 升级链）：
+     * ① 复检链——复检批 refType=NCR 直接反查触发单；
+     * ② 同批历史——批次号维度最近一张未作废 NCR。
+     * 调用时点在本单 insert 之前，不会自匹配。
+     */
+    private Ncr findPriorNcr(InspectionLot lot) {
+        if ("NCR".equals(lot.getRefType()) && hasText(lot.getRefId())) {
+            Ncr prior = ncrDao.selectById(lot.getRefId());
+            if (prior != null) {
+                return prior;
+            }
+        }
+        if (hasText(lot.getBatchNo())) {
+            return ncrDao.selectOne(new LambdaQueryWrapper<Ncr>()
+                    .eq(Ncr::getBatchNo, lot.getBatchNo())
+                    .ne(Ncr::getStatus, ST_CANCELLED)
+                    .orderByDesc(Ncr::getCreateDate)
+                    .last("LIMIT 1"));
+        }
+        return null;
+    }
+
+    /** 严重度上调一级（C-4.12-16，Minor→Major→Critical 封顶） */
+    private String severityUpOne(String severity) {
+        if ("MINOR".equals(severity)) {
+            return "MAJOR";
+        }
+        // MAJOR→CRITICAL；CRITICAL 已封顶（返回同值 = 不变）
+        return "CRITICAL";
     }
 
     private void updateNcr(Ncr ncr) {

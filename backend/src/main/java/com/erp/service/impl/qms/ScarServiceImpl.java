@@ -67,6 +67,12 @@ public class ScarServiceImpl implements ScarService {
         if (ncr == null) {
             return null;
         }
+        // SCAR 为供应商索赔单：无供应商（如 IPQC 内部不合格、报工来源 NCR）不生成，
+        // 避免 SUPPLIER_ID 非空约束炸裂（rework-ncr-identification-disposition 冒烟修复）
+        if (!hasText(ncr.getSupplierId())) {
+            log.info("SCAR skip: NCR {} has no supplier (internal nonconformance)", ncr.getNcrNo());
+            return null;
+        }
         // 幂等：同 NCR 已有未作废 SCAR
         Scar existed = scarDao.selectOne(new LambdaQueryWrapper<Scar>()
                 .eq(Scar::getNcrId, ncr.getId())
