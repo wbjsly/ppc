@@ -29,3 +29,8 @@ export function addActionApi(capaId, data) {
 export function completeActionApi(actionId, effectDesc) {
   return request.post(`/qms/capa/actions/${actionId}/done`, { effectDesc })
 }
+
+/** 按 NCR 精确反查 CAPA（待办直达幂等：已有则打开详情） */
+export function getCapaByNcrApi(ncrId) {
+  return request.get(`/qms/capa/by-ncr/${ncrId}`)
+}

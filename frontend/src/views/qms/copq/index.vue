@@ -140,16 +140,79 @@
           </table>
         </el-col>
         <el-col :span="12">
-          <h4 class="sec">供应商维度（已确认，含未归因）</h4>
-          <el-table :data="supplierRows" size="mini" border max-height="240">
-            <el-table-column prop="name" label="供应商" min-width="140" />
+          <h4 class="sec">维度排名（已确认）</h4>
+          <el-radio-group v-model="rankDim" size="small" style="margin-bottom:8px;">
+            <el-radio-button value="ITEM">产品</el-radio-button>
+            <el-radio-button value="SUPPLIER">供应商</el-radio-button>
+            <el-radio-button value="PROCESS">工序</el-radio-button>
+            <el-radio-button value="CUSTOMER">客户</el-radio-button>
+          </el-radio-group>
+          <el-table :data="rankRows" size="mini" border max-height="240">
+            <el-table-column prop="name" :label="rankDimLabel" min-width="140" />
             <el-table-column prop="amount" label="质量成本" width="120" align="right">
-              <template #default="{ row }">¥ {{ row.amount }}</template>
+              <template #default="{ row }">¥ {{ fmt(row.amount) }}</template>
             </el-table-column>
             <el-table-column prop="ratio" label="占比" width="90" align="right" />
           </el-table>
         </el-col>
       </el-row>
+
+      <!-- 趋势（近 12 月已确认，内联 SVG 不引图表库） -->
+      <h4 class="sec" style="margin-top:14px;">近 12 个月趋势（已确认，¥）</h4>
+      <div class="trend-wrap">
+        <svg :viewBox="`0 0 ${TREND_W} ${TREND_H}`" class="trend-svg" preserveAspectRatio="none">
+          <g v-for="(r, i) in trendRows" :key="r.month">
+            <rect v-for="(c, ci) in CATS" :key="c"
+              :x="trendX(i) + ci * (BAR_W + 1)" :y="trendY(r[c])"
+              :width="BAR_W" :height="trendH(r[c])"
+              :fill="TREND_FILL[ci]" rx="1" />
+            <text :x="trendX(i) + (BAR_W * 4 + 3) / 2" :y="TREND_H - 4"
+              font-size="8" fill="#909399" text-anchor="middle">{{ r.month.slice(2) }}</text>
+          </g>
+        </svg>
+        <div class="trend-legend">
+          <span v-for="(c, ci) in CATS" :key="c">
+            <i :style="{ background: TREND_FILL[ci] }" />{{ CAT_TEXT[c] }}
+          </span>
+        </div>
+      </div>
+
+      <!-- 环比突变红条 -->
+      <el-alert v-if="rep.spike && rep.spike.spike" type="error" :closable="false"
+        :title="rep.spike.spikeAlert" style="margin-top:10px;" />
+
+      <!-- 目标达成（参数空不渲染） -->
+      <template v-if="rep.targets">
+        <h4 class="sec" style="margin-top:14px;">目标达成（实际 vs 目标）</h4>
+        <el-table :data="targetRows" size="mini" border>
+          <el-table-column prop="name" label="指标" min-width="140" />
+          <el-table-column prop="target" label="目标" width="120" align="right" />
+          <el-table-column prop="actual" label="实际" width="120" align="right" />
+          <el-table-column prop="gap" label="差值" width="130" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: row.achieved ? '#67C23A' : '#F56C6C' }">{{ row.gap }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="达成" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.achieved ? 'success' : 'danger'">
+                {{ row.achieved ? '达成' : '未达成' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+
+      <!-- 数据缺失项提示 -->
+      <el-alert v-if="rep.missing && rep.missing.length" type="warning" :closable="false"
+        style="margin-top:10px;"
+        :title="`数据缺失项：${rep.missing.map(m => `${CAT_TEXT[m.category] || m.category} ¥${m.amount} 未确认`).join('、')}（报告含草稿数据，正式口径以已确认为准）`" />
+
+      <!-- 改善建议（多条规则式） -->
+      <div v-if="rep.suggestions && rep.suggestions.length" class="suggest-box">
+        <div class="suggest-title">改善建议</div>
+        <div v-for="(s, i) in rep.suggestions" :key="i" class="suggest-item">· {{ s }}</div>
+      </div>
     </el-card>
 
     <!-- 归集对话框 -->
@@ -168,6 +231,12 @@
         </el-form-item>
         <el-form-item label="供应商">
           <el-input v-model="createForm.supplierName" placeholder="可留空（记未归因）" />
+        </el-form-item>
+        <el-form-item label="工序">
+          <el-input v-model="createForm.processCode" placeholder="可选：工序编码（维度排名用）" />
+        </el-form-item>
+        <el-form-item label="客户">
+          <el-input v-model="createForm.customerName" placeholder="可选：客户名称（维度排名用）" />
         </el-form-item>
         <el-form-item label="发生日期">
           <el-date-picker v-model="createForm.occurDate" type="date" value-format="YYYY-MM-DD" />
@@ -201,7 +270,7 @@ const CAT_TEXT = {
   PREVENTION: '预防成本', APPRAISAL: '鉴定成本',
   INTERNAL_FAILURE: '内部失败', EXTERNAL_FAILURE: '外部失败'
 }
-const SRC_TEXT = { NCR: 'NCR', RETURN: '退货', SCAR: 'SCAR', CAPA: 'CAPA', MANUAL: '手工' }
+const SRC_TEXT = { NCR: 'NCR', RETURN: '退货', SCAR: 'SCAR', SCRAP: '报废', CAPA: 'CAPA', MANUAL: '手工' }
 
 const tab = route.meta.tab || 'ledger'
 const showAnalysis = ref(tab === 'analysis')
@@ -213,7 +282,53 @@ const total = ref(0)
 const filters = reactive({ category: '', status: '', keyword: '', current: 1, size: 10 })
 const rep = reactive({
   period: '', confirmed: {}, confirmedTotal: 0, draft: {}, draftTotal: 0,
-  externalFailure: 0, externalRatio: 0, externalAlert: false, suggestion: '', bySupplier: {}
+  externalFailure: 0, externalRatio: 0, externalAlert: false, suggestion: '', bySupplier: {},
+  trend: [], spike: {}, rankings: {}, targets: null, suggestions: [], missing: []
+})
+
+// ---- 四维排名切换（rework-copq-analysis 5.1）----
+const rankDim = ref('ITEM')
+const RANK_LABEL = { ITEM: '产品', SUPPLIER: '供应商', PROCESS: '工序', CUSTOMER: '客户' }
+const rankDimLabel = computed(() => RANK_LABEL[rankDim.value])
+const rankRows = computed(() => (rep.rankings && rep.rankings[rankDim.value]) || [])
+
+// ---- 趋势 SVG（内联，不引图表库）----
+const TREND_W = 480
+const TREND_H = 110
+const BAR_W = 6
+const TREND_FILL = ['#67C23A', '#409EFF', '#E6A23C', '#F56C6C']
+const trendRows = computed(() => rep.trend || [])
+const trendMax = computed(() =>
+  Math.max(...trendRows.value.map(r => Number(r.total || 0)), 1))
+function trendX(i) {
+  const gap = (TREND_W - 40) / 12
+  return 24 + i * gap + (gap - (BAR_W * 4 + 3)) / 2
+}
+function trendH(v) {
+  const usable = TREND_H - 22
+  return Math.max(Math.round((Number(v || 0) / trendMax.value) * usable), v > 0 ? 1 : 0)
+}
+function trendY(v) {
+  return TREND_H - 16 - trendH(v)
+}
+
+// ---- 目标达成行 ----
+const TARGET_TEXT = {
+  PREVENTION: '预防成本目标', APPRAISAL: '鉴定成本目标',
+  INTERNAL_FAILURE: '内部失败目标', EXTERNAL_FAILURE: '外部失败目标',
+  EXTERNAL_RATIO: '外部失败占比上限'
+}
+const targetRows = computed(() => {
+  if (!rep.targets) return []
+  return Object.entries(rep.targets).map(([k, v]) => ({
+    name: TARGET_TEXT[k] || k,
+    target: k === 'EXTERNAL_RATIO' ? `${v.target}%` : `¥ ${fmt(v.target)}`,
+    actual: k === 'EXTERNAL_RATIO' ? `${v.actual}%` : `¥ ${fmt(v.actual)}`,
+    gap: k === 'EXTERNAL_RATIO'
+      ? `${v.gap > 0 ? '+' : ''}${v.gap} pp`
+      : `${v.gap > 0 ? '+' : ''}¥ ${fmt(v.gap)}`,
+    achieved: v.achieved
+  }))
 })
 
 const myRoles = computed(() => (userStore.userInfo && userStore.userInfo.roles) || [])
@@ -229,18 +344,6 @@ function barWidth(v) {
     ...CATS.map(c => Number(rep.confirmed[c] || 0) + Number(rep.draft[c] || 0)), 1)
   return `${Math.round((Number(v || 0) / max) * 100)}%`
 }
-const supplierRows = computed(() => {
-  const map = rep.bySupplier || {}
-  const totalV = Object.values(map).reduce((a, b) => a + Number(b || 0), 0) || 1
-  return Object.entries(map)
-    .map(([name, amount]) => ({
-      name,
-      amount: Number(amount),
-      ratio: `${((Number(amount) / totalV) * 100).toFixed(1)}%`
-    }))
-    .sort((a, b) => b.amount - a.amount)
-})
-
 async function load() {
   loading.value = true
   try {
@@ -287,11 +390,16 @@ async function doResolve(row) {
 }
 
 const createVisible = ref(false)
-const createForm = reactive({ category: 'INTERNAL_FAILURE', amount: undefined, supplierName: '', occurDate: '', remark: '' })
+const createForm = reactive({
+  category: 'INTERNAL_FAILURE', amount: undefined, supplierName: '',
+  processCode: '', customerName: '', occurDate: '', remark: ''
+})
 function openCreate() {
   createForm.category = 'INTERNAL_FAILURE'
   createForm.amount = undefined
   createForm.supplierName = ''
+  createForm.processCode = ''
+  createForm.customerName = ''
   createForm.occurDate = ''
   createForm.remark = ''
   createVisible.value = true
@@ -332,4 +440,13 @@ onMounted(async () => {
 .bar { height: 14px; border-radius: 3px; margin-bottom: 3px; min-width: 2px; }
 .bar.confirmed { background: #409EFF; }
 .bar.draft { background: #F3D19E; }
+/* 趋势区（rework-copq-analysis） */
+.trend-wrap { width: 100%; }
+.trend-svg { width: 100%; height: 130px; display: block; }
+.trend-legend { display: flex; gap: 14px; margin-top: 4px; font-size: 12px; color: #606266; }
+.trend-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+/* 改善建议 */
+.suggest-box { margin-top: 12px; background: #fdf6ec; border: 1px solid #faecd8; border-radius: 4px; padding: 10px 12px; }
+.suggest-title { font-size: 13px; font-weight: 600; color: #E6A23C; margin-bottom: 6px; }
+.suggest-item { font-size: 12px; color: #606266; line-height: 1.8; }
 </style>

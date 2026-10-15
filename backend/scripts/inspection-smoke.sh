@@ -50,6 +50,35 @@ DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID
 DELETE FROM erp_sys_approval WHERE BIZ_TYPE='Concession' AND TITLE LIKE '%SMKI%';
 -- 20 重复升级：CAPA 待办通知（段 0 清，防跨轮幂等锚短路）
 DELETE FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_REPEAT' AND BIZ_ID LIKE 'CAPA_TODO:%';
+-- 22 CAPA 证据链：回炉/重分析待办 + CAPA 三表（标题锚 SMKCAPA）
+DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('QMS_CAPA_REANALYZE', 'QMS_CAPA_RECUR');
+DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID
+ WHERE a.BIZ_TYPE='CapaStandardChange' AND a.TITLE LIKE '%SMKCAPA%';
+DELETE FROM erp_sys_approval WHERE BIZ_TYPE='CapaStandardChange' AND TITLE LIKE '%SMKCAPA%';
+DELETE FROM erp_qms_capa_action WHERE CAPA_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_capa WHERE TITLE LIKE '%SMKCAPA%') t16);
+DELETE FROM erp_qms_capa_step WHERE CAPA_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_capa WHERE TITLE LIKE '%SMKCAPA%') t17);
+DELETE FROM erp_qms_capa WHERE TITLE LIKE '%SMKCAPA%';
+DELETE FROM erp_inv_batch WHERE BATCH_NO IN ('BATCH-SMK22A','BATCH-SMK22B');
+-- 23 质量成本分析：归集全清（保证趋势/环比确定性）+ SCAR/报废/审批 + 记分卡当月结果（锚 SMKCOPQ）
+DELETE FROM erp_qms_copq_entry;
+DELETE FROM erp_sys_approval_task WHERE APPR_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE IN ('ScarFinance','CopqFinance')) t23a);
+DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('ScarFinance','CopqFinance');
+DELETE FROM erp_qms_scar_deduction WHERE SCAR_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_qms_scar WHERE TITLE LIKE '%SMKCOPQ%') t23b);
+DELETE FROM erp_qms_scar WHERE TITLE LIKE '%SMKCOPQ%';
+DELETE FROM erp_fin_voucher_line WHERE VOUCHER_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_voucher WHERE SOURCE_TYPE='SCRAP') t23c);
+DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='SCRAP';
+DELETE FROM erp_inv_transaction WHERE ITEM_CODE='SMKCOPQ-01';
+DELETE FROM erp_inv_scrap_order_line WHERE ITEM_CODE='SMKCOPQ-01';
+DELETE FROM erp_inv_scrap_order WHERE REMARK LIKE '%SMKCOPQ%';
+DELETE FROM erp_inv_stock WHERE ITEM_CODE='SMKCOPQ-01';
+DELETE FROM erp_mdm_item WHERE ITEM_CODE='SMKCOPQ-01';
+DELETE FROM erp_scm_scorecard_result WHERE MONTH_TAG = DATE_FORMAT(CURDATE(),'%Y%m');
+DELETE FROM erp_scm_scorecard_model WHERE MODEL_CODE='SMKCOPQ-MDL';
 -- 21 召回评估：追溯单三表 + 批次台账（按批次锚，须在 lot/ncr 删除前无依赖问题）
 DELETE FROM erp_inv_trace_flow WHERE TRACE_ID IN
  (SELECT ID FROM (SELECT ID FROM erp_inv_trace_order WHERE BATCH_NO IN ('BATCH-SMK21')) t14);
@@ -677,6 +706,252 @@ EVAL2_EXIST=$(C -X POST -H "$(A $TENG)" $B/api/qms/ncrs/$NCR21_ID/recall-evaluat
 EQ "重复入口返既有单" "$EVAL2_EXIST" "True"
 # 非 RELEASED_LOT 拒绝（用 NCR16：GR 触发的普通 NCR，refType != RELEASED_LOT）
 EQ "普通 NCR 评估 422" "$(BIZ -X POST -H "$(A $TENG)" $B/api/qms/ncrs/$NCR16/recall-evaluation)" "422"
+
+echo "=============================="
+echo "== 22. CAPA 证据链（rework-capa-evidence：D7 三件套 + 复发回炉 + D8 沉淀 + 时限/反查/view）=="
+# 手工立项（关联 NCR21 → dueDate 自动计算）
+CAPA22=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d "{\"title\":\"SMKCAPA 证据链冒烟\",\"severity\":\"MAJOR\",\"sourceType\":\"REPEAT\",\"ncrId\":\"$NCR21_ID\"}" \
+  $B/api/qms/capa | J "d['data']['id']")
+[ -n "${CAPA22:-}" ] && ok "手工立项（$CAPA22）" || bad "立项失败"
+DUE22=$(SQL "SELECT IFNULL(DUE_DATE,'NULL') FROM erp_qms_capa WHERE ID='$CAPA22'")
+[ "$DUE22" != "NULL" ] && ok "关联 NCR 立项自动计算时限（$DUE22）" || bad "dueDate 未计算"
+# 独立立项无时限
+CAPA22B=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"title":"SMKCAPA 独立立项","severity":"MINOR","sourceType":"COMPLAINT"}' \
+  $B/api/qms/capa | J "d['data']['id']")
+DUE22B=$(SQL "SELECT IFNULL(DUE_DATE,'NULL') FROM erp_qms_capa WHERE ID='$CAPA22B'")
+EQ "独立来源无时限" "$DUE22B" "NULL"
+# D1 空成员 422
+EQ "D1 空清单 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D1","ownerName":"冒烟工程师","output":"启动会议"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "422"
+# D1 单人全质量 → warnings
+D1RES=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D1","ownerName":"冒烟工程师","output":"启动会议","teamMembers":"[{\"name\":\"冒烟工程师\",\"domain\":\"质量\",\"duty\":\"Leader 统筹\",\"leader\":true}]"}' \
+  $B/api/qms/capa/$CAPA22/steps)
+EQ "D1 完成" "$(echo "$D1RES" | J "d['code']")" "200"
+CONTAINS "D1 单领域软警示" "$(echo "$D1RES" | J "d['data'].get('warnings') and 'WARN' or 'NONE'")" "WARN"
+# D2 5W2H
+EQ "D2 完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D2","ownerName":"冒烟工程师","output":"What 划伤 Who 检验员 When 10月14日 Where 包装线 Why 未按 SOP Why 挡杆松动 How many 3 件 How 调整挡杆"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+# D3 遏制
+EQ "D3 完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D3","ownerName":"冒烟工程师","output":"库存隔离 50 件 + 加严检验"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+# D4 缺证据 422 → 齐全通过
+EQ "D4 缺证据 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D4","ownerName":"冒烟工程师","output":"分析","rootCause":"挡杆螺丝松动导致位移（为什么松动：点检标准缺失）"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "422"
+EQ "D4 完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D4","ownerName":"冒烟工程师","output":"分析","rootCause":"挡杆螺丝松动导致位移（为什么松动：点检标准缺失）","rootCauseEvidence":"近 3 周点检记录缺失，复现实验确认位移 2mm"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+# 措施录入 + 完成 → D5/D6
+ACT22=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"actionType":"CORRECT","description":"SMKCAPA 调整挡杆并班前点检","ownerName":"冒烟工程师","dueDate":"2026-10-20","effectDesc":"消除位移"}' \
+  $B/api/qms/capa/$CAPA22/actions | J "d['data']['id']")
+[ -n "${ACT22:-}" ] && ok "措施录入（$ACT22）" || bad "措施录入失败"
+EQ "措施完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"effectDesc":"已调整，复测 0 位移"}' $B/api/qms/capa/actions/$ACT22/done)" "200"
+EQ "D5 完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D5","ownerName":"冒烟工程师","output":"纠正+预防措施已定"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+EQ "D6 完成（措施全 DONE）" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D6","ownerName":"冒烟工程师","output":"措施执行完毕"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+# D7 缺指标 422 → 三件套齐全 VALID
+EQ "D7 缺三件套 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D7","ownerName":"冒烟工程师","output":"验证","verifyResult":"VALID"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "422"
+EQ "D7 完成（三件套 VALID）" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D7","ownerName":"冒烟工程师","output":"验证","verifyIndicator":"划伤不合格率","verifyTarget":"≤0.5%","verifyBefore":"3.0%","verifyAfter":"0.2%","verifyPeriod":"3个月","verifyResult":"VALID"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+VDATA=$(SQL "SELECT VERIFY_DATA FROM erp_qms_capa WHERE ID='$CAPA22'")
+CONTAINS "跟踪数据规范文本" "$VDATA" "措施前: 3.0%"
+# ---- 复发回炉：同物料再建 NCR → VERIFYING CAPA 自动 INVALID 回 D4 ----
+SQL "INSERT IGNORE INTO erp_qms_inspection_lot (ID, LOT_NO, LOT_TYPE, ITEM_CODE, ITEM_NAME, LOT_QTY, BATCH_NO, STATUS, RESULT, RISK_GRADE, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('lot-smk22b','IL-SMK22B','IQC','SMKI001','复发回炉冒烟物料',20,'BATCH-SMK22B','RELEASED','PASS','C','smoke','0',0);" >/dev/null
+SQL "INSERT IGNORE INTO erp_inv_batch (ID, BATCH_NO, ITEM_CODE, ITEM_NAME, PRODUCTION_DATE, EXPIRY_DATE, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('bt-smk22b','BATCH-SMK22B','SMKI001','复发回炉冒烟物料',CURDATE(),DATE_ADD(CURDATE(),INTERVAL 90 DAY),'smoke','0',0);" >/dev/null
+NCR22B=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"lotId":"lot-smk22b","defectItem":"复发划伤","defectDesc":"验证期内同物料再次不合格","severity":"MAJOR","ctqFlag":"0"}' \
+  $B/api/qms/ncrs/released-lots | J "d['data']['ncrNo']")
+[ -n "${NCR22B:-}" ] && ok "复发新 NCR 建单（$NCR22B）" || bad "复发建单失败"
+REC_ST=$(SQL "SELECT CONCAT(STATUS,'/',VERIFY_RESULT,'/',CURRENT_STEP) FROM erp_qms_capa WHERE ID='$CAPA22'")
+EQ "复发自动回炉" "$REC_ST" "REANALYZING/INVALID/D4"
+REC_TODO=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='QMS_CAPA_RECUR' AND BIZ_ID='$CAPA22'")
+EQ "复发待办生成" "$REC_TODO" "1"
+# 回炉后再走 D4→D7
+EQ "回炉后 D4 完成" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D4","ownerName":"冒烟工程师","output":"二次分析","rootCause":"点检标准未覆盖挡杆（为什么：FMEA 未识别该失效）","rootCauseEvidence":"复发数据对比 + FMEA 复核记录"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D5","ownerName":"冒烟工程师","output":"二轮措施"}' $B/api/qms/capa/$CAPA22/steps >/dev/null
+BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D6","ownerName":"冒烟工程师","output":"二轮执行完毕"}' $B/api/qms/capa/$CAPA22/steps >/dev/null
+EQ "二轮 D7 VALID" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D7","ownerName":"冒烟工程师","output":"二轮验证","verifyIndicator":"划伤不合格率","verifyTarget":"≤0.5%","verifyBefore":"3.0%","verifyAfter":"0.1%","verifyPeriod":"3个月","verifyResult":"VALID"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+# D8 全未勾 422 → 沉淀关闭
+EQ "D8 全未勾 422" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D8","ownerName":"冒烟工程师","output":"关闭总结"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "422"
+EQ "D8 沉淀完成关闭" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"stepCode":"D8","ownerName":"冒烟工程师","output":"关闭总结","legacySink":"[{\"type\":\"TRAINING\",\"note\":\"更新培训教材 TR-22\"},{\"type\":\"FMEA\",\"note\":\"FMEA 措施数 F-22 加严挡杆项\"}]"}' \
+  $B/api/qms/capa/$CAPA22/steps)" "200"
+EQ "已关闭" "$(SQL "SELECT STATUS FROM erp_qms_capa WHERE ID='$CAPA22'")" "CLOSED"
+# 待办反查（by-ncr 幂等）
+BYN=$(C -H "$(A $TENG)" $B/api/qms/capa/by-ncr/$NCR21_ID | J "d['data'].get('id')")
+EQ "按 NCR 反查幂等" "$BYN" "$CAPA22"
+NCR22B_ID=$(SQL "SELECT ID FROM erp_qms_ncr WHERE NCR_NO='$NCR22B'")
+BYN2=$(C -H "$(A $TENG)" $B/api/qms/capa/by-ncr/$NCR22B_ID | J "d['data'] is None and 'NULL' or 'X'")
+EQ "无 CAPA 的 NCR 反查空" "$BYN2" "NULL"
+# view 三态
+VACT=$(C -H "$(A $TENG)" "$B/api/qms/capa?view=actions&size=50" | J "len(d['data']['records'])")
+[ "${VACT:-0}" -ge 0 ] && ok "view=actions 可用（${VACT:-0} 行）" || bad "view=actions 异常"
+VVRF=$(C -H "$(A $TENG)" "$B/api/qms/capa?view=verify&size=50" | J "len(d['data']['records'])")
+[ "${VVRF:-0}" -ge 0 ] && ok "view=verify 可用（${VVRF:-0} 行）" || bad "view=verify 异常"
+
+echo "=============================="
+echo "== 23. 质量成本分析（rework-copq-analysis：SCAR/报废归集 + 五项分析 + 记分卡质量成本）=="
+# 目标参数复位（进程缓存须走 API，SQL 直改不生效）→ targets 应为 null
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_INTERNAL_FAILURE?value=" >/dev/null
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_EXTERNAL_RATIO?value=" >/dev/null
+EQ "参数空 targets=null" "$(C -H "$(A $TADM)" "$B/api/qms/copq/report" | J "d['data'].get('targets') is None and 'NULL' or 'OBJ'")" "NULL"
+
+# ---- 23.1 SCAR 扣款确认 → COPQ 外部失败归集（幂等 + 财务确认进正式报表）----
+SUPNAME=$(SQL "SELECT SUPPLIER_NAME FROM erp_mdm_supplier WHERE ID='$SUP'")
+SCAR23=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"triggerType\":\"REPEAT\",\"supplierId\":\"$SUP\",\"supplierName\":\"${SUPNAME:-冒烟供应商}\",\"title\":\"SMKCOPQ 重复来料不合格\",\"defectDesc\":\"冒烟：外观划伤批退\",\"claimAmount\":8000}" \
+  $B/api/qms/scar | J "d['data']['id']")
+[ -n "${SCAR23:-}" ] && ok "SCAR 草稿（$SCAR23）" || bad "SCAR 创建失败"
+EQ "SCAR 发出（<1 万直接 SENT）" "$(BIZ -X POST -H "$(A $TADM)" $B/api/qms/scar/$SCAR23/submit)" "200"
+EQ "SCAR 状态 SENT" "$(SQL "SELECT STATUS FROM erp_qms_scar WHERE ID='$SCAR23'")" "SENT"
+DED23=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"amount":5000,"remark":"SMKCOPQ 扣款"}' $B/api/qms/scar/$SCAR23/deductions | J "d['data']['id']")
+[ -n "${DED23:-}" ] && ok "扣款单（$DED23）" || bad "扣款单创建失败"
+EQ "扣款超索赔额 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"amount":9000}' $B/api/qms/scar/$SCAR23/deductions)" "422"
+EQ "扣款财务确认提交 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/qms/scar/deductions/$DED23/finance)" "200"
+TDED=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID=(SELECT APPROVAL_ID FROM erp_qms_scar_deduction WHERE ID='$DED23') AND STATUS='ACTIVE' AND ROLE_REQUIRED='ROLE_ADMIN' LIMIT 1")
+[ -n "${TDED:-}" ] && ok "ScarFinance 待办生成" || bad "ScarFinance 待办缺失"
+EQ "扣款确认签署 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$TDED\",\"opinion\":\"确认扣款\"}" $B/api/qms/approvals/pass)" "200"
+EQ "扣款 CONFIRMED" "$(SQL "SELECT STATUS FROM erp_qms_scar_deduction WHERE ID='$DED23'")" "CONFIRMED"
+COPQ_S=$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCAR' AND SOURCE_ID='$DED23' AND CATEGORY='EXTERNAL_FAILURE'")
+EQ "SCAR 确认自动生成 COPQ 归集" "$COPQ_S" "1"
+COPQ_S_AMT=$(SQL "SELECT CAST(AMOUNT AS CHAR) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCAR' AND SOURCE_ID='$DED23'")
+EQ "归集金额 5000" "${COPQ_S_AMT%%.*}" "5000"
+EQ "重复确认 422（幂等）" "$(BIZ -X POST -H "$(A $TADM)" $B/api/qms/scar/deductions/$DED23/finance)" "422"
+EQ "归集不重复" "$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCAR' AND SOURCE_ID='$DED23'")" "1"
+EQ "按来源反查 1 条" "$(C -H "$(A $TADM)" "$B/api/qms/copq/by-source?sourceType=SCAR&sourceId=$DED23" | J "len(d['data'])")" "1"
+# 财务确认（CopqFinance）→ CONFIRMED 进正式报表
+COPQ_S_ID=$(SQL "SELECT ID FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCAR' AND SOURCE_ID='$DED23'")
+EQ "COPQ 财务确认提交 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/qms/copq/$COPQ_S_ID/finance)" "200"
+TCOPQ=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID=(SELECT APPROVAL_ID FROM erp_qms_copq_entry WHERE ID='$COPQ_S_ID') AND STATUS='ACTIVE' LIMIT 1")
+[ -n "${TCOPQ:-}" ] && ok "CopqFinance 待办生成" || bad "CopqFinance 待办缺失"
+EQ "COPQ 确认签署 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$TCOPQ\",\"opinion\":\"确认入账\"}" $B/api/qms/approvals/pass)" "200"
+EQ "COPQ CONFIRMED" "$(SQL "SELECT STATUS FROM erp_qms_copq_entry WHERE ID='$COPQ_S_ID'")" "CONFIRMED"
+
+# ---- 23.2 报废过账 → COPQ 内部失败归集（幂等 + 降级不阻断）----
+SQL "INSERT IGNORE INTO erp_mdm_item (ID, ITEM_CODE, ITEM_NAME, CATEGORY_CODE, BASE_UNIT, MATERIAL_GROUP, PURCHASE_TYPE, STORAGE_CONDITION, BATCH_FLAG, SERIAL_FLAG, STATUS, CREATE_BY, DEL_FLAG, VER_NO)
+ VALUES ('it-smkcopq-1','SMKCOPQ-01','COPQ 冒烟物料','SMKI','PC','STRUCT','BUY','NORMAL','1','0','1','smoke','0',0);
+INSERT IGNORE INTO erp_inv_stock (ID, WAREHOUSE_CODE, ITEM_CODE, ITEM_NAME, BATCH_NO, BIN_CODE, QTY, QC_QTY, FIN_QTY, AVAILABLE_QTY, INBOUND_DATE, CREATE_BY, DEL_FLAG, VER_NO)
+ VALUES ('stk-smkcopq-1','WH-MAIN','SMKCOPQ-01','COPQ 冒烟物料','BATCH-SMKCOPQ','A-01',50,0,0,50,'2026-09-01','smoke','0',0);" >/dev/null 2>&1 \
+  && ok "报废造数（物料+库存）" || bad "报废造数失败"
+SCR23=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"head":{"warehouseCode":"WH-MAIN","reason":"DAMAGE","remark":"SMKCOPQ 报废归集冒烟"},"lines":[{"itemCode":"SMKCOPQ-01","itemName":"COPQ 冒烟物料","batchNo":"BATCH-SMKCOPQ","qty":5,"unitCost":20}]}' \
+  $B/api/inv/scrap-orders | J "d['data']['order']['id']")
+[ -n "${SCR23:-}" ] && ok "报废单创建（$SCR23）" || bad "报废单创建失败"
+EQ "报废批准 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/inv/scrap-orders/$SCR23/approve)" "200"
+EQ "报废过账 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/inv/scrap-orders/$SCR23/post)" "200"
+COPQ_R=$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCRAP' AND SOURCE_ID='$SCR23' AND CATEGORY='INTERNAL_FAILURE'")
+EQ "报废过账自动生成 COPQ 归集" "$COPQ_R" "1"
+COPQ_R_AMT=$(SQL "SELECT CAST(AMOUNT AS CHAR) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCRAP' AND SOURCE_ID='$SCR23'")
+EQ "归集金额=5×20" "${COPQ_R_AMT%%.*}" "100"
+EQ "重复过账 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/inv/scrap-orders/$SCR23/post)" "422"
+EQ "报废归集不重复" "$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCRAP' AND SOURCE_ID='$SCR23'")" "1"
+COPQ_R_ID=$(SQL "SELECT ID FROM erp_qms_copq_entry WHERE SOURCE_TYPE='SCRAP' AND SOURCE_ID='$SCR23'")
+EQ "报废归集财务确认 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/qms/copq/$COPQ_R_ID/finance)" "200"
+TR23=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID=(SELECT APPROVAL_ID FROM erp_qms_copq_entry WHERE ID='$COPQ_R_ID') AND STATUS='ACTIVE' LIMIT 1")
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$TR23\",\"opinion\":\"确认入账\"}" $B/api/qms/approvals/pass >/dev/null
+EQ "报废归集 CONFIRMED" "$(SQL "SELECT STATUS FROM erp_qms_copq_entry WHERE ID='$COPQ_R_ID'")" "CONFIRMED"
+
+# ---- 23.3 手工归集（工序/客户透传）+ 异常阻断回归 ----
+MAN23=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"category":"INTERNAL_FAILURE","amount":300,"itemCode":"SMKI002","processCode":"OP30","customerName":"客户甲","sourceType":"MANUAL","remark":"SMKCOPQ 手工归集"}' \
+  $B/api/qms/copq | J "d['data']['id']")
+[ -n "${MAN23:-}" ] && ok "手工归集（$MAN23）" || bad "手工归集失败"
+MAN23F=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"category":"PREVENTION","amount":200,"sourceType":"MANUAL","remark":"SMKCOPQ 预防成本"}' \
+  $B/api/qms/copq | J "d['data']['id']")
+MAN23M=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"category":"APPRAISAL","amount":888,"sourceType":"MANUAL","remark":"SMKCOPQ 鉴定成本未确认"}' \
+  $B/api/qms/copq | J "d['data']['id']")
+[ -n "${MAN23F:-}" ] && [ -n "${MAN23M:-}" ] && ok "预防/鉴定归集" || bad "预防/鉴定归集失败"
+# 10× 月均异常阻断（EXTERNAL 已确认月均 5000 → 100000 ≥ 10×）
+HOLD23=$(C -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"category":"EXTERNAL_FAILURE","amount":100000,"sourceType":"MANUAL","remark":"SMKCOPQ 异常大额"}' \
+  $B/api/qms/copq | J "d['data']['status']")
+EQ "10× 月均异常阻断" "$HOLD23" "ANOMALY_HOLD"
+HOLD_ID=$(SQL "SELECT ID FROM erp_qms_copq_entry WHERE REMARK='SMKCOPQ 异常大额'")
+EQ "异常核实不予入账" "$(BIZ -X POST -H "$(A $TENG)" -H 'Content-Type: application/json' \
+  -d '{"pass":false,"remark":"冒烟核销"}' $B/api/qms/copq/$HOLD_ID/anomaly)" "200"
+# 确认两笔进正式报表（COPQ 财务确认链复用）
+for MID in "$MAN23" "$MAN23F"; do
+  BIZ -X POST -H "$(A $TENG)" $B/api/qms/copq/$MID/finance >/dev/null
+  MT=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID=(SELECT APPROVAL_ID FROM erp_qms_copq_entry WHERE ID='$MID') AND STATUS='ACTIVE' LIMIT 1")
+  BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+    -d "{\"taskId\":\"$MT\",\"opinion\":\"确认入账\"}" $B/api/qms/approvals/pass >/dev/null
+done
+EQ "手工/预防 CONFIRMED" "$(SQL "SELECT COUNT(*) FROM erp_qms_copq_entry WHERE ID IN ('$MAN23','$MAN23F') AND STATUS='CONFIRMED'")" "2"
+
+# ---- 23.4 report 五项分析断言 ----
+REP23=$(C -H "$(A $TADM)" "$B/api/qms/copq/report")
+EQ "trend 12 月序列" "$(echo "$REP23" | J "len(d['data']['trend'])")" "12"
+TREND_TOT=$(echo "$REP23" | J "float(d['data']['trend'][-1]['total'])")
+python3 -c "import sys; sys.exit(0 if abs($TREND_TOT-5600)<0.01 else 1)" \
+  && ok "当月已确认合计 5600（5000+100+300+200）" || bad "当月合计异常（$TREND_TOT）"
+EQ "环比 spike 命中（上月 0）" "$(echo "$REP23" | J "str(d['data']['spike'].get('spike'))")" "True"
+CONTAINS "spikeAlert 文案" "$(echo "$REP23" | J "d['data']['spike'].get('spikeAlert') or ''")" "上期为 0"
+EQ "外部失败红标" "$(echo "$REP23" | J "str(d['data']['externalAlert'])")" "True"
+EQ "四维排名键齐" "$(echo "$REP23" | J "'/'.join(sorted(d['data']['rankings'].keys()))")" "CUSTOMER/ITEM/PROCESS/SUPPLIER"
+EQ "产品维度含 SMKI002" "$(echo "$REP23" | J "1 if any(r['name']=='SMKI002' and abs(float(r['amount'])-300)<0.01 for r in d['data']['rankings']['ITEM']) else 0")" "1"
+EQ "工序维度含 OP30" "$(echo "$REP23" | J "1 if any(r['name']=='OP30' for r in d['data']['rankings']['PROCESS']) else 0")" "1"
+EQ "客户维度含客户甲" "$(echo "$REP23" | J "1 if any(r['name']=='客户甲' for r in d['data']['rankings']['CUSTOMER']) else 0")" "1"
+EQ "供应商维度空值归未归因" "$(echo "$REP23" | J "1 if any(r['name']=='未归因' for r in d['data']['rankings']['SUPPLIER']) else 0")" "1"
+EQ "缺失项含未确认鉴定成本" "$(echo "$REP23" | J "1 if any(m['category']=='APPRAISAL' and abs(float(m['amount'])-888)<0.01 for m in d['data']['missing']) else 0")" "1"
+SUG23_N=$(echo "$REP23" | J "len(d['data']['suggestions'])")
+[ "${SUG23_N:-0}" -ge 2 ] && ok "建议 ≥2 条（外部占比 + 环比突变）" || bad "建议不足（$SUG23_N）"
+CONTAINS "既有键兼容（suggestion）" "$(echo "$REP23" | J "d['data'].get('suggestion') or ''")" "外部失败"
+
+# ---- 23.5 目标达成（SysParam 走 API 写入）----
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_INTERNAL_FAILURE?value=1000&valueType=AMOUNT&paramGroup=QMS&remark=smoke" >/dev/null
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_EXTERNAL_RATIO?value=50&valueType=NUMBER&paramGroup=QMS&remark=smoke" >/dev/null
+REP23T=$(C -H "$(A $TADM)" "$B/api/qms/copq/report")
+EQ "targets 非 null" "$(echo "$REP23T" | J "d['data'].get('targets') is not None and 'OBJ' or 'NULL'")" "OBJ"
+EQ "内部失败目标达成（400≤1000）" "$(echo "$REP23T" | J "str(d['data']['targets']['INTERNAL_FAILURE']['achieved'])")" "True"
+EQ "外部占比目标未达成（89.29%>50%）" "$(echo "$REP23T" | J "str(d['data']['targets']['EXTERNAL_RATIO']['achieved'])")" "False"
+# 复位（不污染后续运行）
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_INTERNAL_FAILURE?value=" >/dev/null
+C -X POST -H "$(A $TADM)" "$B/api/system/params/COPQ_TARGET_EXTERNAL_RATIO?value=" >/dev/null
+EQ "复位后 targets=null" "$(C -H "$(A $TADM)" "$B/api/qms/copq/report" | J "d['data'].get('targets') is None and 'NULL' or 'OBJ'")" "NULL"
+
+# ---- 23.6 记分卡质量成本采集（仅进明细不改得分）----
+EQ "记分卡模型登记 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"modelCode":"SMKCOPQ-MDL","name":"冒烟记分卡模型"}' $B/api/scm/scorecard/models)" "200"
+CURM=$(date +%Y%m)
+EQ "月度采集 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"monthTag\":\"$CURM\"}" $B/api/scm/scorecard/collect)" "200"
+SC_RID=$(C -H "$(A $TADM)" "$B/api/scm/scorecard/results?monthTag=$CURM&supplierId=$SUP&size=10" | J "d['data']['records'][0]['id'] if d['data']['records'] else ''")
+[ -n "${SC_RID:-}" ] && ok "记分卡结果生成（$SC_RID）" || bad "记分卡结果缺失"
+SC_DET=$(C -H "$(A $TADM)" "$B/api/scm/scorecard/results/$SC_RID")
+SC_QC=$(echo "$SC_DET" | J "float(d['data']['source'].get('qualityCost') or 0)")
+python3 -c "import sys; sys.exit(0 if abs($SC_QC-5000)<0.01 else 1)" \
+  && ok "采集明细含 qualityCost=5000" || bad "qualityCost 异常（$SC_QC）"
+SC_TOT=$(echo "$SC_DET" | J "d['data']['result'].get('totalScore')")
+[ -n "${SC_TOT:-}" ] && [ "$SC_TOT" != "None" ] && ok "得分照常计算（$SC_TOT，质量成本不参与）" || bad "得分缺失"
 
 echo "检验任务冒烟：PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then echo "ALL GREEN"; else echo "HAS FAILURES"; exit 1; fi

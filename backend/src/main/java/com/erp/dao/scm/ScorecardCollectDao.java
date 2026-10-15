@@ -26,6 +26,17 @@ public interface ScorecardCollectDao {
             "GROUP BY SUPPLIER_ID")
     List<Map<String, Object>> quality(@Param("start") String start, @Param("next") String next);
 
+    /**
+     * 质量成本（rework-copq-analysis 4.1，spec supplier-scorecard MODIFIED 采集明细）：
+     * 供应商上月 COPQ 已确认金额——仅进采集明细展示，不参与得分计算。
+     */
+    @Select("SELECT SUPPLIER_ID AS supplierId, SUM(AMOUNT) AS qualityCost " +
+            "FROM erp_qms_copq_entry " +
+            "WHERE STATUS = 'CONFIRMED' AND SUPPLIER_ID IS NOT NULL " +
+            "AND OCCUR_DATE >= #{start} AND OCCUR_DATE < #{next} " +
+            "GROUP BY SUPPLIER_ID")
+    List<Map<String, Object>> copqCost(@Param("start") String start, @Param("next") String next);
+
     /** 交付：准时交付率 = 实际到货 ≤ PO 承诺交期（GR.ARRIVAL_DATE vs PO.PROMISE_DATE） */
     @Select("SELECT p.SUPPLIER_ID AS supplierId, COUNT(*) AS totalLots, " +
             "  SUM(CASE WHEN p.PROMISE_DATE IS NOT NULL AND g.ARRIVAL_DATE IS NOT NULL " +

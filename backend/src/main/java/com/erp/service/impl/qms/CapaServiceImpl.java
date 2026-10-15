@@ -16,7 +16,6 @@ import com.erp.service.approval.ApprovalNodeSpec;
 import com.erp.service.qms.CapaService;
 import com.erp.util.SecurityUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,22 +47,23 @@ public class CapaServiceImpl implements CapaService {
             "何事", "何人", "何时", "何地", "为何", "为什么", "如何", "多少"};
     private static final String[] SHALLOW_KEYS = {"疏忽", "不小心", "操作失误", "未注意", "大意", "失误"};
 
-    @Value("${app.qms.capa-due-days:7}")
-    private int dueDays; // 5 工作日 ≈ 7 自然日
-
     private final CapaDao capaDao;
     private final CapaStepDao stepDao;
     private final CapaActionDao actionDao;
     private final NcrDao ncrDao;
     private final ApprovalEngine approvalEngine;
+    /** 站内通知（D7 回炉待办 / 复发回炉待办，rework-capa-evidence） */
+    private final com.erp.service.system.NoticeService noticeService;
 
     public CapaServiceImpl(CapaDao capaDao, CapaStepDao stepDao, CapaActionDao actionDao,
-                           NcrDao ncrDao, ApprovalEngine approvalEngine) {
+                           NcrDao ncrDao, ApprovalEngine approvalEngine,
+                           com.erp.service.system.NoticeService noticeService) {
         this.capaDao = capaDao;
         this.stepDao = stepDao;
         this.actionDao = actionDao;
         this.ncrDao = ncrDao;
         this.approvalEngine = approvalEngine;
+        this.noticeService = noticeService;
     }
 
     // ================= 9.1 触发立项 =================
@@ -131,10 +131,27 @@ public class CapaServiceImpl implements CapaService {
         }
         return createCapa(ncr, str(body.get("trigger")) == null ? "手工立项"
                 : str(body.get("trigger")), str(body.get("sourceType")) == null ? "MANUAL"
-                : str(body.get("sourceType")), severity, null);
+                : str(body.get("sourceType")), severity, null, title);
+    }
+
+    @Override
+    @Transactional
+    public Capa findByNcr(String ncrId) {
+        if (!hasText(ncrId)) {
+            return null;
+        }
+        return capaDao.selectOne(new LambdaQueryWrapper<Capa>()
+                .eq(Capa::getNcrId, ncrId)
+                .last("LIMIT 1"));
     }
 
     private Capa createCapa(Ncr ncr, String trigger, String sourceType, String severity, String originId) {
+        return createCapa(ncr, trigger, sourceType, severity, originId, null);
+    }
+
+    /** titleOverride 非空时用作标题（手工立项用户输入），否则用触发描述 */
+    private Capa createCapa(Ncr ncr, String trigger, String sourceType, String severity,
+                            String originId, String titleOverride) {
         Capa c = new Capa();
         c.setCapaNo(nextCapaNo());
         if (ncr != null) {
@@ -142,12 +159,21 @@ public class CapaServiceImpl implements CapaService {
             c.setNcrNo(ncr.getNcrNo());
         }
         c.setSourceType(sourceType);
-        c.setTitle(hasText(trigger) ? trigger : "CAPA 立项");
+        c.setTitle(hasText(titleOverride) ? titleOverride
+                : (hasText(trigger) ? trigger : "CAPA 立项"));
         c.setProblemDesc(ncr == null ? str(trigger) : ncr.getDefectDesc());
         c.setSeverity(severity);
         c.setCurrentStep("D1");
         c.setStatus("OPEN");
-        c.setDueDate(LocalDate.now().plusDays(dueDays));
+        // 立项时限：关联 NCR → 评审时间 + 5 个工作日（跳周末，FR-4.12-5-1 要点①）；
+        // 独立来源（投诉/审核/手工）不计时限
+        if (ncr != null && ncr.getReviewTime() != null) {
+            c.setDueDate(addWorkDays(ncr.getReviewTime().toLocalDate(), 5));
+        } else if (ncr != null) {
+            c.setDueDate(addWorkDays(LocalDate.now(), 5));
+        } else {
+            c.setDueDate(null);
+        }
         if ("CRITICAL".equals(severity)) {
             c.setContainDueTime(LocalDateTime.now().plusHours(24)); // BR-4.12-32 遏制倒计时
             c.setContainConfirmed("0");
@@ -177,6 +203,19 @@ public class CapaServiceImpl implements CapaService {
         return c;
     }
 
+    /** 起始日 + N 个工作日（周六周日顺延；FR-4.12-5-1 要点①） */
+    private LocalDate addWorkDays(LocalDate start, int n) {
+        LocalDate d = start;
+        int added = 0;
+        while (added < n) {
+            d = d.plusDays(1);
+            if (d.getDayOfWeek().getValue() < 6) {
+                added++;
+            }
+        }
+        return d;
+    }
+
     /** 1 年内同物料（或同供方）已关闭 CAPA（复发源） */
     private Capa findClosedOrigin(Ncr ncr) {
         if (ncr == null || !hasText(ncr.getItemCode())) {
@@ -203,7 +242,7 @@ public class CapaServiceImpl implements CapaService {
 
     @Override
     @Transactional
-    public Capa advanceStep(String capaId, Map<String, Object> body) {
+    public Map<String, Object> advanceStep(String capaId, Map<String, Object> body) {
         requireRole("推进 8D 步骤", "ROLE_QUALITY_ENG", "ROLE_QUALITY_MGR");
         Capa c = require(capaId);
         String stepCode = str(body.get("stepCode"));
@@ -235,6 +274,42 @@ public class CapaServiceImpl implements CapaService {
         }
         if (!hasText(output)) {
             throw new ServiceException(422, "步骤产出物必填");
+        }
+
+        // ---- D1 团队成员清单结构化（rework-capa-evidence 2.2，FR-4.12-5-6）----
+        List<String> warnings = new ArrayList<>();
+        if ("D1".equals(stepCode)) {
+            String membersJson = str(body.get("teamMembers"));
+            if (!hasText(membersJson) || "[]".equals(membersJson.trim())) {
+                throw new ServiceException(422, "D1 团队成员清单必填：至少 1 名成员（姓名/领域/职责），"
+                        + "并指定 Leader；不可仅填负责人姓名");
+            }
+            List<Map<String, Object>> members = parseJsonArray(membersJson);
+            if (members.isEmpty()) {
+                throw new ServiceException(422, "D1 团队成员清单必填：至少 1 名成员");
+            }
+            boolean hasLeader = false;
+            boolean nonQuality = false;
+            for (Map<String, Object> m : members) {
+                if (!hasText(str(m.get("name"))) || !hasText(str(m.get("domain")))
+                        || !hasText(str(m.get("duty")))) {
+                    throw new ServiceException(422, "D1 成员须含姓名、领域与职责（缺项成员："
+                            + str(m.get("name")) + "）");
+                }
+                if (Boolean.TRUE.equals(m.get("leader"))) {
+                    hasLeader = true;
+                }
+                if (!"质量".equals(str(m.get("domain")))) {
+                    nonQuality = true;
+                }
+            }
+            if (!hasLeader) {
+                throw new ServiceException(422, "D1 须指定 Leader（成员中标记 leader=true）");
+            }
+            if (!nonQuality || members.size() < 2) {
+                warnings.add("团队应包含问题相关各领域代表（质量/技术/生产/采购），当前清单领域较单一（FR-4.12-5-6）");
+            }
+            c.setTeamMembers(membersJson);
         }
 
         // ---- D2：5W2H 必填（tasks 9.2）----
@@ -301,15 +376,36 @@ public class CapaServiceImpl implements CapaService {
                 throw new ServiceException(422, "措施未完成禁进 D7：" + String.join("、", undone));
             }
         }
-        // ---- D7 需验证结论（无效/部分有效 → 回 D4，BR-4.12-35）----
+        // ---- D7 需验证结论 + 三件套数据支撑（rework-capa-evidence 2.1，FR-4.12-5-4）----
         if ("D7".equals(stepCode)) {
             String verify = str(body.get("verifyResult"));
             if (!hasText(verify) || !List.of("VALID", "PARTIAL", "INVALID").contains(verify)) {
                 throw new ServiceException(422, "D7 有效性验证结论必填（VALID / PARTIAL / INVALID）");
             }
+            // 三件套必填：验证指标 / 验证目标 / 跟踪数据（措施前值、措施后值、采集周期）
+            String indicator = str(body.get("verifyIndicator"));
+            String target = str(body.get("verifyTarget"));
+            String before = str(body.get("verifyBefore"));
+            String after = str(body.get("verifyAfter"));
+            String period = str(body.get("verifyPeriod"));
+            List<String> miss = new ArrayList<>();
+            if (!hasText(indicator)) {
+                miss.add("验证指标（如「批次不合格率」）");
+            }
+            if (!hasText(target)) {
+                miss.add("验证目标（如「≤0.5%」）");
+            }
+            if (!hasText(before) || !hasText(after) || !hasText(period)) {
+                miss.add("跟踪数据（措施前值/措施后值/采集周期）");
+            }
+            if (!miss.isEmpty()) {
+                throw new ServiceException(422, "D7 数据支撑不完整（不可仅凭主观判断，FR-4.12-5-4）：缺 "
+                        + String.join("、", miss));
+            }
             c.setVerifyResult(verify);
-            c.setVerifyIndicator(str(body.get("verifyIndicator")));
-            c.setVerifyData(output);
+            c.setVerifyIndicator(indicator);
+            c.setVerifyTarget(target);
+            c.setVerifyData("措施前: " + before + " | 措施后: " + after + " | 周期: " + period);
 
             if (!"VALID".equals(verify)) {
                 // ---- 无效/部分有效 → 回 D4 重新分析 + 阻断 NCR 关闭（BR-4.12-35）----
@@ -322,8 +418,72 @@ public class CapaServiceImpl implements CapaService {
                 step.setStatus("PENDING"); // D7 保持待重做
                 stepDao.updateById(step);
                 log.warn("CAPA {} verify={} → 回 D4 重新分析，关联 NCR 关闭被阻断", c.getCapaNo(), verify);
-                return c;
+                // 待办推送 CAPA 负责人与质量经理（BR-4.12-35，降级不回滚）
+                try {
+                    String conclusion = "PARTIAL".equals(verify) ? "部分有效" : "无效";
+                    noticeService.push("ROLE_QUALITY_MGR", null,
+                            "CAPA 验证未通过需重新分析：" + c.getCapaNo(),
+                            "有效性验证结论「" + conclusion + "」，已回 D4 重新分析并阻断关联 NCR 关闭；"
+                                    + "CAPA 负责人：" + (c.getOwnerName() == null ? "-" : c.getOwnerName())
+                                    + "；验证指标：" + (c.getVerifyIndicator() == null ? "-" : c.getVerifyIndicator()),
+                            "QMS_CAPA_REANALYZE", c.getId());
+                } catch (Exception e) {
+                    log.warn("CAPA reanalyze notice failed（降级不回滚，capa={}）：{}", c.getCapaNo(), e.getMessage());
+                }
+                return wrapResult(c, warnings, null);
             }
+        }
+
+        // ---- D8 经验沉淀结构化（rework-capa-evidence 2.3，FR-4.12-5-5「不可省略」）----
+        if ("D8".equals(stepCode)) {
+            String sinkJson = str(body.get("legacySink"));
+            if (!hasText(sinkJson) || "[]".equals(sinkJson.trim())) {
+                throw new ServiceException(422, "D8 经验沉淀不可省略：至少勾选一类沉淀物"
+                        + "（FMEA 更新 / 检验标准修订 / 培训教材 / 防错清单）并填关联说明");
+            }
+            List<Map<String, Object>> sinks = parseJsonArray(sinkJson);
+            if (sinks.isEmpty()) {
+                throw new ServiceException(422, "D8 经验沉淀不可省略：至少勾选一类沉淀物");
+            }
+            boolean stdChange = false;
+            for (Map<String, Object> s : sinks) {
+                String type = str(s.get("type"));
+                if (!List.of("FMEA", "STANDARD", "TRAINING", "POKA_YOKE").contains(type)) {
+                    throw new ServiceException(422, "未知沉淀物类型：" + type);
+                }
+                if (!hasText(str(s.get("note")))) {
+                    throw new ServiceException(422, "沉淀物「" + type + "」须填关联说明");
+                }
+                if ("STANDARD".equals(type)) {
+                    stdChange = true;
+                }
+            }
+            // 标准修订沉淀挂既有变更审批（同 BR-4.12-34 口径）：首次提交发起审批并挂起，
+            // 审批通过后再次提交方可完成 D8
+            if (stdChange) {
+                String approvalId = str(body.get("sinkApprovalId"));
+                if (!hasText(approvalId)) {
+                    List<List<ApprovalNodeSpec>> chain = List.of(List.of(
+                            ApprovalNodeSpec.sign("ROLE_QUALITY_MGR", "标准变更审批")));
+                    var inst = approvalEngine.submit("CapaStandardChange", c.getId(),
+                            "经验沉淀-标准修订：" + c.getCapaNo(), "ROLE_QUALITY_DIRECTOR", chain);
+                    approvalId = inst.getId();
+                    c.setLegacySink(sinkJson);
+                    c.setRemark((hasText(c.getRemark()) ? c.getRemark() + "\n" : "")
+                            + "[" + LocalDateTime.now() + " 沉淀标准修订挂审批] " + approvalId);
+                    capaDao.updateById(c);
+                    Map<String, Object> pend = new LinkedHashMap<>();
+                    pend.put("capa", c);
+                    pend.put("pendingApproval", approvalId);
+                    pend.put("message", "已发起标准变更审批，审批通过后再次提交完成 D8（BR-4.12-34）");
+                    return pend;
+                }
+                var inst = approvalEngine.getInstance(approvalId);
+                if (inst == null || !"APPROVED".equals(inst.getStatus())) {
+                    throw new ServiceException(422, "标准修订沉淀审批未通过，D8 不可完成（BR-4.12-34）");
+                }
+            }
+            c.setLegacySink(sinkJson);
         }
 
         // ---- 步骤完成与推进 ----
@@ -349,7 +509,7 @@ public class CapaServiceImpl implements CapaService {
                 throw new ServiceException(409, "CAPA 更新冲突");
             }
             log.info("CAPA {} closed (8D complete)", c.getCapaNo());
-            return c;
+            return wrapResult(c, warnings, null);
         }
         String next = STEPS[idx + 1];
         c.setCurrentStep(next);
@@ -362,7 +522,31 @@ public class CapaServiceImpl implements CapaService {
             throw new ServiceException(409, "CAPA 更新冲突");
         }
         log.info("CAPA {} step {} done → {}", c.getCapaNo(), stepCode, next);
-        return c;
+        return wrapResult(c, warnings, null);
+    }
+
+    /** advanceStep 统一返回：{capa, warnings?, pendingApproval?} */
+    private Map<String, Object> wrapResult(Capa c, List<String> warnings, String pending) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("capa", c);
+        if (warnings != null && !warnings.isEmpty()) {
+            out.put("warnings", warnings);
+        }
+        if (pending != null) {
+            out.put("pendingApproval", pending);
+        }
+        return out;
+    }
+
+    /** 解析 JSON 数组字符串为对象列表（字段缺失容忍，坏 JSON 422） */
+    private List<Map<String, Object>> parseJsonArray(String json) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+            return om.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {
+            });
+        } catch (Exception e) {
+            throw new ServiceException(422, "结构化清单格式错误（须为 JSON 数组）：" + e.getMessage());
+        }
     }
 
     /** 自 fromStep 起（含）的步骤全部重置 PENDING（验证无效回炉） */
@@ -494,18 +678,104 @@ public class CapaServiceImpl implements CapaService {
 
     // ================= 查询 =================
 
+    // ================= 验证期复发判无效（rework-capa-evidence 3.1） =================
+
     @Override
-    public Page<Map<String, Object>> page(long current, long size, String keyword, String status) {
+    @Transactional
+    public int checkVerificationRecurrence(Ncr ncr) {
+        if (ncr == null) {
+            return 0;
+        }
+        List<Capa> verifying = capaDao.selectList(new LambdaQueryWrapper<Capa>()
+                .eq(Capa::getStatus, "VERIFYING"));
+        int fired = 0;
+        for (Capa c : verifying) {
+            // 维度经关联 NCR 反查（CAPA 表无物料/供应商列，design D2）
+            Ncr bound = hasText(c.getNcrId()) ? ncrDao.selectById(c.getNcrId()) : null;
+            if (bound == null) {
+                continue;
+            }
+            boolean sameItem = hasText(ncr.getItemCode()) && ncr.getItemCode().equals(bound.getItemCode());
+            boolean sameSupplier = hasText(ncr.getSupplierId()) && ncr.getSupplierId().equals(bound.getSupplierId());
+            if (!sameItem && !sameSupplier) {
+                continue;
+            }
+            // ---- 命中：自动判无效回 D4（BR-4.12-35 后半段）----
+            c.setVerifyResult("INVALID");
+            c.setStatus("REANALYZING");
+            c.setCurrentStep("D4");
+            c.setRemark((hasText(c.getRemark()) ? c.getRemark() + "\n" : "")
+                    + "[" + LocalDateTime.now() + " 验证期复发] 新 NCR " + ncr.getNcrNo()
+                    + "（物料 " + ncr.getItemCode() + "）同维度再次不合格，验证自动判定无效（FR-4.12-5-4）");
+            if (capaDao.updateById(c) == 0) {
+                log.warn("CAPA {} recurrence update conflict（跳过）", c.getCapaNo());
+                continue;
+            }
+            resetStepsFrom(c.getId(), "D4");
+            CapaStep d7 = stepDao.selectOne(new LambdaQueryWrapper<CapaStep>()
+                    .eq(CapaStep::getCapaId, c.getId())
+                    .eq(CapaStep::getStepCode, "D7"));
+            if (d7 != null && "DONE".equals(d7.getStatus())) {
+                d7.setStatus("PENDING");
+                d7.setOutputDesc(null);
+                stepDao.updateById(d7);
+            }
+            fired++;
+            log.warn("CAPA {} recurrence → INVALID 回 D4（新 NCR {}）", c.getCapaNo(), ncr.getNcrNo());
+            try {
+                noticeService.push("ROLE_QUALITY_MGR", null,
+                        "CAPA 验证期复发已自动回炉：" + c.getCapaNo(),
+                        "跟踪期内同维度再次不合格（新 NCR " + ncr.getNcrNo()
+                                + "，物料 " + ncr.getItemCode() + "），验证结论自动置无效并回 D4；"
+                                + "CAPA 负责人：" + (c.getOwnerName() == null ? "-" : c.getOwnerName()),
+                        "QMS_CAPA_RECUR", c.getId());
+            } catch (Exception e) {
+                log.warn("CAPA recurrence notice failed（降级不回滚，capa={}）：{}", c.getCapaNo(), e.getMessage());
+            }
+        }
+        return fired;
+    }
+
+    public Page<Map<String, Object>> page(long current, long size, String keyword, String status, String view) {
         LambdaQueryWrapper<Capa> qw = new LambdaQueryWrapper<Capa>()
                 .eq(hasText(status), Capa::getStatus, status)
                 .and(hasText(keyword), w -> w.like(Capa::getCapaNo, keyword)
                         .or().like(Capa::getTitle, keyword)
                         .or().like(Capa::getNcrNo, keyword))
                 .orderByDesc(Capa::getCreateDate);
+        // ---- 三叶视图过滤（rework-capa-evidence 4.1）----
+        boolean viewActions = "actions".equals(view);
+        boolean viewVerify = "verify".equals(view);
+        if (viewActions) {
+            // 仅含存在未完成措施的在途 CAPA
+            qw.in(Capa::getStatus, List.of("OPEN", "ANALYZING", "VERIFYING"));
+            qw.inSql(Capa::getId,
+                    "SELECT DISTINCT CAPA_ID FROM erp_qms_capa_action WHERE STATUS <> 'DONE'");
+        } else if (viewVerify) {
+            // 效果验证叶：验证中 + 回炉重分析
+            qw.in(Capa::getStatus, List.of("VERIFYING", "REANALYZING"));
+        }
         Page<Capa> raw = capaDao.selectPage(new Page<>(current, size), qw);
         Page<Map<String, Object>> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         List<Map<String, Object>> rows = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
+        // 措施聚合：一次 IN 批查防 N+1
+        Map<String, int[]> actAgg = new LinkedHashMap<>();
+        Map<String, Boolean> actOverdue = new LinkedHashMap<>();
+        if (viewActions && !raw.getRecords().isEmpty()) {
+            List<String> ids = raw.getRecords().stream().map(Capa::getId).toList();
+            List<CapaAction> acts = actionDao.selectList(new LambdaQueryWrapper<CapaAction>()
+                    .in(CapaAction::getCapaId, ids));
+            for (CapaAction a : acts) {
+                int[] cnt = actAgg.computeIfAbsent(a.getCapaId(), k -> new int[2]);
+                cnt[1]++;
+                if ("DONE".equals(a.getStatus())) {
+                    cnt[0]++;
+                } else if (a.getDueDate() != null && a.getDueDate().isBefore(LocalDate.now())) {
+                    actOverdue.put(a.getCapaId(), true);
+                }
+            }
+        }
         for (Capa c : raw.getRecords()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", c.getId());
@@ -516,6 +786,7 @@ public class CapaServiceImpl implements CapaService {
             m.put("status", c.getStatus());
             m.put("currentStep", c.getCurrentStep());
             m.put("verifyResult", c.getVerifyResult());
+            m.put("verifyIndicator", c.getVerifyIndicator());
             m.put("dueDate", c.getDueDate());
             m.put("overdue", c.getDueDate() != null && c.getDueDate().isBefore(LocalDate.now())
                     && !"CLOSED".equals(c.getStatus()));
@@ -525,6 +796,12 @@ public class CapaServiceImpl implements CapaService {
                     && "0".equals(c.getContainConfirmed()) && c.getContainDueTime().isBefore(now));
             m.put("originCapaId", c.getOriginCapaId());
             m.put("createDate", c.getCreateDate());
+            if (viewActions) {
+                int[] cnt = actAgg.getOrDefault(c.getId(), new int[]{0, 0});
+                m.put("actionsDone", cnt[0]);
+                m.put("actionsTotal", cnt[1]);
+                m.put("actionOverdue", actOverdue.getOrDefault(c.getId(), false));
+            }
             rows.add(m);
         }
         out.setRecords(rows);

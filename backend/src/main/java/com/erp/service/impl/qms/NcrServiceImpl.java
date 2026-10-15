@@ -273,6 +273,8 @@ public class NcrServiceImpl implements NcrService {
             writeLog(ncr, "CAPA", ST_CREATED, ST_CREATED,
                     "CAPA 自动立项：" + capa.getCapaNo() + "（BR-4.12-31）", null, null);
         }
+        // 验证期复发判无效（rework-capa-evidence 3.2，BR-4.12-35）：降级不阻断建单
+        checkCapaRecurrence(ncr);
         // 处置通知（FR-4.12-3-2 ④，rework-qualified-release）：同事务发质量工程师，评审时效起算锚点；
         // 异常降级告警不回滚 NCR（spec：通知失败不回滚 NCR）
         try {
@@ -343,6 +345,8 @@ public class NcrServiceImpl implements NcrService {
                         + "；冻结=WORKORDER（挡派工/完工，不冻库存）", null, null);
         log.info("NCR {} created: workorder ref={} severity={} ng={}",
                 ncr.getNcrNo(), refId, sev, ncr.getQty());
+        // 验证期复发判无效（rework-capa-evidence 3.2）：降级不阻断建单
+        checkCapaRecurrence(ncr);
         return ncr;
     }
 
@@ -1137,6 +1141,8 @@ public class NcrServiceImpl implements NcrService {
                 null, null);
         log.info("NCR {} created: released-lot={} sev={} scope={} (manual, missed-defect)",
                 ncr.getNcrNo(), lotId, sev, scope);
+        // 验证期复发判无效（rework-capa-evidence 3.2）：降级不阻断建单
+        checkCapaRecurrence(ncr);
         return ncr;
     }
 
@@ -1628,6 +1634,21 @@ public class NcrServiceImpl implements NcrService {
             throw new ServiceException(404, "NCR 不存在：" + id);
         }
         return ncr;
+    }
+
+    /**
+     * 验证期复发判无效联动（rework-capa-evidence 3.2）：
+     * 三条建单路径统一收口调用，异常降级不阻断 NCR 生成（同通知口径）。
+     */
+    private void checkCapaRecurrence(Ncr ncr) {
+        try {
+            int fired = capaService.checkVerificationRecurrence(ncr);
+            if (fired > 0) {
+                log.warn("NCR {} 触发 {} 个验证期 CAPA 自动回炉（BR-4.12-35）", ncr.getNcrNo(), fired);
+            }
+        } catch (Exception e) {
+            log.warn("CAPA recurrence check failed（降级不回滚，ncr={}）：{}", ncr.getNcrNo(), e.getMessage());
+        }
     }
 
     /**

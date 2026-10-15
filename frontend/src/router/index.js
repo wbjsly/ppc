@@ -1419,7 +1419,7 @@ const routes = [
         path: '/m/6.6.1',
         name: 'CapaReport',
         component: () => import('@/views/qms/capa/index.vue'),
-        meta: { title: '8D 报告', group: '质量管理', tab: 'list' }
+        meta: { title: '8D 报告', group: '质量管理', tab: 'report' }
       },
       {
         path: '/m/6.6.2',

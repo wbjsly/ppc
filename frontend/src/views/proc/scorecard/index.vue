@@ -60,6 +60,13 @@
             <el-descriptions-item label="上月等级">{{ detail.prevGrade ?? '-' }}</el-descriptions-item>
             <el-descriptions-item label="模型版本">v{{ detail.result.modelVersion }}</el-descriptions-item>
             <el-descriptions-item label="数据状态">{{ dataStatusLabel(detail.result.dataStatus) }}</el-descriptions-item>
+            <el-descriptions-item label="质量成本（仅明细）" :span="2">
+              <template v-if="detail.source && detail.source.qualityCost != null">
+                ¥ {{ detail.source.qualityCost }}
+                <el-tag size="mini" type="info" style="margin-left:6px;">不参与得分</el-tag>
+              </template>
+              <span v-else>—</span>
+            </el-descriptions-item>
           </el-descriptions>
           <pre style="max-height:260px;overflow:auto;background:#f5f7fa;padding:8px;font-size:12px">{{ JSON.stringify(detail.source, null, 2) }}</pre>
         </el-dialog>

@@ -31,12 +31,17 @@ public class ScarApprovalCallback implements ApprovalCallback {
     private final ScarDao scarDao;
     private final ScarDeductionDao deductionDao;
     private final ApprovalTaskDao taskDao;
+    /** COPQ 归集（rework-copq-analysis 2.1：扣款确认 → 外部失败，降级不阻断确认） */
+    private final com.erp.service.qms.CopqService copqService;
 
     public ScarApprovalCallback(ScarDao scarDao, ScarDeductionDao deductionDao,
-                                ApprovalTaskDao taskDao) {
+                                ApprovalTaskDao taskDao,
+                                @org.springframework.context.annotation.Lazy
+                                com.erp.service.qms.CopqService copqService) {
         this.scarDao = scarDao;
         this.deductionDao = deductionDao;
         this.taskDao = taskDao;
+        this.copqService = copqService;
     }
 
     @Override
@@ -83,6 +88,23 @@ public class ScarApprovalCallback implements ApprovalCallback {
             throw new ServiceException(422, "扣款单状态更新冲突");
         }
         log.info("deduction {} finance confirmed: {}", d.getDeductNo(), d.getAmount());
+        // ---- COPQ 归集（rework-copq-analysis 2.1，FR-4.12-6-2 ③）：扣款确认 = 实际外部失败 ----
+        // 幂等键 SCAR+扣款单 ID（record 既有短路）；降级不阻断扣款确认主流程
+        try {
+            copqService.record(java.util.Map.of(
+                    "category", "EXTERNAL_FAILURE",
+                    "sourceType", "SCAR",
+                    "sourceId", d.getId(),
+                    "sourceNo", d.getDeductNo() == null ? "" : d.getDeductNo(),
+                    "scarId", d.getScarId() == null ? "" : d.getScarId(),
+                    "amount", d.getAmount(),
+                    "supplierId", d.getSupplierId() == null ? "" : d.getSupplierId(),
+                    "supplierName", d.getSupplierName() == null ? "" : d.getSupplierName(),
+                    "remark", "SCAR 扣款财务确认归集（" + d.getDeductNo() + "）"));
+        } catch (Exception ex) {
+            log.warn("COPQ record failed for deduction {}（降级不阻断确认，可手工补录）：{}",
+                    d.getDeductNo(), ex.getMessage());
+        }
     }
 
     @Override

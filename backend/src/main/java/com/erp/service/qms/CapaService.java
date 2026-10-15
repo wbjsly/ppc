@@ -29,13 +29,19 @@ public interface CapaService {
     /** 手工立项（QUALITY_ENG）：可关联 NCR 或独立（投诉/审核来源） */
     Capa createManual(Map<String, Object> body);
 
+    /** 按 NCR 精确反查 CAPA（rework-capa-evidence 4.2，待办直达幂等用），无则 null */
+    Capa findByNcr(String ncrId);
+
     /**
      * 8D 步骤推进（tasks 9.2~9.5）：body = {stepCode, ownerName, output, rootCause?,
-     * rootCauseEvidence?, verifyResult?}。
-     * 跳序 422；D2 缺 5W2H 422；D4 缺根因/证据 422 或浅层根因退回；
-     * D6→D7 校验措施全 DONE；D7 按 verifyResult 分流（INVALID/PARTIAL → 回 D4 重新分析）。
+     * rootCauseEvidence?, verifyIndicator/Target/Before/After/Period?, verifyResult?,
+     * teamMembers?(D1 JSON), legacySink?(D8 JSON)}。
+     * 跳序 422；D1 成员清单校验（软警示 warnings）；D2 缺 5W2H 422；D4 缺根因/证据 422 或浅层根因退回；
+     * D6→D7 校验措施全 DONE；D7 三件套必填 + 按 verifyResult 分流（INVALID/PARTIAL → 回 D4 重新分析）；
+     * D8 沉淀物四类校验（全未勾 422、标准修订审批未过不可完成）。
+     * 返回 {capa, warnings?, pendingApproval?}——D8 触发标准变更审批时 pendingApproval=true 且步骤未完成。
      */
-    Capa advanceStep(String capaId, Map<String, Object> body);
+    Map<String, Object> advanceStep(String capaId, Map<String, Object> body);
 
     /** 新增纠正/预防措施（D5/D6）；标准/SOP 变更自动挂变更审批（BR-4.12-34） */
     CapaAction addAction(String capaId, Map<String, Object> body);
@@ -46,7 +52,23 @@ public interface CapaService {
     /** Critical 遏制倒计时扫描（BR-4.12-32：24h 未确认 → 升级质量总监，幂等） */
     int sweepContainment();
 
-    Page<Map<String, Object>> page(long current, long size, String keyword, String status);
+    /**
+     * 分页（status/keyword 筛选 + view 视图，rework-capa-evidence 4.1）：
+     * view=actions → 仅含存在未完成措施的在途 CAPA（OPEN/ANALYZING/VERIFYING），
+     *   行内聚合措施完成数/总数（actionsDone/actionsTotal）与超期标志（actionOverdue）；
+     * view=verify → 状态 IN (VERIFYING, REANALYZING)，行内带 verifyIndicator；
+     * view=report / null → 现状全量行为（零侵入）。
+     */
+    Page<Map<String, Object>> page(long current, long size, String keyword, String status, String view);
+
+    /**
+     * 验证期复发判无效（rework-capa-evidence 3.1，BR-4.12-35 / FR-4.12-5-4 异常①）：
+     * NCR 生成后调用——存在 VERIFYING 状态的 CAPA 且与其关联 NCR 同维度（物料或供应商）
+     * 时，自动置 verifyResult=INVALID、状态回 REANALYZING、当前步回 D4 并重置 D4 起步骤，
+     * 推待办（CAPA 负责人 + 质量经理），CAPA remark 留痕新 NCR 单号。
+     * 返回处理的 CAPA 数（0 = 无复发）。幂等由 VERIFYING 状态天然保证（回炉后不再命中）。
+     */
+    int checkVerificationRecurrence(Ncr ncr);
 
     /** 详情：CAPA + 8 步骤 + 措施 + 关联 NCR */
     Map<String, Object> detail(String id);
