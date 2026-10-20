@@ -7,6 +7,7 @@ backend/target
 *.class
 *.jar
 *.lst
+AGENTS.md
 
 # Node / 前端
 node_modules/
@@ -15,12 +16,16 @@ npm-debug.log*
 yarn-error.log*
 
 # 本地工具配置
-.qoder/
-.workbuddy/
+.archify/
 .agents/
 .claude/
 .codebuddy/
 .codegraph/
+.dsh/
+.mimocode/
+.qoder/
+.workbuddy/
+.omd/
 
 # 需求与文档
 docs/
