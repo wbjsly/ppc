@@ -1445,6 +1445,37 @@ const routes = [
         component: () => import('@/views/qms/copq/index.vue'),
         meta: { title: '损失分析', group: '质量管理', tab: 'analysis' }
       },
+      // 7.1 资产转资（change add-asset-capitalization，spec asset-capitalization）
+      {
+        path: '/m/7.1.1',
+        name: 'EamPurchaseCap',
+        component: () => import('@/views/eam/capitalization/index.vue'),
+        meta: { title: '采购转资', group: '资产管理', mode: 'PURCHASE' }
+      },
+      {
+        path: '/m/7.1.2',
+        name: 'EamCipCap',
+        component: () => import('@/views/eam/capitalization/index.vue'),
+        meta: { title: '在建转资', group: '资产管理', mode: 'CIP' }
+      },
+      {
+        path: '/m/7.1.3',
+        name: 'EamAssetCard',
+        component: () => import('@/views/eam/card/index.vue'),
+        meta: { title: '卡片生成', group: '资产管理' }
+      },
+      {
+        path: '/m/7.1.4',
+        name: 'EamCategory',
+        component: () => import('@/views/eam/category/index.vue'),
+        meta: { title: '分类维护', group: '资产管理' }
+      },
+      {
+        path: '/m/7.1.5',
+        name: 'EamCipLedger',
+        component: () => import('@/views/eam/cip/index.vue'),
+        meta: { title: '在建台账', group: '资产管理' }
+      },
       // 2.5.3 / 6.5 不合格品 NCR（add-quality-collaboration，同组件三路由）
       {
         path: '/m/2.5.3',
