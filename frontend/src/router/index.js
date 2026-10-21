@@ -1476,6 +1476,63 @@ const routes = [
         component: () => import('@/views/eam/cip/index.vue'),
         meta: { title: '在建台账', group: '资产管理' }
       },
+      // 7.2 折旧管理（change add-asset-depreciation，spec asset-depreciation，同组件三路由）
+      {
+        path: '/m/7.2.1',
+        name: 'EamDepreciationRun',
+        component: () => import('@/views/eam/depreciation/index.vue'),
+        meta: { title: '月度计提', group: '资产管理', tab: 'run' }
+      },
+      {
+        path: '/m/7.2.2',
+        name: 'EamDepreciationChange',
+        component: () => import('@/views/eam/depreciation/index.vue'),
+        meta: { title: '变动处理', group: '资产管理', tab: 'change' }
+      },
+      {
+        path: '/m/7.2.3',
+        name: 'EamDepreciationVoucher',
+        component: () => import('@/views/eam/depreciation/index.vue'),
+        meta: { title: '凭证生成', group: '资产管理', tab: 'voucher' }
+      },
+      // 7.3 资产运维（add-asset-maintenance：同组件三路由）
+      {
+        path: '/m/7.3.1',
+        name: 'EamMaintPlan',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '点检保养', group: '资产管理', tab: 'plan' }
+      },
+      {
+        path: '/m/7.3.2',
+        name: 'EamMaintRepair',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '故障维修', group: '资产管理', tab: 'repair' }
+      },
+      {
+        path: '/m/7.3.3',
+        name: 'EamMaintSpares',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '备件领用', group: '资产管理', tab: 'spares' }
+      },
+      // 7.3 资产运维（add-asset-maintenance：同组件三路由）
+      {
+        path: '/m/7.3.1',
+        name: 'EamMaintPlan',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '点检保养', group: '资产管理', tab: 'plan' }
+      },
+      {
+        path: '/m/7.3.2',
+        name: 'EamMaintRepair',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '故障维修', group: '资产管理', tab: 'repair' }
+      },
+      {
+        path: '/m/7.3.3',
+        name: 'EamMaintSpares',
+        component: () => import('@/views/eam/maintenance/index.vue'),
+        meta: { title: '备件领用', group: '资产管理', tab: 'spares' }
+      },
       // 2.5.3 / 6.5 不合格品 NCR（add-quality-collaboration，同组件三路由）
       {
         path: '/m/2.5.3',

@@ -39,6 +39,10 @@
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDetail(row)">详情</el-button>
             <el-button link type="warning" size="small" @click="openLabel(row)">打印标签</el-button>
+            <el-button link type="success" size="small"
+              @click="$router.push({ path: '/m/7.3.2', query: { cardId: row.id } })">履历</el-button>
+            <el-button link type="success" size="small"
+              @click="$router.push({ path: '/m/7.3.2', query: { cardId: row.id } })">履历</el-button>
           </template>
         </el-table-column>
       </el-table>

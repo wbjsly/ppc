@@ -273,6 +273,21 @@ class CapitalizationDbTest {
                 "月折旧 ¥7,916.67（(100万−5万)/10/12）");
     }
 
+    @Test
+    void depreciationPreviewDdbUsesEngine() {
+        // DDB 首月 = 120万 × 2 ÷ 10 ÷ 12 = 20000（委托 DepreciationEngine 后按 method 分流）
+        String pid = mkCip("CQT 折旧预览DDB", "1200000");
+        EamCapitalization c = mkCipCap(pid, "1", "1200000");
+        c.setLifeYears(10);
+        c.setResidualRate(new BigDecimal("0.05"));
+        c.setDepreciationMethod("DOUBLE_DECLINING");
+        EamCapitalization created = (EamCapitalization) capService.create(c).get("cap");
+        Map<String, Object> p = capService.depreciationPreview(created.getId());
+        assertEquals(0, new BigDecimal("20000.00").compareTo(
+                        (BigDecimal) p.get("monthlyDepreciation")),
+                "DDB 首月 ¥20,000（120万×2/10/12）");
+    }
+
     // ================= 驳回回草稿 =================
 
     @Test

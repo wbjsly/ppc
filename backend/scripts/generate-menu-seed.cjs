@@ -136,7 +136,9 @@ const PERM = {
   // 三叶为同一阶段视图按 TRIAL_STAGE 过滤（change add-trial-production-management，spec trial-order 菜单需求/D9）
   trial: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN',
   // M7 资产管理（change add-asset-capitalization）：资产管理员 + 财务资产会计
-  eam: 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_ADMIN'
+  eam: 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_ADMIN',
+  // M7-3 资产运维（change add-asset-maintenance）：设备工程师 + 设备主管（报修全员开放不设门槛）
+  maint: 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_ADMIN'
 }
 const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
 const EXTRA_PERM = {
@@ -235,7 +237,14 @@ const EXTRA_PERM = {
   ...leaf(['M16-11', 'M16-11-1', 'M16-11-2'], PERM.calendar),
   // M7 资产管理 7.1.1~7.1.5（change add-asset-capitalization：资产管理员+财务资产会计）
   // 父节点 M7/M7-1 与子同权防孤儿（M3/M16 域先例）
-  ...leaf(['M7', 'M7-1', 'M7-1-1', 'M7-1-2', 'M7-1-3', 'M7-1-4', 'M7-1-5'], PERM.eam)
+  ...leaf(['M7', 'M7-1', 'M7-1-1', 'M7-1-2', 'M7-1-3', 'M7-1-4', 'M7-1-5'], PERM.eam),
+  // M7-2 折旧管理 7.2.1~7.2.3（change add-asset-depreciation：月度计提+变动处理+凭证生成）
+  // 父节点 M7-2 与子同权防孤儿；角色同 eam（资产管理员发起变更/财务资产会计执行计提审核）
+  ...leaf(['M7-2', 'M7-2-1', 'M7-2-2', 'M7-2-3'], PERM.eam),
+  // M7-3 资产运维 7.3.1~7.3.3（change add-asset-maintenance：设备工程师+设备主管）
+  // M7 父节点取并集（含财务资产会计）后 spread 覆盖，防工程师看不到域节点
+  ...leaf(['M7-3', 'M7-3-1', 'M7-3-2', 'M7-3-3'], PERM.maint),
+  ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_ADMIN')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

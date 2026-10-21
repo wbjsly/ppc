@@ -57,6 +57,9 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
     private final com.erp.dao.system.ApprovalInstanceDao approvalInstanceDao;
     private final com.erp.service.approval.ApprovalEngine approvalEngine;
 
+    /** 维修领料标准成本取数（design D5 偏差修订：库存域无移动平均，取物料 STANDARD_COST） */
+    private final org.springframework.jdbc.core.JdbcTemplate maintJdbc;
+
     public MaterialIssueServiceImpl(MaterialIssueDao issueDao,
                                     MaterialIssueLineDao lineDao,
                                     InvStockDao stockDao,
@@ -73,7 +76,9 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                                     com.erp.dao.inv.InvBatchDao batchDao,
                                     com.erp.dao.system.ApprovalInstanceDao approvalInstanceDao,
                                     @org.springframework.context.annotation.Lazy
-                                            com.erp.service.approval.ApprovalEngine approvalEngine) {
+                                            com.erp.service.approval.ApprovalEngine approvalEngine,
+                                    org.springframework.jdbc.core.JdbcTemplate maintJdbc) {
+        this.maintJdbc = maintJdbc;
         this.issueDao = issueDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -134,6 +139,59 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         out.put("issue", head);
         out.put("lines", plan);
         return out;
+    }
+
+    /** 维修备件领料建单透传（add-asset-maintenance，design D5）：MAINT + 工单锚定，复用 FIFO 配批 */
+    @Override
+    @Transactional
+    public Map<String, Object> createMaintIssue(Map<String, Object> payload) {
+        requireRole("创建维修领料单", "ROLE_EQUIP_ENG", "ROLE_EQUIP_MGR", "ROLE_ASSET_ADMIN");
+        MaterialIssue head = new MaterialIssue();
+        head.setIssueType("MAINT");
+        String wo = payload.get("workOrderNo") == null ? null
+                : String.valueOf(payload.get("workOrderNo")).trim();
+        if (!hasText(wo)) {
+            throw new ServiceException(422, "工单号必填（备件领用须锚定维护/维修工单）");
+        }
+        head.setWorkOrderNo(wo);
+        head.setDept(payload.get("dept") == null ? null : String.valueOf(payload.get("dept")));
+        head.setPurpose(payload.get("purpose") == null ? null : String.valueOf(payload.get("purpose")));
+        head.setIssueNo(nextIssueNo());
+        head.setStatus(MaterialIssue.ST_DRAFT);
+        head.setCreateBy(SecurityUtils.getCurrentUserId());
+        issueDao.insert(head);
+        List<MaterialIssueLine> plan = fifoPlan(head, requested(payload));
+        int no = 1;
+        for (MaterialIssueLine l : plan) {
+            // 备件成本取数（design D5 偏差修订）：库存域无移动平均基础设施，
+            // 按物料主数据 STANDARD_COST 填行单价（BR-4.13-17 归集按行金额）
+            if (l.getUnitPrice() == null || l.getUnitPrice().signum() == 0) {
+                BigDecimal std = standardCostOf(l.getItemCode());
+                if (std != null) {
+                    l.setUnitPrice(std);
+                    l.setAmount(std.multiply(l.getQty()));
+                }
+            }
+            l.setIssueId(head.getId());
+            l.setLineNo(no++);
+            lineDao.insert(l);
+        }
+        log.info("维修领料单 {} created wo={} lines={}", head.getIssueNo(), wo, plan.size());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("issue", head);
+        out.put("lines", plan);
+        return out;
+    }
+
+    /** 物料标准成本（无主数据/未维护 → null，行价保持 0 计入"待调整"口径） */
+    private BigDecimal standardCostOf(String itemCode) {
+        try {
+            return maintJdbc.queryForObject(
+                    "SELECT STANDARD_COST FROM erp_mdm_item WHERE ITEM_CODE = ? AND DEL_FLAG = '0'",
+                    BigDecimal.class, itemCode);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     // ---------- 查询 ----------

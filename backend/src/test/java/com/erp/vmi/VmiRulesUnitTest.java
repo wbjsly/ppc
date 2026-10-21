@@ -288,7 +288,8 @@ class VmiRulesUnitTest {
                 mock(com.erp.service.mrp.ReservationService.class),
                 mock(com.erp.dao.inv.InvBatchDao.class),
                 mock(com.erp.dao.system.ApprovalInstanceDao.class),
-                mock(com.erp.service.approval.ApprovalEngine.class));
+                mock(com.erp.service.approval.ApprovalEngine.class),
+                mock(org.springframework.jdbc.core.JdbcTemplate.class));
     }
 
     private InvStock stockRow(String id, String batch, String avail, LocalDateTime create) {
@@ -365,7 +366,8 @@ class VmiRulesUnitTest {
                 mock(com.erp.service.mrp.ReservationService.class),
                 batchDao,
                 mock(com.erp.dao.system.ApprovalInstanceDao.class),
-                mock(com.erp.service.approval.ApprovalEngine.class));
+                mock(com.erp.service.approval.ApprovalEngine.class),
+                mock(org.springframework.jdbc.core.JdbcTemplate.class));
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("issueType", "OWN");

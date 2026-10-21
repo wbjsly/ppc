@@ -20,6 +20,13 @@ public interface MaterialIssueService {
     /** 创建领料单（FIFO 配批固化 + 可用量预检，不足 422；状态 DRAFT） */
     Map<String, Object> create(Map<String, Object> payload);
 
+    /**
+     * 维修备件领料建单透传（add-asset-maintenance，design D5，BR-4.13-17）：
+     * ISSUE_TYPE=MAINT、WORK_ORDER_NO=维护/维修工单号锚定；走同一 FIFO 配批与出库过账路径，
+     * 不改 OWN/VMI 既有逻辑。角色：设备工程师/设备主管/资产管理员（过账仍限仓库）。
+     */
+    Map<String, Object> createMaintIssue(Map<String, Object> payload);
+
     /** 分页（类型/状态/工单号/关键字筛选） */
     Page<Map<String, Object>> page(long current, long size, String issueType, String status,
                                    String workOrderNo, String keyword);

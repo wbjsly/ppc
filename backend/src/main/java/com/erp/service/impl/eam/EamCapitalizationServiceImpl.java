@@ -36,6 +36,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import com.erp.eam.DepreciationEngine;
 import java.util.Map;
 
 /**
@@ -412,8 +413,12 @@ public class EamCapitalizationServiceImpl implements EamCapitalizationService {
         BigDecimal depreciable = cap.getTotalAmount().subtract(residual);
         BigDecimal monthly = BigDecimal.ZERO;
         if (cap.getLifeYears() != null && cap.getLifeYears() > 0) {
-            monthly = depreciable.divide(BigDecimal.valueOf(cap.getLifeYears())
-                    .multiply(BigDecimal.valueOf(12)), 2, RoundingMode.HALF_UP);
+            // 委托共享折旧引擎（首月口径：已提月数=0、累计折旧=0、无减值），
+            // 按 method 分流 SL/DDB/SYD，与 7.2 月度计提同口径
+            DepreciationEngine.DepreciationResult r = DepreciationEngine.compute(
+                    cap.getTotalAmount(), residual, cap.getLifeYears(),
+                    cap.getDepreciationMethod(), 0, BigDecimal.ZERO, BigDecimal.ZERO, null);
+            monthly = r.periodDepreciation();
         }
         out.put("residual", residual);
         out.put("depreciable", depreciable);

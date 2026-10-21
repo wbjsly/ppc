@@ -52,11 +52,19 @@ public class EamAssetCard extends BaseEntity {
     @TableField("RESIDUAL_RATE")
     private BigDecimal residualRate;
 
+    /** 残值额（原值×残值率，7.2 折旧缓存列，134 加列） */
+    @TableField("RESIDUAL_VALUE")
+    private BigDecimal residualValue;
+
     @TableField("DEPRECIATION_METHOD")
     private String depreciationMethod;
 
     @TableField("EFFECTIVE_DATE")
     private LocalDate effectiveDate;
+
+    /** 起提月 yyyyMM（启用次月 BR-4.13-11，134 加列） */
+    @TableField("DEPR_START_MONTH")
+    private String deprStartMonth;
 
     /** IN_USE 在用 / DISPOSED 已处置（本变更仅建 IN_USE） */
     @TableField("STATUS")
@@ -68,6 +76,10 @@ public class EamAssetCard extends BaseEntity {
 
     @TableField("ACCUM_DEPR")
     private BigDecimal accumDepr;
+
+    /** 减值准备（BR-4.13-15，134 加列）；NBV = 原值 − 累计折旧 − 减值准备 */
+    @TableField("IMPAIRMENT")
+    private BigDecimal impairment;
 
     /** 1=凭证过账后折旧政策锁定（BR-4.13-10） */
     @TableField("LOCK_FLAG")
