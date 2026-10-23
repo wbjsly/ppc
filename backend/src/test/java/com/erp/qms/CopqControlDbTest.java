@@ -108,7 +108,7 @@ class CopqControlDbTest {
                 + "CREATE_BY, DEL_FLAG, VER_NO) VALUES (?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?, ?, ?, "
                 + "?, ?, 'CONFIRMED', '0', 'CQT-seed', 'junit', '0', 0)",
                 "cq-" + java.util.UUID.randomUUID().toString().substring(0, 8),
-                "CQT-" + System.nanoTime() % 100000, category, amount,
+                "CQT-" + java.util.UUID.randomUUID().toString().substring(0, 8), category, amount,
                 "cq-src-" + (itemCode == null ? "na" : itemCode),
                 itemCode, processCode, customerName,
                 supplierId, supplierId == null ? null : "供应商-" + supplierId,

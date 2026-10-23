@@ -48,6 +48,9 @@ public class FinPeriodServiceImpl implements FinPeriodService {
     private final com.erp.service.fin.DepreciationMonitorService depreciationMonitorService;
     /** 结账⑧已对账（add-bank-reconciliation，BR-4.6-37 按需阻断） */
     private final com.erp.service.fin.BankReconciliationService bankReconciliationService;
+    /** 结账第⑨项计提/摊销计划（add-expense-reimbursement；直注 DAO 打破
+     *  GlVoucher→FinPeriod→AmortService→GlVoucher 循环依赖） */
+    private final com.erp.dao.fin.AmortPlanDao amortPlanDao;
 
     @Override
     public Map<String, Object> current() {
@@ -193,6 +196,16 @@ public class FinPeriodServiceImpl implements FinPeriodService {
                         : bankOk ? "本期 " + stmtTotal + " 张对账单均已审核（AUDITED）"
                                 : "存在 " + stmtUnaudited + " 张未审核银行对账单（"
                                         + bankCheck.get("unauditedList") + "），请先完成对账确认与主管审核"));
+
+        // ⑨计提/摊销计划已生成（add-expense-reimbursement spec prepaid-amortization，按需阻断 design D8）：
+        // 本期存在计划行时必须全部已生成；无计划行直接放行。DRAFT 计划凭证的审核过账由①与 gl-voucher 职责分离覆盖
+        long notGen = amortPlanDao.countNotGenerated(period);
+        boolean amortOk = notGen == 0;
+        items.add(item("pendingAmortPlan", "已生成计提/摊销凭证",
+                amortOk,
+                amortOk ? "本期无未生成的计提/摊销计划行"
+                        : "存在 " + notGen + " 行未生成计划（" + period
+                                + "），请先在 8.9.1/8.9.2 执行「生成本期凭证」"));
 
         boolean allOk = items.stream().allMatch(m -> Boolean.TRUE.equals(m.get("ok")));
         Map<String, Object> out = new LinkedHashMap<>();

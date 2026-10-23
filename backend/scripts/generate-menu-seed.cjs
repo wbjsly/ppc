@@ -269,6 +269,12 @@ const EXTRA_PERM = {
   ...leaf(['M8-6', 'M8-6-1', 'M8-6-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
   // M8-7 银行对账 8.7.1~8.7.4（change add-bank-reconciliation：与 M8-1~6 对齐）
   ...leaf(['M8-7', 'M8-7-1', 'M8-7-2', 'M8-7-3', 'M8-7-4'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-8 费用报销 8.8.1~8.8.3（change add-expense-reimbursement：与 M8-1~7 对齐）
+  ...leaf(['M8-8', 'M8-8-1', 'M8-8-2', 'M8-8-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-9 预提待摊 8.9.1~8.9.2（change add-expense-reimbursement：与 M8-1~8 对齐）
+  ...leaf(['M8-9', 'M8-9-1', 'M8-9-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-10 成本核算 8.10.1~8.10.3（change add-cost-accounting：M8 惯例 + 成本会计 + spec 场景财务专员/主管）
+  ...leaf(['M8-10', 'M8-10-1', 'M8-10-2', 'M8-10-3'], 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
   ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏

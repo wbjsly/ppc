@@ -364,8 +364,9 @@ public class CostAggregationServiceImpl implements CostAggregationService {
     @Override
     @Transactional
     public void reviewVariance(String moId) {
-        // 主管审阅（spec「提交主管审阅」）：PLAN_MGR/ADMIN
-        requireAnyRole("差异报告审阅", "ROLE_PLAN_MGR", "ROLE_ADMIN");
+        // 主管审阅（spec「提交主管审阅」）：PLAN_MGR/ADMIN；change add-cost-accounting
+        // 扩 ROLE_FINANCE_MGR——向角色表 2912「成本会计/财务审阅」归位（design D2 留痕）
+        requireAnyRole("差异报告审阅", "ROLE_PLAN_MGR", "ROLE_FINANCE_MGR", "ROLE_ADMIN");
         CostSummary s = summaryDao.selectOne(new LambdaQueryWrapper<CostSummary>()
                 .eq(CostSummary::getMoId, moId).last("LIMIT 1"));
         if (s == null) {

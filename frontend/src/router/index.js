@@ -1679,6 +1679,71 @@ const routes = [
         component: () => import('@/views/fin/collection/index.vue'),
         meta: { title: '回单对账', group: '财务管理', tab: 'receipt' }
       },
+      // 8.8 费用报销（add-expense-reimbursement：单页三 tab）
+      {
+        path: '/m/8.8.1',
+        name: 'ReimburseApply',
+        component: () => import('@/views/fin/expense-reimbursement/index.vue'),
+        meta: { title: '报销申请', group: '财务管理', tab: 'reimburse' }
+      },
+      {
+        path: '/m/8.8.2',
+        name: 'EmployeeLoan',
+        component: () => import('@/views/fin/expense-reimbursement/index.vue'),
+        meta: { title: '借款管理', group: '财务管理', tab: 'loan' }
+      },
+      {
+        path: '/m/8.8.3',
+        name: 'LoanWriteoff',
+        component: () => import('@/views/fin/expense-reimbursement/index.vue'),
+        meta: { title: '借款冲销', group: '财务管理', tab: 'writeoff' }
+      },
+      // 8.9 预提待摊（add-expense-reimbursement：单页两 tab）
+      {
+        path: '/m/8.9.1',
+        name: 'PrepaidManage',
+        component: () => import('@/views/fin/prepaid-amortization/index.vue'),
+        meta: { title: '预提管理', group: '财务管理', tab: 'prepaid' }
+      },
+      {
+        path: '/m/8.9.2',
+        name: 'DeferredManage',
+        component: () => import('@/views/fin/prepaid-amortization/index.vue'),
+        meta: { title: '待摊管理', group: '财务管理', tab: 'deferred' }
+      },
+      {
+        // 8.10.1 成本归集（change add-cost-accounting：财务入口复用生产域 CostElement，
+        // 元素归集/差异列/审阅即入口；perm 六角色与 M8-10 菜单 PERM 同口径）
+        path: '/m/8.10.1',
+        name: 'CostCollectFinance',
+        component: () => import('@/views/mrp/cost/CostElement.vue'),
+        meta: { title: '成本归集', group: '财务管理', element: 'MATERIAL',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 8.10.2 差异分析（同页差异列+审阅按钮即差异分析工作面，design D1 核实结论：无独立区块无需 tab 定位）
+        path: '/m/8.10.2',
+        name: 'CostVarianceFinance',
+        component: () => import('@/views/mrp/cost/CostElement.vue'),
+        meta: { title: '差异分析', group: '财务管理', element: 'MATERIAL',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 8.10.3 成本报表（change add-cost-accounting：期间报表主区块 + 多期趋势构成双 Tab）
+        path: '/m/8.10.3',
+        name: 'CostReportFinance',
+        component: () => import('@/views/fin/cost-accounting/index.vue'),
+        meta: { title: '成本报表', group: '财务管理',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 8.10.3 成本报表（change add-cost-accounting：期间报表主区块 + 多期趋势构成双 Tab）
+        path: '/m/8.10.3',
+        name: 'CostReportFinance',
+        component: () => import('@/views/fin/cost-accounting/index.vue'),
+        meta: { title: '成本报表', group: '财务管理',
+          perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
       // 8.7 银行对账（add-bank-reconciliation：8.7.1/2 接线回单页复用同一数据源；8.7.3/4 新组件双 tab）
       {
         path: '/m/8.7.1',

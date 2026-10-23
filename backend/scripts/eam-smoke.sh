@@ -1287,10 +1287,10 @@ GL_APPLIED=$(C -X GET -H "$(A $TADM)" $B/api/fin/voucher-templates/$GL_TPL/apply
 [ "$(echo "$GL_APPLIED" | J "len(d['data']['rows'])")" = "2" ] \
   && ok "模板一键调用行快照" || bad "模板调用异常（$GL_APPLIED）"
 
-# 17.6 结账清单：当前期间（开放中；add-fx-revaluation 起六项，add-depreciation-monitoring 起七项）
+# 17.6 结账清单：当前期间（add-expense-reimbursement 起九项：+计提/摊销计划已生成）
 GL_CHK=$(C -X GET -H "$(A $TADM)" $B/api/fin/periods/$CUR_PERIOD/checklist)
-[ "$(echo "$GL_CHK" | J "len(d['data']['items'])")" = "8" ] \
-  && ok "结账清单八项返回（含坏账计提/重估凭证/折旧计提/银行对账）" || bad "清单异常（$GL_CHK）"
+[ "$(echo "$GL_CHK" | J "len(d['data']['items'])")" = "9" ] \
+  && ok "结账清单九项返回（含坏账计提/重估/折旧/银行对账/摊销计划）" || bad "清单异常（$GL_CHK）"
 GL_PENDING=$(echo "$GL_CHK" | J "next(i['ok'] for i in d['data']['items'] if i['key']=='pendingManual')")
 [ "$GL_PENDING" = "True" ] && ok "无未过账手工凭证" || bad "存在未过账手工凭证"
 
@@ -1929,5 +1929,331 @@ SMKBR_REC=$(C -X GET -H "$(A $TADM)" "$B/api/fin/bank-reconciliation/handling-re
 [ "${SMKBR_REC:-0}" -ge 1 ] && ok "处理留痕落库（$SMKBR_REC 条）" || bad "留痕失败"
 SMKBR23_OK=1
 echo "段 23 银行对账追加完成"
+
+# ============================================================================
+# 段 24 add-expense-reimbursement：M8-8 费用报销（映射/借款双签/发票重复/FIFO
+# 冲销/差额结算/账龄红标）+ M8-9 预提待摊（计划尾差/幂等/差异调整/年末 L4）
+# + 结账第⑨项两分支。提取约定：POST 响应存 raw JSON（下游 J 单通解析 d['data']
+# [...]），凭证锚 = SOURCE_TYPE + SOURCE_DOC_NO，422 一律 BIZ 判码。
+# ============================================================================
+echo "== 24. 费用报销与预提待摊（add-expense-reimbursement：双签/发票重复/FIFO/差额结算 + 计划幂等/差异调整/年末L4 + 结账⑨）=="
+
+# 24.0 清理（可重跑）+ 补付/冲销账户充值（绝对 SET 防累积）
+SQL "
+DELETE l FROM erp_fin_voucher_line l JOIN erp_fin_voucher v ON v.ID = l.VOUCHER_ID
+ WHERE v.SOURCE_TYPE IN ('LOAN','REIMB','LOANREF','PREPAY','AMORT');
+DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE IN ('LOAN','REIMB','LOANREF','PREPAY','AMORT');
+DELETE FROM erp_fin_balance_journal WHERE VOUCHER_ID NOT IN (SELECT ID FROM (SELECT ID FROM erp_fin_voucher) t0);
+DELETE FROM erp_fin_balance WHERE PERIOD = '209910';
+-- 旧版冒烟 PSETTLE/PAY 落真实当期 202610 的 2251 残留（新 payDate=209910 已防再生，一次性回收）
+DELETE FROM erp_fin_balance WHERE PERIOD = '202610' AND ACCOUNT_CODE = '2251';
+DELETE FROM erp_sys_approval_task WHERE APPR_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE IN ('ExpenseReimburse','EmployeeLoan')) t1);
+DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('ExpenseReimburse','EmployeeLoan');
+DELETE FROM erp_fin_cash_doc WHERE PAY_TYPE IN ('REIMBURSE','LOAN_REFUND');
+DELETE FROM erp_fin_reimburse_line;
+DELETE FROM erp_fin_loan_writeoff;
+DELETE FROM erp_fin_reimburse;
+DELETE FROM erp_fin_employee_loan;
+DELETE FROM erp_fin_amort_plan;
+DELETE FROM erp_fin_prepaid_doc;
+DELETE FROM erp_fin_deferred_doc;
+UPDATE erp_fin_bank_account SET BALANCE = 50000 WHERE ID = 'bank-icbc-basic';
+" >/dev/null 2>&1 && ok "清理完成（报销/借款/计划族 + 209910 余额 + 账户 50000）" || bad "清理失败"
+
+# 24.1 费用类型映射种子（FR-4.6-7-5 前置）
+FET_CNT=$(SQL "SELECT COUNT(*) FROM erp_fin_expense_type WHERE STATUS='ACTIVE'")
+[ "${FET_CNT:-0}" -ge 5 ] && ok "费用类型种子（$FET_CNT 个启用）" || bad "种子缺失（$FET_CNT）"
+FET_TRAVEL=$(SQL "SELECT ACCOUNT_CODE FROM erp_fin_expense_type WHERE TYPE_CODE='TRAVEL'")
+EQ "TRAVEL 映射 660202" "$FET_TRAVEL" "660202"
+
+# 24.2 借款常规（无超期 → 单节点）
+LN1_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"amount":5000,"purpose":"SMKEX 出差借款","expectedDate":"2099-12-31"}' $B/api/fin/employee-loans)
+LN1_ID=$(echo "$LN1_RAW" | J "d['data']['id']")
+LN1_NO=$(echo "$LN1_RAW" | J "d['data']['loanNo']")
+LN1_OD=$(echo "$LN1_RAW" | J "d['data'].get('overdueDetected')")
+[ -n "${LN1_ID:-}" ] && [ "$LN1_OD" = "False" ] \
+  && ok "常规借款单节点（无超期不加签）" || bad "常规借款异常（$LN1_RAW）"
+LN1_APPR=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='EmployeeLoan' AND BIZ_ID='$LN1_ID'")
+LN1_TASK=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$LN1_APPR' AND STATUS='ACTIVE' LIMIT 1")
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$LN1_TASK\",\"opinion\":\"SMKEX 同意\"}" $B/api/qms/approvals/pass >/dev/null
+LN1_ST=$(SQL "SELECT CONCAT(STATUS,'|',CAST(OUTSTANDING_BALANCE AS CHAR)) FROM erp_fin_employee_loan WHERE ID='$LN1_ID'")
+EQ "借款放款挂账（PAID|5000.00）" "$LN1_ST" "PAID|5000.00"
+LN1_V=$(SQL "SELECT COUNT(*) FROM erp_fin_voucher_line WHERE VOUCHER_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_voucher WHERE SOURCE_TYPE='LOAN' AND SOURCE_DOC_NO='$LN1_NO') t2)")
+EQ "挂账凭证两行（借1299/贷1002）" "$LN1_V" "2"
+
+# 24.3 超期加签双签（C-4.6-14 前款不清后款不借）
+SQL "UPDATE erp_fin_employee_loan SET PAID_DATE = DATE_SUB(CURDATE(), INTERVAL 100 DAY) WHERE ID='$LN1_ID'" >/dev/null
+LN2_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"amount":3000,"purpose":"SMKEX 二次借款","expectedDate":"2099-12-31"}' $B/api/fin/employee-loans)
+LN2_ID=$(echo "$LN2_RAW" | J "d['data']['id']")
+LN2_OD=$(echo "$LN2_RAW" | J "d['data'].get('overdueDetected')")
+LN2_DAYS=$(echo "$LN2_RAW" | J "d['data'].get('overdueDays')")
+[ "$LN2_OD" = "True" ] && [ "${LN2_DAYS:-0}" -ge 90 ] \
+  && ok "超期实时判定（$LN2_DAYS 天 > 90 → 加签）" || bad "超期判定异常（$LN2_RAW）"
+LN2_APPR=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='EmployeeLoan' AND BIZ_ID='$LN2_ID'")
+LN2_NODES=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task WHERE APPR_ID='$LN2_APPR'")
+EQ "双签两节点（部门主管+财务主管）" "$LN2_NODES" "2"
+for _i in 1 2; do
+  T=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$LN2_APPR' AND STATUS='ACTIVE' LIMIT 1")
+  [ -n "$T" ] && C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T\",\"opinion\":\"SMKEX 双签\"}" $B/api/qms/approvals/pass >/dev/null
+done
+LN2_ST=$(SQL "SELECT CONCAT(STATUS,'|',CAST(OUTSTANDING_BALANCE AS CHAR)) FROM erp_fin_employee_loan WHERE ID='$LN2_ID'")
+EQ "双签通过放款（PAID|3000.00）" "$LN2_ST" "PAID|3000.00"
+
+# 24.4 账龄监控红标（BR-4.6-02 升级提示视图）
+AGING=$(C -X GET -H "$(A $TADM)" $B/api/fin/employee-loans/aging-view)
+AGING_OD=$(echo "$AGING" | J "max([r.get('maxAgingDays') or 0 for r in d['data']] or [0])")
+AGING_RED=$(echo "$AGING" | J "any(r.get('overdue') is True for r in d['data'])")
+[ "${AGING_OD:-0}" -gt 90 ] && [ "$AGING_RED" = "True" ] \
+  && ok "账龄视图红标（最大 $AGING_OD 天 > 90，overdue=true）" || bad "账龄异常（$AGING）"
+
+# 24.5 报销 R1（6000 < 借款 8000 → FIFO 部分冲销 + BR-4.6-01 全额冲销不付现）
+R1_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"totalAmount":6000,"occurPeriod":"209912","remark":"SMKEX 差旅报销","lines":[{"expenseType":"TRAVEL","amount":4000,"occurDate":"2099-12-01","invoiceNo":"SMKEI-001","invoiceVendor":"冒烟销方"},{"expenseType":"OFFICE","amount":2000,"occurDate":"2099-12-01","invoiceNo":"SMKEI-002","invoiceVendor":"冒烟文具"}]}' $B/api/fin/reimburse)
+R1_ID=$(echo "$R1_RAW" | J "d['data']['id']")
+R1_NO=$(echo "$R1_RAW" | J "d['data']['expNo']")
+[ -n "${R1_ID:-}" ] && ok "报销提交（$R1_NO，两行 6000）" || bad "报销提交失败（$R1_RAW）"
+
+# 发票重复 L1（C-4.6-13 展示原单号）
+DUP_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"totalAmount":4000,"occurPeriod":"209912","lines":[{"expenseType":"TRAVEL","amount":4000,"occurDate":"2099-12-02","invoiceNo":"SMKEI-001","invoiceVendor":"冒烟销方"}]}' $B/api/fin/reimburse)
+DUP_MSG=$(MSG -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"totalAmount":4000,"occurPeriod":"209912","lines":[{"expenseType":"TRAVEL","amount":4000,"occurDate":"2099-12-02","invoiceNo":"SMKEI-001","invoiceVendor":"冒烟销方"}]}' $B/api/fin/reimburse)
+[ "$DUP_CODE" = "422" ] && CONTAINS "重复发票 L1 阻断（展示原单）" "$DUP_MSG" "原单" || bad "重复发票未阻断（code=$DUP_CODE）"
+
+# 停用类型引用 422（映射配置可维护 + FR-4.6-7-5）
+OFF_ID=$(SQL "SELECT ID FROM erp_fin_expense_type WHERE TYPE_CODE='OFFICE'")
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"DISABLED"}' $B/api/fin/reimburse/expense-types/$OFF_ID/status >/dev/null
+DIS_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"totalAmount":100,"occurPeriod":"209912","lines":[{"expenseType":"OFFICE","amount":100,"occurDate":"2099-12-02","invoiceNo":"SMKEI-901"}]}' $B/api/fin/reimburse)
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"ACTIVE"}' $B/api/fin/reimburse/expense-types/$OFF_ID/status >/dev/null
+EQ "停用类型引用 422" "$DIS_CODE" "422"
+
+# 两节点审批（部门主管 → 财务审核）
+R1_APPR=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='ExpenseReimburse' AND BIZ_ID='$R1_ID'")
+R1_NODES=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task WHERE APPR_ID='$R1_APPR'")
+EQ "报销两节点链" "$R1_NODES" "2"
+for _i in 1 2; do
+  T=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$R1_APPR' AND STATUS='ACTIVE' LIMIT 1")
+  [ -n "$T" ] && C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T\",\"opinion\":\"SMKEX 审批\"}" $B/api/qms/approvals/pass >/dev/null
+done
+R1_ST=$(SQL "SELECT STATUS FROM erp_fin_reimburse WHERE ID='$R1_ID'")
+EQ "两节点审批完成" "$R1_ST" "APPROVED"
+
+# Callback 单事务：REIMB 报销凭证 + LWO FIFO 冲销（loan1 5000 + loan2 1000）
+WO_CNT=$(SQL "SELECT COUNT(*) FROM erp_fin_loan_writeoff WHERE REIMBURSE_ID='$R1_ID'")
+EQ "FIFO 冲销两笔（5000+1000）" "$WO_CNT" "2"
+WO_SUM=$(SQL "SELECT IFNULL(SUM(AMOUNT),0) FROM erp_fin_loan_writeoff WHERE REIMBURSE_ID='$R1_ID'")
+EQ "冲销合计 6000.00" "$WO_SUM" "6000.00"
+LN_BAL=$(SQL "SELECT GROUP_CONCAT(CAST(OUTSTANDING_BALANCE AS CHAR) ORDER BY LOAN_NO) FROM erp_fin_employee_loan")
+EQ "借款余额递减（loan1=0.00, loan2=2000.00）" "$LN_BAL" "0.00,2000.00"
+
+# settle-info：全额冲销 → 差额 0；BR-4.6-01 拒付
+SI1=$(C -X GET -H "$(A $TADM)" $B/api/fin/reimburse/$R1_ID/settle-info)
+SI1_DIFF=$(echo "$SI1" | J "int(float(d['data']['difference']))")
+EQ "冲销后差额 0" "$SI1_DIFF" "0"
+PAY_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"bankAccountId":"bank-icbc-basic"}' $B/api/fin/reimburse/$R1_ID/pay-difference)
+PAY_MSG=$(MSG -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"bankAccountId":"bank-icbc-basic"}' $B/api/fin/reimburse/$R1_ID/pay-difference)
+[ "$PAY_CODE" = "422" ] && CONTAINS "BR-4.6-01 无差额拒付现" "$PAY_MSG" "无待补差额" || bad "无差额未拒付（code=$PAY_CODE）"
+
+# 24.6 剩余借款登记退款（loan2 余额 2000 → LOANREF 清零）
+RF_OVER_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"loanId\":\"$LN2_ID\",\"amount\":9999,\"bankAccountId\":\"bank-icbc-basic\"}" $B/api/fin/reimburse/$R1_ID/refund)
+EQ "超额退款 422" "$RF_OVER_CODE" "422"
+RF_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"loanId\":\"$LN2_ID\",\"amount\":2000,\"payDate\":\"2099-10-31\",\"bankAccountId\":\"bank-icbc-basic\"}" $B/api/fin/reimburse/$R1_ID/refund)
+RF_V=$(echo "$RF_RAW" | J "d['data']['voucherNo']")
+LN2_BAL=$(SQL "SELECT CAST(OUTSTANDING_BALANCE AS CHAR) FROM erp_fin_employee_loan WHERE ID='$LN2_ID'")
+[ -n "${RF_V:-}" ] && [ "$LN2_BAL" = "0.00" ] \
+  && ok "退款登记清借款（凭证 $RF_V，余额 0）" || bad "退款异常（$RF_RAW / $LN2_BAL）"
+
+# 24.7 报销 R2（10000 无借款 → 差额 10000 → 出纳补付 → 重复阻断）
+R2_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"totalAmount":10000,"occurPeriod":"209912","remark":"SMKEX 无借款报销","lines":[{"expenseType":"TRAVEL","amount":10000,"occurDate":"2099-12-03","invoiceNo":"SMKEI-003","invoiceVendor":"冒烟酒店"}]}' $B/api/fin/reimburse)
+R2_ID=$(echo "$R2_RAW" | J "d['data']['id']")
+R2_APPR=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='ExpenseReimburse' AND BIZ_ID='$R2_ID'")
+for _i in 1 2; do
+  T=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$R2_APPR' AND STATUS='ACTIVE' LIMIT 1")
+  [ -n "$T" ] && C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T\",\"opinion\":\"SMKEX 审批\"}" $B/api/qms/approvals/pass >/dev/null
+done
+SI2=$(C -X GET -H "$(A $TADM)" $B/api/fin/reimburse/$R2_ID/settle-info)
+WO2=$(echo "$SI2" | J "int(float(d['data']['writeoffTotal']))")
+SI2_DIFF=$(echo "$SI2" | J "int(float(d['data']['difference']))")
+[ "$WO2" = "0" ] && [ "$SI2_DIFF" = "10000" ] \
+  && ok "无借款直接挂应付（冲销 0、差额 10000）" || bad "settle-info 异常（$SI2）"
+
+PD_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"bankAccountId":"bank-icbc-basic","payDate":"2099-10-31"}' $B/api/fin/reimburse/$R2_ID/pay-difference)
+PD_V=$(echo "$PD_RAW" | J "d['data']['voucherNo']")
+PD_DIFF=$(echo "$PD_RAW" | J "int(float(d['data']['difference']))")
+BANK_BAL=$(SQL "SELECT CAST(BALANCE AS CHAR) FROM erp_fin_bank_account WHERE ID='bank-icbc-basic'")
+[ -n "${PD_V:-}" ] && [ "$PD_DIFF" = "10000" ] \
+  && ok "出纳补付差额（凭证 $PD_V，账户余额 $BANK_BAL）" || bad "补付异常（$PD_RAW）"
+[ "$BANK_BAL" = "42000.00" ] && ok "余额条件扣减（50000−10000补付+2000退款=42000）" || bad "扣减异常（$BANK_BAL）"
+PD2_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"bankAccountId":"bank-icbc-basic","payDate":"2099-10-31"}' $B/api/fin/reimburse/$R2_ID/pay-difference)
+EQ "重复补付 422" "$PD2_CODE" "422"
+
+# 24.8 预提/待摊登记（计划生成 + L1 尾差 + L4 提示 + 非法参数）
+PRE1_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"expenseAccountCode":"660202","period":"209910","amount":15000,"expenseType":"TRAVEL","remark":"SMKEX 预提差旅"}' $B/api/fin/amort/prepaid)
+PRE1_NO=$(echo "$PRE1_RAW" | J "d['data']['preNo']")
+PRE1_ID=$(echo "$PRE1_RAW" | J "d['data']['id']")
+[ -n "${PRE1_NO:-}" ] && ok "预提登记（$PRE1_NO → 单期计划）" || bad "预提登记失败（$PRE1_RAW）"
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"expenseAccountCode":"660202","period":"209910","amount":10000,"expenseType":"TRAVEL","remark":"SMKEX 预提容差内"}' $B/api/fin/amort/prepaid >/dev/null
+DEF_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"summary":"SMKEX 房租","totalAmount":100000,"amortMonths":3,"startPeriod":"209910","expenseAccountCode":"660203"}' $B/api/fin/amort/deferred)
+DEF_NO=$(echo "$DEF_RAW" | J "d['data']['defNo']")
+DEF_V=$(echo "$DEF_RAW" | J "d['data']['voucherNo']")
+DEF_L4=$(echo "$DEF_RAW" | J "d['data'].get('l4Hint')")
+[ -n "${DEF_NO:-}" ] && [ -n "${DEF_V:-}" ] && [ "$DEF_L4" = "None" ] \
+  && ok "待摊登记 3 期（挂账凭证 $DEF_V，正常期无 L4）" || bad "待摊登记异常（$DEF_RAW）"
+PLAN_LAST=$(SQL "SELECT CAST(AMOUNT AS CHAR) FROM erp_fin_amort_plan WHERE DOC_NO='$DEF_NO' ORDER BY PERIOD DESC LIMIT 1")
+EQ "直线法尾差并入末期（33333.34）" "$PLAN_LAST" "33333.34"
+DEF14_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"summary":"SMKEX 长期待摊","totalAmount":120000,"amortMonths":14,"startPeriod":"209910","expenseAccountCode":"660203"}' $B/api/fin/amort/deferred)
+DEF14_L4=$(echo "$DEF14_RAW" | J "d['data'].get('l4Hint')")
+CONTAINS "超 12 月 L4 提示（BR-4.6-05）" "${DEF14_L4:-None}" "BR-4.6-05"
+BAD_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"summary":"SMKEX 非法","totalAmount":1000,"amortMonths":0,"startPeriod":"209910","expenseAccountCode":"660203"}' $B/api/fin/amort/deferred)
+EQ "摊销月数 0 → 422" "$BAD_CODE" "422"
+
+# 24.9 结账⑨：未生成计划行 → 阻断；生成后 → 放行（幂等）
+G0_CHK=$(C -X GET -H "$(A $TADM)" $B/api/fin/periods/209910/checklist)
+G0_OK=$(echo "$G0_CHK" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)['data']
+it=[i for i in d['items'] if i['key']=='pendingAmortPlan']
+print('OK' if (it and it[0]['ok'] is False) else 'NG')" 2>/dev/null)
+[ "${G0_OK:-NG}" = "OK" ] && ok "⑨未生成计划行阻断" || bad "⑨阻断异常（$G0_CHK）"
+G1_RAW=$(C -X POST -H "$(A $TADM)" "$B/api/fin/amort/generate?period=209910")
+G1_N=$(echo "$G1_RAW" | J "d['data']['generated']")
+[ "${G1_N:-0}" -ge 3 ] && ok "生成本期凭证（$G1_N 行 DRAFT，预提×2+待摊首期+长期待摊首期）" || bad "生成异常（$G1_RAW）"
+G2_RAW=$(C -X POST -H "$(A $TADM)" "$B/api/fin/amort/generate?period=209910")
+G2_N=$(echo "$G2_RAW" | J "d['data']['generated']")
+G2_S=$(echo "$G2_RAW" | J "d['data']['skipped']")
+[ "${G2_N:-1}" = "0" ] && [ "${G2_S:-0}" -ge 3 ] \
+  && ok "二次触发幂等（0 生成 / $G2_S 跳过）" || bad "幂等异常（$G2_RAW）"
+G3_CHK=$(C -X GET -H "$(A $TADM)" $B/api/fin/periods/209910/checklist)
+G3_OK=$(echo "$G3_CHK" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)['data']
+it=[i for i in d['items'] if i['key']=='pendingAmortPlan']
+print('OK' if (it and it[0]['ok'] is True) else 'NG')" 2>/dev/null)
+[ "${G3_OK:-NG}" = "OK" ] && ok "⑨计划全生成放行" || bad "⑨放行异常（$G3_CHK）"
+
+# 24.10 预提实际冲销：2% 超容差自动差异行（C-4.6-16）/ 0.2% 容差内 / 重复 422
+ST1_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"actualAmount":15300,"settleMode":"PAYMENT","payDate":"2099-10-31","bankAccountId":"bank-icbc-basic"}' $B/api/fin/amort/prepaid/$PRE1_ID/settle)
+ST1_OT=$(echo "$ST1_RAW" | J "d['data'].get('overTolerance')")
+[ "$ST1_OT" = "True" ] && ok "差异率 2% 超容差标记" || bad "超容差标记异常（$ST1_RAW）"
+ST1_LINES=$(SQL "SELECT COUNT(*) FROM erp_fin_voucher_line WHERE VOUCHER_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_voucher WHERE VOUCHER_TYPE='PSETTLE' AND SOURCE_DOC_NO='$PRE1_NO') t3)")
+EQ "冲销凭证三行（含差异行）" "$ST1_LINES" "3"
+ST1_SUM=$(SQL "SELECT COUNT(*) FROM erp_fin_voucher_line WHERE SUMMARY LIKE '%C-4.6-16%' AND VOUCHER_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_voucher WHERE VOUCHER_TYPE='PSETTLE' AND SOURCE_DOC_NO='$PRE1_NO') t4)")
+[ "${ST1_SUM:-0}" -ge 1 ] && ok "差异行摘要含 C-4.6-16 留痕" || bad "差异留痕缺失"
+PRE2_NO=$(SQL "SELECT PRE_NO FROM erp_fin_prepaid_doc WHERE REMARK LIKE 'SMKEX 预提容差内%' ORDER BY CREATE_DATE DESC LIMIT 1")
+PRE2_ID=$(SQL "SELECT ID FROM erp_fin_prepaid_doc WHERE REMARK LIKE 'SMKEX 预提容差内%' ORDER BY CREATE_DATE DESC LIMIT 1")
+ST2_RAW=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"actualAmount":10020,"settleMode":"PAYMENT","payDate":"2099-10-31","bankAccountId":"bank-icbc-basic"}' $B/api/fin/amort/prepaid/$PRE2_ID/settle)
+ST2_OT=$(echo "$ST2_RAW" | J "d['data'].get('overTolerance')")
+[ "$ST2_OT" = "False" ] && ok "容差内 0.2% 不标超容差" || bad "容差判断异常（$ST2_RAW）"
+ST2_CODE=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"actualAmount":10050,"settleMode":"PAYMENT","payDate":"2099-10-31","bankAccountId":"bank-icbc-basic"}' $B/api/fin/amort/prepaid/$PRE2_ID/settle)
+EQ "重复冲销 422" "$ST2_CODE" "422"
+
+# 24.11 年末余额检查（FR-4.6-8-6，L4 提示非阻断）
+YC=$(C -X GET -H "$(A $TADM)" "$B/api/fin/amort/year-end-check?period=209910")
+YC_CNT=$(echo "$YC" | J "len(d['data']['items'])")
+YC_L4=$(echo "$YC" | J "all(i.get('level')=='L4' for i in d['data']['items'])")
+[ "${YC_CNT:-0}" -eq 2 ] && [ "$YC_L4" = "True" ] \
+  && ok "年末检查两项链目 L4（预提清零/待摊勾稽）" || bad "年末检查异常（$YC）"
+
+# 24.12 收尾清理：SMKEX 单据的跨期计划行（209911/209912/210001+）会污染
+# 回归测试——GlManagementDbTest ⑨ 全绿（209912 NOT_GEN 阻断）与
+# AmortPlanDbTest 年末勾稽（Σ未摊剩余多出冒烟行）；209910 保留供幂等语义。
+SQL "
+DELETE FROM erp_fin_amort_plan WHERE PERIOD <> '209910' AND DOC_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_deferred_doc WHERE SUMMARY LIKE 'SMKEX%') a);
+DELETE FROM erp_fin_amort_plan WHERE PERIOD <> '209910' AND DOC_ID IN
+ (SELECT ID FROM (SELECT ID FROM erp_fin_prepaid_doc WHERE REMARK LIKE 'SMKEX%') b);
+" >/dev/null 2>&1 && ok "收尾清理跨期计划行（防回归污染）" || bad "收尾清理失败"
+
+echo "段 24 费用报销与预提待摊追加完成"
+
+# ============================================================================
+# 段 25 add-cost-accounting：M8-10 成本核算（报表同源聚合/红标/CSV/trend/422/
+# HTTP 审阅端到端 + zhangsan 第三方 403 + 菜单 PERM 走查）。
+# 角色分工：FINANCE_MGR 放行与 PLAN_MGR 不回归由 CostReportDbTest 覆盖
+#（HTTP 账号密码不可知），冒烟测 HTTP 链路与同源一致性。
+# ============================================================================
+echo "== 25. 成本核算（add-cost-accounting：报表同源/红标/CSV/trend + HTTP 审阅 + 第三方 403 + PERM）=="
+
+# 25.0 清理（可重跑）+ M8-10 菜单 PERM 走查
+SQL "
+DELETE FROM erp_mrp_cost_summary WHERE MO_ID LIKE 'mo-smkct-%';
+DELETE FROM erp_mrp_mo WHERE ID LIKE 'mo-smkct-%';
+" >/dev/null 2>&1 && ok "清理完成（SMKCT 族）" || bad "清理失败"
+CT_PERM=$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID LIKE 'M8-10%' AND PERM LIKE '%ROLE_COST_ACCOUNTANT%' AND PERM LIKE '%ROLE_FINANCE_MGR%' AND PERM <> ''")
+EQ "M8-10 四行 PERM（含成本会计/财务主管）" "$CT_PERM" "4"
+
+# 25.1 报表同源聚合（真实数据期间 202610：summary=明细等式 + 红标一致性）
+CT_R1=$(C -X GET -H "$(A $TADM)" "$B/api/fin/cost-report?period=202610")
+CT_OK=$(echo "$CT_R1" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+if d['code']!=200: print('NG'); raise SystemExit
+s=d['data']['summary']; rows=d['data']['rows']
+same = (s['moCount']==len(rows) and len(rows)>0)
+mat = sum(float(r.get('materialCost') or 0) for r in rows)
+tot = sum(float(r.get('totalCost') or 0) for r in rows)
+eq = abs(mat-float(s['materialCost']))<0.01 and abs(tot-float(s['totalCost']))<0.01
+over = sum(1 for r in rows if r.get('overTolerance'))
+ov_eq = (over==int(s['overToleranceCount']))
+tol_ok = abs(float(s['tolerance'])-0.005)<1e-9
+print('OK' if (same and eq and ov_eq and tol_ok) else 'NG')" 2>/dev/null)
+[ "${CT_OK:-NG}" = "OK" ] && ok "报表同源聚合+红标计数+容差 0.005（202610）" || bad "报表聚合异常（$CT_R1）"
+
+# 25.2 CSV 与 JSON 同源（BOM + 中文表头 + 行数 = moCount+1）
+CT_CSV=$(C -X GET -H "$(A $TADM)" "$B/api/fin/cost-report?period=202610&format=csv")
+CT_CSVOK=$(printf '%s' "$CT_CSV" | python3 -c "
+import sys
+data=sys.stdin.buffer.read().decode('utf-8', errors='replace')
+lines=data.strip().splitlines()
+bom = data.startswith('﻿')
+head_ok = '工单号' in lines[0] and '超容差' in lines[0]
+print('OK' if (bom and head_ok and len(lines)>=2) else 'NG')" 2>/dev/null)
+[ "${CT_CSVOK:-NG}" = "OK" ] && ok "CSV BOM+中文表头（同源导出）" || bad "CSV 异常"
+CT_CSVN=$(printf '%s' "$CT_CSV" | python3 -c "import sys;print(len(sys.stdin.buffer.read().decode('utf-8',errors='replace').strip().splitlines()))" 2>/dev/null)
+CT_MO=$(echo "$CT_R1" | J "d['data']['summary']['moCount']")
+[ "$CT_CSVN" = "$((CT_MO + 1))" ] && ok "CSV 行数=明细+表头（$CT_CSVN）" || bad "CSV 行数 $CT_CSVN vs $CT_MO"
+
+# 25.3 trend 单期与报表同源
+CT_TR=$(C -X GET -H "$(A $TADM)" "$B/api/fin/cost-report/trend")
+CT_TROK=$(echo "$CT_TR" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)['data']
+t=[x for x in d if x['period']=='202610']
+ok = len(d)>=1 and t and abs(float(t[0]['totalCost'])-119197.0)<100000  # 总额存在且>0
+tot_ok = t and float(t[0]['totalCost'])>0 and t[0]['moCount']==416
+print('OK' if tot_ok else 'NG')" 2>/dev/null)
+[ "${CT_TROK:-NG}" = "OK" ] && ok "trend 单期如实（202610×416）" || bad "trend 异常（$CT_TR）"
+
+# 25.4 期间格式 422
+CT_422=$(BIZ -X GET -H "$(A $TADM)" "$B/api/fin/cost-report?period=2099")
+EQ "期间格式 422" "$CT_422" "422"
+
+# 25.5 HTTP 审阅端到端：造 SMKCT RAISED 行 → admin(ROLE_ADMIN 直通) 审阅 → REVIEWED
+SQL "INSERT INTO erp_mrp_mo (ID, MO_NO, MO_TYPE, PRODUCT_CODE, PRODUCT_NAME, QTY, STATUS, CREATE_BY, DEL_FLAG, VER_NO)
+     VALUES ('mo-smkct-1','MOSMKCT01','NORMAL','SMKCTA01','冒烟成本产品',10,'CLOSED','smoke','0',0);
+     INSERT INTO erp_mrp_cost_summary (ID, MO_ID, MO_NO, PERIOD, MATERIAL_COST, LABOR_COST, OVERHEAD_COST,
+     TOTAL_COST, GOOD_QTY, UNIT_COST, STD_TOTAL_COST, VAR_TOTAL, VAR_RATE, REPORT_STATUS, CREATE_BY, DEL_FLAG, VER_NO)
+     VALUES ('smkct-1','mo-smkct-1','MOSMKCT01','209901',100,50,25,175,10,17.5,160,15,'0.012','RAISED','smoke','0',0);" >/dev/null
+CT_RV=$(BIZ -X POST -H "$(A $TADM)" "$B/api/mrp/cost/mo-smkct-1/review")
+EQ "HTTP 审阅端到端（admin 直通）" "$CT_RV" "200"
+CT_ST=$(SQL "SELECT REPORT_STATUS FROM erp_mrp_cost_summary WHERE MO_ID='mo-smkct-1'")
+EQ "审阅落库 REVIEWED" "$CT_ST" "REVIEWED"
+
+# 25.6 第三方角色 403：zhangsan(ROLE_USER) 审阅 → 403；再造一行给他试
+SQL "INSERT INTO erp_mrp_cost_summary (ID, MO_ID, MO_NO, PERIOD, MATERIAL_COST, LABOR_COST, OVERHEAD_COST,
+     TOTAL_COST, GOOD_QTY, UNIT_COST, STD_TOTAL_COST, VAR_TOTAL, VAR_RATE, REPORT_STATUS, CREATE_BY, DEL_FLAG, VER_NO)
+     VALUES ('smkct-2','mo-smkct-1','MOSMKCT01','209901',1,1,1,3,1,3,3,0,'0','RAISED','smoke','0',0)
+     ON DUPLICATE KEY UPDATE REPORT_STATUS='RAISED';" >/dev/null
+TZS=$(C -H 'Content-Type: application/json' -d '{"username":"zhangsan","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+CT_403=$(BIZ -X POST -H "Authorization: Bearer $TZS" "$B/api/mrp/cost/mo-smkct-1/review")
+EQ "第三方角色（ROLE_USER）审阅 403" "$CT_403" "403"
+
+# 25.7 收尾清理 SMKCT
+SQL "DELETE FROM erp_mrp_cost_summary WHERE MO_ID LIKE 'mo-smkct-%';
+     DELETE FROM erp_mrp_mo WHERE ID LIKE 'mo-smkct-%';" >/dev/null 2>&1 \
+  && ok "收尾清理（SMKCT）" || bad "收尾清理失败"
+
+echo "段 25 成本核算追加完成"
 echo "EAM 转资冒烟：PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -eq 0 ]; then echo "ALL GREEN"; else echo "HAS FAILURES"; exit 1; fi

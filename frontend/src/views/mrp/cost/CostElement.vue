@@ -2,7 +2,7 @@
   <div class="cost-element">
     <el-card shadow="never">
       <div class="head">
-        <span class="title">{{ isMaterial ? '5.11.1 直接材料归集' : '5.11.2 直接人工归集' }}</span>
+        <span class="title">{{ pageTitle }}</span>
         <div class="filters">
           <el-input v-model="keyword" placeholder="工单号/物料" clearable style="width: 180px"
             @keyup.enter="load" />
@@ -107,6 +107,11 @@ import { listCostApi, costDetailApi, rerunCostApi, reviewVarianceApi } from '@/a
 const route = useRoute()
 const userStore = useUserStore()
 const isMaterial = route.meta.element !== 'LABOR'
+// change add-cost-accounting：M8-10 财务入口复用本页（meta.title 已由路由携带），
+// 生产域 5.11.x 保持原题——菜单标题以路由 meta 为准，不再写死
+const pageTitle = computed(() => route.meta?.title
+  ? `${route.meta.title}（${route.meta.element === 'LABOR' ? '直接人工' : '成本要素'}）`
+  : (isMaterial ? '5.11.1 直接材料归集' : '5.11.2 直接人工归集'))
 
 const rows = ref([])
 const loading = ref(false)
@@ -120,7 +125,8 @@ const roles = computed(() => userStore.userInfo?.roles || [])
 const canWrite = computed(() =>
   roles.value.includes('ROLE_COST_ACCOUNTANT') || roles.value.includes('ROLE_ADMIN'))
 const canReview = computed(() =>
-  roles.value.includes('ROLE_PLAN_MGR') || roles.value.includes('ROLE_ADMIN'))
+  roles.value.includes('ROLE_PLAN_MGR') || roles.value.includes('ROLE_FINANCE_MGR')
+  || roles.value.includes('ROLE_ADMIN'))
 
 const detailTitle = computed(() =>
   detail.value?.summary ? `归集明细 - ${detail.value.summary.moNo}` : '归集明细')
