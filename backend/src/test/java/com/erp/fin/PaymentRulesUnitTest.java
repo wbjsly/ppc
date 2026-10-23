@@ -70,14 +70,36 @@ class PaymentRulesUnitTest {
         return new PaymentServiceImpl(reqDao, payDao, mock(FinPaymentWriteoffDao.class),
                 invoiceDao, bankDao, deductionDao, mock(GlVoucherService.class),
                 mock(SupplierStatementService.class), mock(ApprovalEngine.class),
+                mock(com.erp.service.fin.ApPlanService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                // add-payment-collection：执行内核委托统一收付款中心
+                mock(com.erp.service.fin.CashDocService.class),
+                mock(com.erp.dao.fin.CashDocDao.class),
+                mock(com.erp.dao.fin.CashWriteoffDao.class));
+    }
+
+    /** add-payment-collection：execute 规则（超审批/支付方式/抵扣上限）直测统一中心内核 */
+    private com.erp.service.fin.CashDocService newCashService(
+            com.erp.dao.fin.CashDocDao docDao, FinPaymentRequestDao reqDao,
+            FinBankAccountDao bankDao, ScarDeductionDao deductionDao) {
+        return new com.erp.service.impl.fin.CashDocServiceImpl(
+                docDao, mock(com.erp.dao.fin.CashWriteoffDao.class), bankDao,
+                mock(FinApInvoiceDao.class), reqDao, deductionDao,
+                mock(GlVoucherService.class),
+                mock(com.erp.service.fin.CashWriteoffService.class),
+                mock(SupplierStatementService.class),
+                mock(com.erp.service.fin.ApPlanService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     private PrepaymentService newPrepaymentService(FinPrepaymentDao ppDao, PurchaseOrderDao poDao,
                                                    GoodsReceiptDao grDao, GoodsReceiptLineDao grLineDao,
                                                    MdmSupplierDao supplierDao) {
-        PrepaymentServiceImpl s = new PrepaymentServiceImpl(ppDao, mock(FinPaymentDao.class),
-                mock(FinPaymentWriteoffDao.class), mock(FinApInvoiceDao.class),
+        PrepaymentServiceImpl s = new PrepaymentServiceImpl(ppDao,
+                mock(com.erp.dao.fin.CashDocDao.class),
+                mock(com.erp.dao.fin.CashWriteoffDao.class),
+                mock(com.erp.service.fin.CashDocService.class),
+                mock(FinApInvoiceDao.class),
                 mock(FinBankAccountDao.class), poDao, grDao, grLineDao, supplierDao,
                 mock(GlVoucherService.class), mock(SupplierStatementService.class),
                 mock(ApprovalEngine.class), new com.fasterxml.jackson.databind.ObjectMapper());
@@ -126,39 +148,48 @@ class PaymentRulesUnitTest {
     @Test
     void executeRejectsOverApprovedAmount() {
         FinPaymentRequestDao reqDao = mock(FinPaymentRequestDao.class);
-        FinPaymentDao payDao = mock(FinPaymentDao.class);
+        com.erp.dao.fin.CashDocDao docDao = mock(com.erp.dao.fin.CashDocDao.class);
+        FinBankAccountDao bankDao = mock(FinBankAccountDao.class);
         when(reqDao.selectById("req-junit")).thenReturn(scheduledRequest("1000"));
-        when(payDao.selectExecutedByReq(anyString())).thenReturn(BigDecimal.ZERO);
-        PaymentService svc = newPaymentService(reqDao, payDao, mock(FinApInvoiceDao.class),
-                mock(FinBankAccountDao.class), mock(ScarDeductionDao.class));
+        when(bankDao.selectById("bank-junit")).thenReturn(activeBank());
+        when(docDao.selectExecutedByReq(anyString())).thenReturn(BigDecimal.ZERO);
+        // create→post 链：insert 捕获单据供 post 回读
+        final com.erp.entity.fin.CashDoc[] holder = new com.erp.entity.fin.CashDoc[1];
+        when(docDao.insert(any(com.erp.entity.fin.CashDoc.class))).thenAnswer(inv -> {
+            holder[0] = inv.getArgument(0);
+            return 1;
+        });
+        when(docDao.selectById(anyString())).thenAnswer(inv -> holder[0]);
+        com.erp.service.fin.CashDocService svc = newCashService(docDao, reqDao, bankDao,
+                mock(ScarDeductionDao.class));
 
         ServiceException e = assertThrows(ServiceException.class, () ->
-                svc.execute(payload("2000", "电汇", null)));
+                svc.executeOut(payload("2000", "电汇", null)));
         assertTrue(e.getMessage().contains("超过审批金额"), e.getMessage());
     }
 
     @Test
     void executeRejectsUnknownPayMethod() {
         FinPaymentRequestDao reqDao = mock(FinPaymentRequestDao.class);
-        FinPaymentDao payDao = mock(FinPaymentDao.class);
+        com.erp.dao.fin.CashDocDao docDao = mock(com.erp.dao.fin.CashDocDao.class);
+        FinBankAccountDao bankDao = mock(FinBankAccountDao.class);
         when(reqDao.selectById("req-junit")).thenReturn(scheduledRequest("1000"));
-        when(payDao.selectExecutedByReq(anyString())).thenReturn(BigDecimal.ZERO);
-        PaymentService svc = newPaymentService(reqDao, payDao, mock(FinApInvoiceDao.class),
-                mock(FinBankAccountDao.class), mock(ScarDeductionDao.class));
+        when(bankDao.selectById("bank-junit")).thenReturn(activeBank());
+        com.erp.service.fin.CashDocService svc = newCashService(docDao, reqDao, bankDao,
+                mock(ScarDeductionDao.class));
 
         ServiceException e = assertThrows(ServiceException.class, () ->
-                svc.execute(payload("500", "比特币", null)));
+                svc.executeOut(payload("500", "比特币", null)));
         assertTrue(e.getMessage().contains("支付方式"), e.getMessage());
     }
 
     @Test
     void executeRejectsDeductExceedingAmount() {
         FinPaymentRequestDao reqDao = mock(FinPaymentRequestDao.class);
-        FinPaymentDao payDao = mock(FinPaymentDao.class);
+        com.erp.dao.fin.CashDocDao docDao = mock(com.erp.dao.fin.CashDocDao.class);
         FinBankAccountDao bankDao = mock(FinBankAccountDao.class);
         ScarDeductionDao deductionDao = mock(ScarDeductionDao.class);
         when(reqDao.selectById("req-junit")).thenReturn(scheduledRequest("3000"));
-        when(payDao.selectExecutedByReq(anyString())).thenReturn(BigDecimal.ZERO);
         when(bankDao.selectById("bank-junit")).thenReturn(activeBank());
         ScarDeduction d = new ScarDeduction();
         d.setId("sd-junit");
@@ -167,11 +198,11 @@ class PaymentRulesUnitTest {
         d.setAmount(new BigDecimal("5000.00"));
         d.setStatus("TO_DEDUCT");
         when(deductionDao.selectById("sd-junit")).thenReturn(d);
-        PaymentService svc = newPaymentService(reqDao, payDao, mock(FinApInvoiceDao.class),
-                bankDao, deductionDao);
+        com.erp.service.fin.CashDocService svc = newCashService(docDao, reqDao, bankDao,
+                deductionDao);
 
         ServiceException e = assertThrows(ServiceException.class, () ->
-                svc.execute(payload("3000", "电汇", "sd-junit")));
+                svc.executeOut(payload("3000", "电汇", "sd-junit")));
         assertTrue(e.getMessage().contains("超过付款金额"), e.getMessage());
     }
 

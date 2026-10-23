@@ -69,7 +69,12 @@ class FinRulesUnitTest {
         voucherDao = mock(FinVoucherDao.class);
         lineDao = mock(FinVoucherLineDao.class);
         legalEntityDao = mock(MdmLegalEntityDao.class);
-        voucherService = new GlVoucherServiceImpl(accountDao, voucherDao, lineDao, legalEntityDao);
+        // add-gl-management 构造器扩参：balanceService mock 为 no-op（POSTED 即回写余额）
+        com.erp.service.fin.GlBalanceService balMock = mock(com.erp.service.fin.GlBalanceService.class);
+        com.erp.service.fin.FinPeriodService perMock = mock(com.erp.service.fin.FinPeriodService.class);
+        voucherService = new GlVoucherServiceImpl(accountDao, voucherDao, lineDao, legalEntityDao,
+                mock(com.erp.dao.fin.FinVoucherTemplateDao.class), balMock, perMock,
+                new com.fasterxml.jackson.databind.ObjectMapper());
 
         accrualDao = mock(FinAccrualDao.class);
         grDao = mock(GoodsReceiptDao.class);

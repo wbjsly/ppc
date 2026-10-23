@@ -156,7 +156,8 @@ class QualifiedReleaseDbTest {
         }
 
         // 不传 releaseMode = 现状（在途四状态含 RELEASED 不出现，但 FAIL 不出现、INPUTTING 出现）
-        var normal = lotService.board(1, 100, null, null, null);
+        // 共享库隔离：IQC/OQC 历史批可超百条，首页 100 会把 seed 行挤出（先例同 AssetReportDbTest）
+        var normal = lotService.board(1, 500, null, null, null);
         List<String> normalIds = normal.getRecords().stream()
                 .map(m -> String.valueOf(m.get("id"))).toList();
         assertTrue(normalIds.contains("lot-qr-iqc"), "不传参数行为不变");

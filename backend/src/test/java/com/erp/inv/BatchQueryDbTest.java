@@ -4,6 +4,7 @@ import com.erp.dao.inv.InvBatchDao;
 import com.erp.entity.inv.InvBatch;
 import com.erp.service.inv.BatchService;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +29,13 @@ class BatchQueryDbTest {
 
     private String idA;
     private String idB;
+
+    @BeforeEach
+    void purgeStale() {
+        // 共享库隔离：批次号为 nanoTime 弱熵，前轮残留会撞 UK_INV_BATCH——先清同类残留
+        batchDao.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<InvBatch>()
+                .eq(InvBatch::getItemCode, "IT-QUERY-TEST"));
+    }
 
     @AfterEach
     void cleanup() {

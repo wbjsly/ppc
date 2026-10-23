@@ -1533,6 +1533,342 @@ const routes = [
         component: () => import('@/views/eam/maintenance/index.vue'),
         meta: { title: '备件领用', group: '资产管理', tab: 'spares' }
       },
+      // 7.4 调拨租赁（add-asset-transfer-lease：同组件三路由）
+      {
+        path: '/m/7.4.1',
+        name: 'EamTransferDept',
+        component: () => import('@/views/eam/transfer-lease/index.vue'),
+        meta: { title: '部门调拨', group: '资产管理', tab: 'dept' }
+      },
+      {
+        path: '/m/7.4.2',
+        name: 'EamTransferCrossLe',
+        component: () => import('@/views/eam/transfer-lease/index.vue'),
+        meta: { title: '法人调拨', group: '资产管理', tab: 'cross' }
+      },
+      {
+        path: '/m/7.4.3',
+        name: 'EamLease',
+        component: () => import('@/views/eam/transfer-lease/index.vue'),
+        meta: { title: '租赁管理', group: '资产管理', tab: 'lease' }
+      },
+      // 7.5 资产盘点（add-asset-count：同组件两路由）
+      {
+        path: '/m/7.5.1',
+        name: 'EamCountWorkbench',
+        component: () => import('@/views/eam/asset-count/index.vue'),
+        meta: { title: '年度盘点', group: '资产管理', tab: 'workbench' }
+      },
+      {
+        path: '/m/7.5.2',
+        name: 'EamCountDiff',
+        component: () => import('@/views/eam/asset-count/index.vue'),
+        meta: { title: '差异处理', group: '资产管理', tab: 'diff' }
+      },
+      // 7.6 报废处置（add-asset-disposal：同组件三路由）
+      {
+        path: '/m/7.6.1',
+        name: 'EamDisposalScrap',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '报废申请', group: '资产管理', tab: 'scrap' }
+      },
+      {
+        path: '/m/7.6.2',
+        name: 'EamDisposalSale',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '资产出售', group: '资产管理', tab: 'sale' }
+      },
+      {
+        path: '/m/7.6.3',
+        name: 'EamDisposalPl',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '损益处理', group: '资产管理', tab: 'pl' }
+      },
+      // 7.7 技改大修（add-asset-rework）
+      {
+        path: '/m/7.7.1',
+        name: 'EamRework',
+        component: () => import('@/views/eam/rework/index.vue'),
+        meta: { title: '资本确认', group: '资产管理', tab: 'rework' }
+      },
+      // 8.1 总账管理（add-gl-management：同组件五路由）
+      {
+        path: '/m/8.1.1',
+        name: 'GlAccounts',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '科目管理', group: '财务管理', tab: 'accounts' }
+      },
+      {
+        path: '/m/8.1.2',
+        name: 'GlEntry',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证录入', group: '财务管理', tab: 'entry' }
+      },
+      {
+        path: '/m/8.1.3',
+        name: 'GlAudit',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证审核', group: '财务管理', tab: 'audit' }
+      },
+      {
+        path: '/m/8.1.4',
+        name: 'GlPost',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证过账', group: '财务管理', tab: 'post' }
+      },
+      {
+        path: '/m/8.1.5',
+        name: 'GlClose',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '期末结账', group: '财务管理', tab: 'close' }
+      },
+      // 8.3 应付管理（add-ap-management：同组件三路由）
+      {
+        path: '/m/8.3.1',
+        name: 'ApConfirm',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '应付确认', group: '财务管理', tab: 'confirm' }
+      },
+      {
+        path: '/m/8.3.2',
+        name: 'ApWriteoff',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '应付核销', group: '财务管理', tab: 'writeoff' }
+      },
+      {
+        path: '/m/8.3.3',
+        name: 'ApPayment',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '付款管理', group: '财务管理', tab: 'payment' }
+      },
+      // 8.3 应付管理（add-ap-management：同组件三路由）
+      {
+        path: '/m/8.3.1',
+        name: 'ApConfirm',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '应付确认', group: '财务管理', tab: 'confirm' }
+      },
+      {
+        path: '/m/8.3.2',
+        name: 'ApWriteoff',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '应付核销', group: '财务管理', tab: 'writeoff' }
+      },
+      {
+        path: '/m/8.3.3',
+        name: 'ApPayment',
+        component: () => import('@/views/fin/ap/index.vue'),
+        meta: { title: '付款管理', group: '财务管理', tab: 'payment' }
+      },
+      // 8.4 收付管理（add-payment-collection：同组件三路由）
+      {
+        path: '/m/8.4.1',
+        name: 'CashReceive',
+        component: () => import('@/views/fin/collection/index.vue'),
+        meta: { title: '收款执行', group: '财务管理', tab: 'receive' }
+      },
+      {
+        path: '/m/8.4.2',
+        name: 'CashPay',
+        component: () => import('@/views/fin/collection/index.vue'),
+        meta: { title: '付款执行', group: '财务管理', tab: 'pay' }
+      },
+      {
+        path: '/m/8.4.3',
+        name: 'BankReceiptMatch',
+        component: () => import('@/views/fin/collection/index.vue'),
+        meta: { title: '回单对账', group: '财务管理', tab: 'receipt' }
+      },
+      // 8.7 银行对账（add-bank-reconciliation：8.7.1/2 接线回单页复用同一数据源；8.7.3/4 新组件双 tab）
+      {
+        path: '/m/8.7.1',
+        name: 'BankFlowImport',
+        component: () => import('@/views/fin/collection/index.vue'),
+        meta: { title: '流水导入', group: '财务管理', tab: 'receipt' }
+      },
+      {
+        path: '/m/8.7.2',
+        name: 'BankAutoCompare',
+        component: () => import('@/views/fin/collection/index.vue'),
+        meta: { title: '自动比对', group: '财务管理', tab: 'receipt' }
+      },
+      {
+        path: '/m/8.7.3',
+        name: 'BankReconcileDiff',
+        component: () => import('@/views/fin/bank-reconciliation/index.vue'),
+        meta: { title: '差异处理', group: '财务管理', tab: 'diff' }
+      },
+      {
+        path: '/m/8.7.4',
+        name: 'BankBalanceAdjust',
+        component: () => import('@/views/fin/bank-reconciliation/index.vue'),
+        meta: { title: '余额调节', group: '财务管理', tab: 'reconcile' }
+      },
+      // 8.6 资产折旧（add-depreciation-monitoring：同组件双路由，财务只读监控）
+      {
+        path: '/m/8.6.1',
+        name: 'DeprRunMonitor',
+        component: () => import('@/views/fin/depreciation-monitoring/index.vue'),
+        meta: { title: '折旧计提', group: '财务管理', tab: 'run' }
+      },
+      {
+        path: '/m/8.6.2',
+        name: 'DeprResidualAlert',
+        component: () => import('@/views/fin/depreciation-monitoring/index.vue'),
+        meta: { title: '残值预警', group: '财务管理', tab: 'alert' }
+      },
+      // 8.5 外币核算（add-fx-revaluation：8.5.1 接线 MDM 汇率页；8.5.2/3 同组件双路由）
+      {
+        path: '/m/8.5.1',
+        name: 'FxRateMaintain',
+        component: () => import('@/views/mdm/exchange-rate/index.vue'),
+        meta: { title: '汇率维护', group: '财务管理' }
+      },
+      {
+        path: '/m/8.5.2',
+        name: 'FxRevaluation',
+        component: () => import('@/views/fin/fx-revaluation/index.vue'),
+        meta: { title: '期末重估', group: '财务管理', tab: 'reval' }
+      },
+      {
+        path: '/m/8.5.3',
+        name: 'FxGainLoss',
+        component: () => import('@/views/fin/fx-revaluation/index.vue'),
+        meta: { title: '汇兑损益', group: '财务管理', tab: 'gainloss' }
+      },
+      // 8.2 应收管理（add-ar-management：同组件三路由）
+      {
+        path: '/m/8.2.1',
+        name: 'ArConfirm',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '应收确认', group: '财务管理', tab: 'confirm' }
+      },
+      {
+        path: '/m/8.2.2',
+        name: 'ArAging',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '账龄分析', group: '财务管理', tab: 'aging' }
+      },
+      {
+        path: '/m/8.2.3',
+        name: 'ArProvision',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '坏账计提', group: '财务管理', tab: 'provision' }
+      },
+      // 8.2 应收管理（add-ar-management：同组件三路由）
+      {
+        path: '/m/8.2.1',
+        name: 'ArConfirm',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '应收确认', group: '财务管理', tab: 'confirm' }
+      },
+      {
+        path: '/m/8.2.2',
+        name: 'ArAging',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '账龄分析', group: '财务管理', tab: 'aging' }
+      },
+      {
+        path: '/m/8.2.3',
+        name: 'ArProvision',
+        component: () => import('@/views/fin/ar/index.vue'),
+        meta: { title: '坏账计提', group: '财务管理', tab: 'provision' }
+      },
+      // 8.1 总账管理（add-gl-management：同组件五路由）
+      {
+        path: '/m/8.1.1',
+        name: 'GlAccounts',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '科目管理', group: '财务管理', tab: 'accounts' }
+      },
+      {
+        path: '/m/8.1.2',
+        name: 'GlEntry',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证录入', group: '财务管理', tab: 'entry' }
+      },
+      {
+        path: '/m/8.1.3',
+        name: 'GlAudit',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证审核', group: '财务管理', tab: 'audit' }
+      },
+      {
+        path: '/m/8.1.4',
+        name: 'GlPost',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '凭证过账', group: '财务管理', tab: 'post' }
+      },
+      {
+        path: '/m/8.1.5',
+        name: 'GlClose',
+        component: () => import('@/views/fin/gl/index.vue'),
+        meta: { title: '期末结账', group: '财务管理', tab: 'close' }
+      },
+      // 7.8 资产报表（add-asset-report：同组件三路由）
+      {
+        path: '/m/7.8.1',
+        name: 'EamReportChange',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '变动报表', group: '资产管理', tab: 'change' }
+      },
+      {
+        path: '/m/7.8.2',
+        name: 'EamReportDep',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '折旧明细', group: '资产管理', tab: 'depreciation' }
+      },
+      {
+        path: '/m/7.8.3',
+        name: 'EamReportCount',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '盘点报告', group: '资产管理', tab: 'count' }
+      },
+      // 7.8 资产报表（add-asset-report：同组件三路由）
+      {
+        path: '/m/7.8.1',
+        name: 'EamReportChange',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '变动报表', group: '资产管理', tab: 'change' }
+      },
+      {
+        path: '/m/7.8.2',
+        name: 'EamReportDep',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '折旧明细', group: '资产管理', tab: 'depreciation' }
+      },
+      {
+        path: '/m/7.8.3',
+        name: 'EamReportCount',
+        component: () => import('@/views/eam/report/index.vue'),
+        meta: { title: '盘点报告', group: '资产管理', tab: 'count' }
+      },
+      // 7.7 技改大修（add-asset-rework）
+      {
+        path: '/m/7.7.1',
+        name: 'EamRework',
+        component: () => import('@/views/eam/rework/index.vue'),
+        meta: { title: '资本确认', group: '资产管理', tab: 'rework' }
+      },
+      // 7.6 报废处置（add-asset-disposal：同组件三路由）
+      {
+        path: '/m/7.6.1',
+        name: 'EamDisposalScrap',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '报废申请', group: '资产管理', tab: 'scrap' }
+      },
+      {
+        path: '/m/7.6.2',
+        name: 'EamDisposalSale',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '资产出售', group: '资产管理', tab: 'sale' }
+      },
+      {
+        path: '/m/7.6.3',
+        name: 'EamDisposalPl',
+        component: () => import('@/views/eam/disposal/index.vue'),
+        meta: { title: '损益处理', group: '资产管理', tab: 'pl' }
+      },
       // 2.5.3 / 6.5 不合格品 NCR（add-quality-collaboration，同组件三路由）
       {
         path: '/m/2.5.3',

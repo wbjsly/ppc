@@ -244,7 +244,32 @@ const EXTRA_PERM = {
   // M7-3 资产运维 7.3.1~7.3.3（change add-asset-maintenance：设备工程师+设备主管）
   // M7 父节点取并集（含财务资产会计）后 spread 覆盖，防工程师看不到域节点
   ...leaf(['M7-3', 'M7-3-1', 'M7-3-2', 'M7-3-3'], PERM.maint),
-  ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_ADMIN')
+  // M7-4 调拨租赁 7.4.1~7.4.3（change add-asset-transfer-lease：资产/财务两方 + 部门/财务经理）
+  // 父节点 M7 取并集防孤儿
+  ...leaf(['M7-4', 'M7-4-1', 'M7-4-2', 'M7-4-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-5 资产盘点 7.5.1~7.5.2（change add-asset-count：资产/财务/部门/财务经理）
+  ...leaf(['M7-5', 'M7-5-1', 'M7-5-2'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-6 报废处置 7.6.1~7.6.3（change add-asset-disposal：资产/财务/部门/财务经理/总经理）
+  ...leaf(['M7-6', 'M7-6-1', 'M7-6-2', 'M7-6-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_GM,ROLE_ADMIN'),
+  // M7-7 技改大修 7.7.1（change add-asset-rework：资产/财务/部门/财务经理）
+  ...leaf(['M7-7', 'M7-7-1'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-8 资产报表 7.8.1~7.8.3（change add-asset-report：资产/财务/部门/财务经理）
+  ...leaf(['M7-8', 'M7-8-1', 'M7-8-2', 'M7-8-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-1 总账管理 8.1.1~8.1.5（change add-gl-management：财务资产/财务经理/管理员）
+  ...leaf(['M8-1', 'M8-1-1', 'M8-1-2', 'M8-1-3', 'M8-1-4', 'M8-1-5'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-2 应收管理 8.2.1~8.2.3（change add-ar-management：与 M8-1 对齐）
+  ...leaf(['M8-2', 'M8-2-1', 'M8-2-2', 'M8-2-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-3 应付管理 8.3.1~8.3.3（change add-ap-management：与 M8-1/M8-2 对齐）
+  ...leaf(['M8-3', 'M8-3-1', 'M8-3-2', 'M8-3-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-4 收付管理 8.4.1~8.4.3（change add-payment-collection：与 M8-1~3 对齐）
+  ...leaf(['M8-4', 'M8-4-1', 'M8-4-2', 'M8-4-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-5 外币核算 8.5.1~8.5.3（change add-fx-revaluation：与 M8-1~4 对齐）
+  ...leaf(['M8-5', 'M8-5-1', 'M8-5-2', 'M8-5-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-6 资产折旧 8.6.1~8.6.2（change add-depreciation-monitoring：财务只读监控，与 M8-1~5 对齐）
+  ...leaf(['M8-6', 'M8-6-1', 'M8-6-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-7 银行对账 8.7.1~8.7.4（change add-bank-reconciliation：与 M8-1~6 对齐）
+  ...leaf(['M8-7', 'M8-7-1', 'M8-7-2', 'M8-7-3', 'M8-7-4'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

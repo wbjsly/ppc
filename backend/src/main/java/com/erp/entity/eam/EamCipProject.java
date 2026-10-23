@@ -47,4 +47,8 @@ public class EamCipProject extends BaseEntity {
 
     @TableField("REMARK")
     private String remark;
+
+    /** 技改单互锚（add-asset-rework 1:1 项目，140 加列） */
+    @TableField("REWORK_ORDER_ID")
+    private String reworkOrderId;
 }

@@ -58,6 +58,9 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
     private final FinVoucherLineDao voucherLineDao;
     private final com.erp.service.SysParamService sysParamService;
     private final com.erp.service.approval.ApprovalEngine approvalEngine;
+    private final com.erp.dao.eam.EamTransferOrderDao transferDao;
+    private final com.erp.dao.eam.EamReworkOrderDao reworkOrderDao;
+    private final com.erp.service.system.NoticeService noticeService;
 
     public EamDepreciationServiceImpl(EamDepreciationRunDao runDao,
                                       EamDepreciationDetailDao detailDao,
@@ -67,7 +70,10 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
                                       GlVoucherService voucherService,
                                       FinVoucherLineDao voucherLineDao,
                                       com.erp.service.SysParamService sysParamService,
-                                      com.erp.service.approval.ApprovalEngine approvalEngine) {
+                                      com.erp.service.approval.ApprovalEngine approvalEngine,
+                                      com.erp.dao.eam.EamTransferOrderDao transferDao,
+                                      com.erp.dao.eam.EamReworkOrderDao reworkOrderDao,
+                                      com.erp.service.system.NoticeService noticeService) {
         this.runDao = runDao;
         this.detailDao = detailDao;
         this.cardDao = cardDao;
@@ -77,6 +83,9 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
         this.voucherLineDao = voucherLineDao;
         this.sysParamService = sysParamService;
         this.approvalEngine = approvalEngine;
+        this.transferDao = transferDao;
+        this.reworkOrderDao = reworkOrderDao;
+        this.noticeService = noticeService;
     }
 
     // ================= 变动处理（政策变更 POLICY / 减值 IMPAIRMENT，4.1/4.2）=================
@@ -387,8 +396,11 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
         List<EamDepreciationDetail> details = new ArrayList<>(cards.size());
         BigDecimal total = BigDecimal.ZERO;
         int alertCount = 0;
+        // BR-22 折旧归属回溯（design D3）：本期内完成调拨的卡片，归属取调出方成本中心（一条 SQL 批量）
+        Map<String, String> transferFromCc = effectiveAttrCcMap(periodTag, cards);
         for (EamAssetCard card : cards) {
             DepreciationResult r = computeFor(card, periodTag, alertThreshold);
+            String attrCc = transferFromCc.getOrDefault(card.getId(), card.getCostCenterCode());
             EamDepreciationDetail d = new EamDepreciationDetail();
             d.setRunId(run.getId());
             d.setPeriodTag(periodTag);
@@ -401,8 +413,8 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
             d.setPeriodDepr(r.periodDepreciation());
             d.setEndAccumDepr(r.endAccumDepreciation());
             d.setEndNbv(r.endNbv());
-            d.setCostCenterCode(card.getCostCenterCode());
-            d.setDebitAccount(debitAccountFor(card.getCostCenterCode(), acctDefault));
+            d.setCostCenterCode(attrCc);
+            d.setDebitAccount(debitAccountFor(attrCc, acctDefault));
             d.setCapped(r.capped() ? "1" : "0");
             d.setResidualAlert(r.residualAlert() ? "1" : "0");
             d.setReversed("0");
@@ -412,6 +424,20 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
             total = total.add(r.periodDepreciation());
             if (r.residualAlert()) {
                 alertCount++;
+            }
+        }
+        // BR-34 误计提检测：已处置且处置月早于本期的卡不得入清单，命中即告警（D5 简化口径：人工冲回）
+        java.time.LocalDate periodStart = monthStartOf(periodTag);
+        for (EamDepreciationDetail d : details) {
+            EamAssetCard c = cardDao.selectOne(new LambdaQueryWrapper<EamAssetCard>()
+                    .eq(EamAssetCard::getCardNo, d.getCardNo()).last("LIMIT 1"));
+            if (c != null && "DISPOSED".equals(c.getStatus()) && c.getDisposedAt() != null
+                    && c.getDisposedAt().toLocalDate().isBefore(periodStart)) {
+                noticeService.push("ROLE_ASSET_ADMIN", null,
+                        "折旧误计提告警（BR-4.13-34）",
+                        "已处置卡片 " + c.getCardNo() + "（处置日 " + c.getDisposedAt().toLocalDate()
+                                + "）被纳入 " + periodTag + " 期计提明细，请核查并冲回",
+                        "EAM_DEPR_MISSTRIKE", run.getId());
             }
         }
         run.setTotalDepr(total.setScale(2, RoundingMode.HALF_UP));
@@ -538,14 +564,25 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
 
     // ================= 内部 =================
 
-    /** 应提清单：IN_USE ∧ 起提月 ≤ 本期 ∧ 非 FULLY_DEPRECIATED；参数缺失入 missing */
+    /** 应提清单：(IN_USE ∪ 处置当月 DISPOSED[BR-34 豁免] ∪ IN_REWORK∧特批续提[BR-39 第三分支]) ∧ 起提月 ≤ 本期 ∧ 非 FULLY_DEPRECIATED；参数缺失入 missing */
     private List<EamAssetCard> depreciableCards(String periodTag, List<String> missing) {
         List<EamAssetCard> out = new ArrayList<>();
+        java.time.LocalDate monthStart = monthStartOf(periodTag);
+        java.time.LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
         List<EamAssetCard> cards = cardDao.selectList(new LambdaQueryWrapper<EamAssetCard>()
-                .eq(EamAssetCard::getStatus, "IN_USE")
-                .eq(EamAssetCard::getDelFlag, "0"));
+                .eq(EamAssetCard::getDelFlag, "0")
+                .and(w -> w.eq(EamAssetCard::getStatus, "IN_USE")
+                        .or(o -> o.eq(EamAssetCard::getStatus, "DISPOSED")
+                                .ge(EamAssetCard::getDisposedAt, monthStart.atStartOfDay())
+                                .lt(EamAssetCard::getDisposedAt, monthEnd.plusDays(1).atStartOfDay()))
+                        .or(o2 -> o2.eq(EamAssetCard::getStatus, "IN_REWORK"))));
         for (EamAssetCard card : cards) {
             if ("FULLY_DEPRECIATED".equals(card.getDeprStatus())) {
+                continue;
+            }
+            // BR-39 第三分支过滤：在建-技改卡仅特批续提（关联单 CONTINUE_DEPR_FLAG=1）当期继续计提
+            if ("IN_REWORK".equals(card.getStatus())
+                    && reworkOrderDao.selectInReworkWithContinuedDepr(card.getId()) == null) {
                 continue;
             }
             // 参数缺失（FR-4.6-5-1）
@@ -662,9 +699,36 @@ public class EamDepreciationServiceImpl implements EamDepreciationService {
         return ym.minusMonths(1).format(DateTimeFormatter.ofPattern("yyyyMM"));
     }
 
+    private static java.time.LocalDate monthStartOf(String periodTag) {
+        int y = Integer.parseInt(periodTag.substring(0, 4));
+        int m = Integer.parseInt(periodTag.substring(4, 6));
+        return java.time.LocalDate.of(y, m, 1);
+    }
+
     /** 卡片期初累计折旧（空值按 0） */
     private static BigDecimal accumOf(EamAssetCard card) {
         return card.getAccumDepr() == null ? BigDecimal.ZERO : card.getAccumDepr();
+    }
+
+    /**
+     * BR-22 折旧归属回溯（design D3）：会计月 P 内完成调拨的卡片 → 归属取调出方成本中心（FROM_CC），
+     * 未调拨卡片不入 map（回落卡片现行 CC）。批量一条 SQL，不逐卡查询；卡片本体不动（管理归属单义）。
+     */
+    private Map<String, String> effectiveAttrCcMap(String periodTag, List<EamAssetCard> cards) {
+        if (cards.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = new ArrayList<>(cards.size());
+        for (EamAssetCard c : cards) {
+            ids.add(c.getId());
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (com.erp.entity.eam.EamTransferOrder t : transferDao.selectCompletedInPeriod(periodTag, ids)) {
+            if (hasText(t.getFromCc())) {
+                out.put(t.getCardId(), t.getFromCc());
+            }
+        }
+        return out;
     }
 
     private String nextRunNo(String periodTag) {

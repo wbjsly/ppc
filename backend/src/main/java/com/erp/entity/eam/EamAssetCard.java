@@ -32,6 +32,10 @@ public class EamAssetCard extends BaseEntity {
     @TableField("CATEGORY_CODE")
     private String categoryCode;
 
+    /** 所属法人 LE_CODE（137 加列，存量回填默认法人；跨法人调拨即改） */
+    @TableField("LEGAL_ENTITY")
+    private String legalEntity;
+
     @TableField("DEPT_NAME")
     private String deptName;
 
@@ -62,6 +66,10 @@ public class EamAssetCard extends BaseEntity {
     @TableField("EFFECTIVE_DATE")
     private LocalDate effectiveDate;
 
+    /** 最后使用日（137 加列，闲置判定锚 BR-4.13-05，回填=启用日期） */
+    @TableField("LAST_USED_AT")
+    private LocalDate lastUsedAt;
+
     /** 起提月 yyyyMM（启用次月 BR-4.13-11，134 加列） */
     @TableField("DEPR_START_MONTH")
     private String deprStartMonth;
@@ -85,11 +93,31 @@ public class EamAssetCard extends BaseEntity {
     @TableField("LOCK_FLAG")
     private String lockFlag;
 
+    /** 质押抵押 1=是（BR-4.13-21 调拨阻断，137 加列） */
+    @TableField("PLEDGED_FLAG")
+    private String pledgedFlag;
+
+    /** 盘点冻结 1=标签异常/账实冲突冻结调拨处置（BR-4.13-30，138 加列） */
+    @TableField("COUNT_FREEZE_FLAG")
+    private String countFreezeFlag;
+
+    /** 租赁资产（ROU）1=是（137 加列） */
+    @TableField("LEASE_FLAG")
+    private String leaseFlag;
+
+    /** 租赁合同锚（ROU 卡，137 加列） */
+    @TableField("LEASE_CONTRACT_ID")
+    private String leaseContractId;
+
     @TableField("SOURCE_CAP_ID")
     private String sourceCapId;
 
     @TableField("SOURCE_CAP_NO")
     private String sourceCapNo;
+
+    /** 处置执行确认日（BR-34 当月豁免/次月停提锚，139 加列；IGNORED=冲回时可置 null 清空） */
+    @TableField(value = "DISPOSED_AT", updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.IGNORED)
+    private java.time.LocalDateTime disposedAt;
 
     @TableField("REMARK")
     private String remark;

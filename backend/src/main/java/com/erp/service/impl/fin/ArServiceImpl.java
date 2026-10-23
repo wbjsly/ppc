@@ -7,19 +7,15 @@ import com.erp.dao.crm.ContractDao;
 import com.erp.dao.crm.ContractPlanDao;
 import com.erp.dao.fin.ArInvoiceDao;
 import com.erp.dao.fin.ArItemDao;
-import com.erp.dao.fin.ArReceiptDao;
 import com.erp.dao.fin.ArStatementDao;
 import com.erp.dao.fin.ArStatementLineDao;
-import com.erp.dao.fin.ArWriteoffDao;
 import com.erp.dao.sd.SoDao;
 import com.erp.entity.crm.Contract;
 import com.erp.entity.crm.ContractPlan;
 import com.erp.entity.fin.ArInvoice;
 import com.erp.entity.fin.ArItem;
-import com.erp.entity.fin.ArReceipt;
 import com.erp.entity.fin.ArStatement;
 import com.erp.entity.fin.ArStatementLine;
-import com.erp.entity.fin.ArWriteoff;
 import com.erp.entity.fin.FinVoucher;
 import com.erp.entity.sd.So;
 import com.erp.service.fin.ArService;
@@ -51,35 +47,41 @@ public class ArServiceImpl implements ArService {
 
     private final ArInvoiceDao arDao;
     private final ArItemDao arItemDao;
-    private final ArWriteoffDao writeoffDao;
-    private final ArReceiptDao receiptDao;
+    private final com.erp.dao.fin.CashWriteoffDao cashWoDao;
+    private final com.erp.service.fin.CashDocService cashDocService;
+    private final com.erp.service.fin.CashWriteoffService cashWriteoffService;
     private final ArStatementDao statementDao;
     private final ArStatementLineDao statementLineDao;
     private final ContractDao contractDao;
     private final ContractPlanDao planDao;
     private final SoDao soDao;
     private final GlVoucherService voucherService;
+    private final com.erp.dao.fin.FinBankAccountDao bankDao;
 
     public ArServiceImpl(ArInvoiceDao arDao,
                          ArItemDao arItemDao,
-                         ArWriteoffDao writeoffDao,
-                         ArReceiptDao receiptDao,
+                         com.erp.dao.fin.CashWriteoffDao cashWoDao,
+                         com.erp.service.fin.CashDocService cashDocService,
+                         com.erp.service.fin.CashWriteoffService cashWriteoffService,
                          ArStatementDao statementDao,
                          ArStatementLineDao statementLineDao,
                          ContractDao contractDao,
                          ContractPlanDao planDao,
                          SoDao soDao,
-                         GlVoucherService voucherService) {
+                         GlVoucherService voucherService,
+                         com.erp.dao.fin.FinBankAccountDao bankDao) {
         this.arDao = arDao;
         this.arItemDao = arItemDao;
-        this.writeoffDao = writeoffDao;
-        this.receiptDao = receiptDao;
+        this.cashWoDao = cashWoDao;
+        this.cashDocService = cashDocService;
+        this.cashWriteoffService = cashWriteoffService;
         this.statementDao = statementDao;
         this.statementLineDao = statementLineDao;
         this.contractDao = contractDao;
         this.planDao = planDao;
         this.soDao = soDao;
         this.voucherService = voucherService;
+        this.bankDao = bankDao;
     }
 
     // ---------- 3.8.3 应收台账多维查询 ----------
@@ -128,8 +130,10 @@ public class ArServiceImpl implements ArService {
         out.put("ar", ar);
         out.put("items", arItemDao.selectList(new LambdaQueryWrapper<ArItem>()
                 .eq(ArItem::getArId, arId).orderByAsc(ArItem::getLineNo)));
-        out.put("writeoffs", writeoffDao.selectList(new LambdaQueryWrapper<ArWriteoff>()
-                .eq(ArWriteoff::getArId, arId).orderByDesc(ArWriteoff::getPayDate)));
+        out.put("writeoffs", cashWoDao.selectList(new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getTargetType, "AR")
+                .eq(com.erp.entity.fin.CashWriteoff::getTargetId, arId)
+                .orderByDesc(com.erp.entity.fin.CashWriteoff::getWriteoffDate)));
         out.put("balance", balanceOf(ar));
 
         // 回看所属合同期次与收款进度（10.8：合同 → SO → 应收链路）
@@ -158,6 +162,8 @@ public class ArServiceImpl implements ArService {
     @Transactional
     public Map<String, Object> registerReceipt(String customerId, BigDecimal amount,
                                                LocalDate payDate, String remark) {
+        // add-payment-collection：回款登记迁移统一收付款中心（IN 创建 + 过账，
+        // spec sales-invoicing-receivable MODIFIED：核销不产凭证，资金凭证归收款单过账）
         requireAny("登记回款", "ROLE_FINANCE_MGR", "ROLE_ADMIN");
         if (isBlank(customerId)) {
             throw new ServiceException(422, "客户必填");
@@ -166,67 +172,47 @@ public class ArServiceImpl implements ArService {
             throw new ServiceException(422, "回款金额必须大于 0");
         }
         LocalDate pay = payDate == null ? LocalDate.now() : payDate;
-
-        ArReceipt receipt = new ArReceipt();
-        receipt.setId(uuid());
-        receipt.setRcptNo(nextNo("RC", receiptDao::selectNosByPrefix));
         ArInvoice probe = arDao.selectList(new LambdaQueryWrapper<ArInvoice>()
                 .eq(ArInvoice::getCustomerId, customerId).last("LIMIT 1"))
                 .stream().findFirst().orElse(null);
-        receipt.setCustomerId(customerId);
-        receipt.setCustomerCode(probe == null ? null : probe.getCustomerCode());
-        receipt.setCustomerName(probe == null ? null : probe.getCustomerName());
-        receipt.setAmount(amount);
-        receipt.setPayDate(pay);
-        receipt.setMatchedAmt(BigDecimal.ZERO);
-        receipt.setUnmatchedAmt(amount);
-        receipt.setStatus(ArReceipt.ST_PENDING);
-        receipt.setRemark(remark);
-        receipt.setCreateBy(currentUser());
-        receiptDao.insert(receipt);
 
-        // FIFO：最早未核销应收优先，支持部分核销
-        List<ArInvoice> pool = arDao.selectFifoPool(customerId);
-        BigDecimal remain = amount;
-        List<Map<String, Object>> details = new ArrayList<>();
-        for (ArInvoice ar : pool) {
-            if (remain.signum() <= 0) {
-                break;
-            }
-            BigDecimal open = balanceOf(ar);
-            if (open.signum() <= 0) {
-                continue;
-            }
-            BigDecimal take = open.min(remain);
-            if (take.signum() <= 0) {
-                continue;
-            }
-            applyWriteoff(ar, take, pay, "AUTO", receipt.getId(), receipt.getRcptNo(),
-                    "FIFO 自动核销（最早应收优先）");
-            remain = remain.subtract(take);
-            Map<String, Object> d = new LinkedHashMap<>();
-            d.put("arNo", ar.getArNo());
-            d.put("amount", take);
-            d.put("balance", balanceOf(ar));
-            details.add(d);
-        }
-        BigDecimal matched = amount.subtract(remain);
-        receipt.setMatchedAmt(matched);
-        receipt.setUnmatchedAmt(remain);
-        receipt.setStatus(remain.signum() <= 0 ? ArReceipt.ST_AUTO
-                : (matched.signum() > 0 ? ArReceipt.ST_PARTIAL : ArReceipt.ST_PENDING));
-        receiptDao.updateById(receipt);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("direction", "IN");
+        payload.put("partyId", customerId);
+        payload.put("partyCode", probe == null ? null : probe.getCustomerCode());
+        payload.put("partyName", probe == null ? null : probe.getCustomerName());
+        payload.put("amount", amount);
+        payload.put("payMethod", "电汇");
+        payload.put("bankAccountId", defaultAccountId());
+        payload.put("payDate", pay.toString());
+        payload.put("currency", "CNY");
+        payload.put("remark", isBlank(remark) ? "回款登记" : remark);
+        var doc = cashDocService.create(payload);
+        Map<String, Object> posted = cashDocService.post(doc.getId());
+
+        BigDecimal writeoffTotal = (BigDecimal) posted.get("writeoffTotal");
+        BigDecimal remaining = (BigDecimal) posted.get("remaining");
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("receipt", receipt);
-        out.put("details", details);
-        out.put("unmatched", remain);
-        if (remain.signum() > 0) {
-            out.put("manualHint", matched.signum() > 0
-                    ? "部分核销完成，余额 " + strip(remain) + " 转人工核销队列"
-                    : "无未清应收可匹配，回款 " + strip(amount) + " 转人工核销队列");
+        out.put("receipt", cashDocService.detail(doc.getId()).get("doc"));
+        List<Map<String, Object>> details = new ArrayList<>();
+        for (Map<String, Object> w : cashWriteoffService.listByDoc(doc.getId())) {
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("arNo", w.get("targetNo"));
+            d.put("amount", w.get("amount"));
+            d.put("balance", BigDecimal.ZERO);
+            details.add(d);
         }
-        log.info("receipt {} matched {} unmatched {}", receipt.getRcptNo(), matched, remain);
+        out.put("details", details);
+        out.put("unmatched", remaining);
+        out.put("voucherNo", posted.get("voucherNo"));
+        if (remaining.signum() > 0) {
+            out.put("manualHint", writeoffTotal.signum() > 0
+                    ? "部分核销完成，余额 " + strip(remaining) + " 转预收账款（2205）"
+                    : "无未清应收可匹配，回款 " + strip(amount) + " 全额转预收账款（2205）");
+        }
+        log.info("receipt {} via cash doc {}: writeoff {} remaining {}",
+                doc.getDocNo(), doc.getId(), writeoffTotal, remaining);
         return out;
     }
 
@@ -234,112 +220,62 @@ public class ArServiceImpl implements ArService {
     @Transactional
     public Map<String, Object> manualWriteoff(String receiptId, String arId, BigDecimal amount,
                                               LocalDate payDate, String remark) {
+        // add-payment-collection：人工核销迁移统一中心（cash_writeoff；跨期自动挂审批 C-4.6-02）
         requireAny("人工核销", "ROLE_FINANCE_MGR", "ROLE_ADMIN");
-        ArInvoice ar = require(arId);
-        if (amount == null || amount.signum() <= 0) {
-            throw new ServiceException(422, "核销金额必须大于 0");
+        if (isBlank(receiptId)) {
+            throw new ServiceException(422, "收款单必填（统一收付款单 ID）");
         }
-        BigDecimal open = balanceOf(ar);
-        if (amount.compareTo(open) > 0) {
-            throw new ServiceException(422, "核销金额超出应收余额 " + strip(open));
-        }
-        ArReceipt receipt = null;
-        if (isNotBlank(receiptId)) {
-            receipt = receiptDao.selectById(receiptId);
-            if (receipt == null) {
-                throw new ServiceException(404, "回款单不存在：" + receiptId);
-            }
-            if (!receipt.getCustomerId().equals(ar.getCustomerId())) {
-                throw new ServiceException(422, "回款单客户与应收客户不一致，禁止交叉核销");
-            }
-            if (amount.compareTo(nvl(receipt.getUnmatchedAmt())) > 0) {
-                throw new ServiceException(422, "核销金额超出回款待匹配余额 "
-                        + strip(nvl(receipt.getUnmatchedAmt())));
-            }
-        }
-        LocalDate pay = payDate == null ? LocalDate.now() : payDate;
-        applyWriteoff(ar, amount, pay, "MANUAL",
-                receipt == null ? null : receipt.getId(),
-                receipt == null ? null : receipt.getRcptNo(),
-                isBlank(remark) ? "人工核销" : remark);
-
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ar", ar);
-        if (receipt != null) {
-            receipt.setUnmatchedAmt(nvl(receipt.getUnmatchedAmt()).subtract(amount));
-            receipt.setMatchedAmt(nvl(receipt.getMatchedAmt()).add(amount));
-            receipt.setStatus(receipt.getUnmatchedAmt().signum() <= 0
-                    ? ArReceipt.ST_MANUAL : ArReceipt.ST_PARTIAL);
-            receiptDao.updateById(receipt);
-            out.put("receipt", receipt);
-        }
+        var out = cashWriteoffService.manualSettle(receiptId, "AR", arId, amount);
+        log.info("manual writeoff ar={} amount={} -> {}", arId, amount, out);
         return out;
     }
 
-    /** 核销落库：核销记录 + 应收回写 + 核销凭证 */
-    private void applyWriteoff(ArInvoice ar, BigDecimal amount, LocalDate payDate,
-                               String writeType, String receiptId, String receiptNo,
-                               String remark) {
-        BigDecimal before = nvl(ar.getPaidAmount());
-        ar.setPaidAmount(before.add(amount));
-        BigDecimal balance = balanceOf(ar);
-        ar.setStatus(balance.signum() <= 0 ? ArInvoice.ST_PAID
-                : (ar.getPaidAmount().signum() > 0 ? ArInvoice.ST_PARTIAL : ArInvoice.ST_UNPAID));
-        arDao.updateById(ar);
-
-        ArWriteoff wo = new ArWriteoff();
-        wo.setId(uuid());
-        wo.setWoNo(nextNo("WO", writeoffDao::selectNosByPrefix));
-        wo.setArId(ar.getId());
-        wo.setArNo(ar.getArNo());
-        wo.setCustomerId(ar.getCustomerId());
-        wo.setAmount(amount);
-        wo.setPayDate(payDate);
-        wo.setDueDate(ar.getDueDate());
-        wo.setOnTime(ar.getDueDate() != null && !payDate.isAfter(ar.getDueDate()) ? "1" : "0");
-        wo.setWriteType(writeType);
-        wo.setReceiptId(receiptId);
-        wo.setReceiptNo(receiptNo);
-        wo.setRemark(remark);
-        wo.setCreateBy(currentUser());
-        writeoffDao.insert(wo);
-
-        // 核销凭证：借 1002 银行存款 / 贷 1122 应收账款（spec 场景核销凭证）
-        List<GlVoucherService.FinVoucherLineSpec> lines = new ArrayList<>();
-        lines.add(GlVoucherService.FinVoucherLineSpec.of("1002", "DR", amount,
-                "回款核销 " + ar.getArNo()));
-        lines.add(GlVoucherService.FinVoucherLineSpec.of("1122", "CR", amount,
-                "应收核销 " + ar.getArNo()));
-        FinVoucher v = voucherService.create("ARW", payDate,
-                "应收核销 " + ar.getArNo() + " " + strip(amount),
-                "AR_WRITEOFF", wo.getWoNo(), null, lines);
-        wo.setVoucherId(v.getId());
-        writeoffDao.updateById(wo);
+    /** 默认收款账户（回款登记快捷入口；无参数时取首个 ACTIVE 账户） */
+    private String defaultAccountId() {
+        var list = bankDao.selectList(new LambdaQueryWrapper<com.erp.entity.fin.FinBankAccount>()
+                .eq(com.erp.entity.fin.FinBankAccount::getStatus, "ACTIVE")
+                .last("LIMIT 1"));
+        if (list.isEmpty()) {
+            throw new ServiceException(422, "无可用银行账户，请在收付管理中维护");
+        }
+        return list.get(0).getId();
     }
 
     @Override
-    public Page<ArReceipt> receiptPage(long current, long size, String status,
-                                       String keyword, String customerId) {
-        return receiptDao.selectPage(new Page<>(current, size),
-                new LambdaQueryWrapper<ArReceipt>()
-                        .eq(isNotBlank(status), ArReceipt::getStatus, status)
-                        .eq(isNotBlank(customerId), ArReceipt::getCustomerId, customerId)
-                        .and(isNotBlank(keyword), w -> w.like(ArReceipt::getRcptNo, keyword)
-                                .or().like(ArReceipt::getCustomerName, keyword))
-                        .orderByDesc(ArReceipt::getCreateDate));
+    public Page<com.erp.entity.fin.CashDoc> receiptPage(long current, long size, String status,
+                                                        String keyword, String customerId) {
+        // add-payment-collection：回款单 = 统一收付款单 IN 方向
+        var raw = cashDocService.page(current, size, "IN", status, customerId, keyword, null, null);
+        Page<com.erp.entity.fin.CashDoc> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
+        List<com.erp.entity.fin.CashDoc> rows = new ArrayList<>();
+        for (Map<String, Object> m : raw.getRecords()) {
+            com.erp.entity.fin.CashDoc d = new com.erp.entity.fin.CashDoc();
+            d.setId((String) m.get("id"));
+            d.setDocNo((String) m.get("docNo"));
+            d.setPartyName((String) m.get("partyName"));
+            d.setAmount((BigDecimal) m.get("amount"));
+            d.setPayDate((java.time.LocalDate) m.get("payDate"));
+            d.setStatus((String) m.get("status"));
+            rows.add(d);
+        }
+        out.setRecords(rows);
+        return out;
     }
 
     @Override
-    public Page<ArWriteoff> writeoffPage(long current, long size, String keyword,
-                                         String customerId, String arNo) {
-        return writeoffDao.selectPage(new Page<>(current, size),
-                new LambdaQueryWrapper<ArWriteoff>()
-                        .eq(isNotBlank(customerId), ArWriteoff::getCustomerId, customerId)
-                        .eq(isNotBlank(arNo), ArWriteoff::getArNo, arNo)
-                        .and(isNotBlank(keyword), w -> w.like(ArWriteoff::getWoNo, keyword)
-                                .or().like(ArWriteoff::getArNo, keyword)
-                                .or().like(ArWriteoff::getReceiptNo, keyword))
-                        .orderByDesc(ArWriteoff::getPayDate));
+    public Page<com.erp.entity.fin.CashWriteoff> writeoffPage(long current, long size, String keyword,
+                                                              String customerId, String arNo) {
+        // add-payment-collection：核销明细 = 统一核销表（TARGET_TYPE=AR）
+        LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff> qw =
+                new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getTargetType, "AR")
+                .eq(isNotBlank(customerId), com.erp.entity.fin.CashWriteoff::getCustomerId, customerId)
+                .eq(isNotBlank(arNo), com.erp.entity.fin.CashWriteoff::getTargetNo, arNo)
+                .and(isNotBlank(keyword), w -> w.like(com.erp.entity.fin.CashWriteoff::getWoNo, keyword)
+                        .or().like(com.erp.entity.fin.CashWriteoff::getTargetNo, keyword)
+                        .or().like(com.erp.entity.fin.CashWriteoff::getDocNo, keyword))
+                .orderByDesc(com.erp.entity.fin.CashWriteoff::getWriteoffDate);
+        return cashWoDao.selectPage(new Page<>(current, size), qw);
     }
 
     // ---------- 10.7 月度对账单 ----------
@@ -359,10 +295,10 @@ public class ArServiceImpl implements ArService {
         }
 
         BigDecimal openInvoice = nvl(arDao.selectOpenBalanceBefore(customerId, period));
-        BigDecimal openWriteoff = nvl(writeoffDao.selectWriteoffBefore(customerId, period));
+        BigDecimal openWriteoff = nvl(cashWoDao.selectWriteoffBefore(customerId, period));
         BigDecimal openBal = openInvoice.subtract(openWriteoff);
         BigDecimal invoiceAmt = nvl(arDao.selectPeriodInvoiceAmt(customerId, period));
-        BigDecimal writeoffAmt = nvl(writeoffDao.selectPeriodWriteoffAmt(customerId, period));
+        BigDecimal writeoffAmt = nvl(cashWoDao.selectPeriodWriteoffAmt(customerId, period));
         BigDecimal closeBal = openBal.add(invoiceAmt).subtract(writeoffAmt);
 
         // 幂等：同客户同期间刷新
@@ -422,7 +358,7 @@ public class ArServiceImpl implements ArService {
             line.setAmount(nvl(ar.getAmount()));
             line.setPaidAmount(nvl(ar.getPaidAmount()));
             line.setBalance(bal);
-            line.setWriteoffAmt(nvl(writeoffDao.selectSumByArPeriod(ar.getId(), period)));
+            line.setWriteoffAmt(nvl(cashWoDao.selectSumByArPeriod(ar.getId(), period)));
             int overdue = ar.getDueDate() == null ? 0 : (int) (periodEnd.toEpochDay()
                     - ar.getDueDate().toEpochDay());
             line.setOverdueDays(Math.max(overdue, 0));

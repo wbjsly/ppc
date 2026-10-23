@@ -98,10 +98,18 @@ class EamDepreciationRunDbTest {
         jdbc.update("DELETE FROM erp_fin_voucher WHERE ID LIKE 'gl-%'");
         jdbc.update("DELETE FROM erp_eam_asset_change WHERE CREATE_BY='junit'");
         jdbc.update("DELETE FROM erp_eam_depreciation_detail WHERE CARD_NO LIKE 'ZC-TEST-%'");
+        // 冒烟遗留明细（全表扫描断言会读到）
+        jdbc.update("DELETE FROM erp_eam_depreciation_detail WHERE CARD_NO LIKE 'ZC2026%'");
         jdbc.update("DELETE FROM erp_eam_depreciation_run WHERE RUN_NO LIKE 'JZ%' "
                 + "AND CREATE_BY='junit'");
+        // 冒烟遗留计提单（幂等锚会阻断测试期间的计提）
+        jdbc.update("DELETE FROM erp_eam_depreciation_detail WHERE CARD_NO LIKE 'SMK%'");
+        jdbc.update("DELETE FROM erp_eam_depreciation_run WHERE RUN_NO LIKE 'JZ%' "
+                + "AND CREATE_BY <> 'junit'");
         jdbc.update("DELETE FROM erp_eam_asset_card WHERE CARD_NO LIKE 'ZC-TEST-%'");
         jdbc.update("DELETE FROM erp_eam_asset_card WHERE ID='card-missing-param'");
+        // 冒烟遗留卡自洽清理：应提清单是全局扫描，SMK 残留（含 ROU-xxx/购-xxx 派生卡）会污染断言
+        jdbc.update("DELETE FROM erp_eam_asset_card WHERE ASSET_NAME LIKE '%SMK%'");
         jdbc.update("DELETE FROM erp_mdm_cost_center WHERE CC_CODE LIKE 'CC-%-99'");
     }
 

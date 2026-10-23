@@ -43,6 +43,11 @@ public class GlVoucherServiceImpl implements GlVoucherService {
     private final FinVoucherDao voucherDao;
     private final FinVoucherLineDao lineDao;
     private final MdmLegalEntityDao legalEntityDao;
+    // ---- add-gl-management ----
+    private final com.erp.dao.fin.FinVoucherTemplateDao templateDao;
+    private final com.erp.service.fin.GlBalanceService balanceService;
+    private final com.erp.service.fin.FinPeriodService periodService;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Override
     @Transactional
@@ -141,6 +146,10 @@ public class GlVoucherServiceImpl implements GlVoucherService {
         }
         log.info("voucher {} created type={} source={}/{} dr={} cr={}",
                 v.getVoucherNo(), voucherType, sourceType, sourceDocNo, totalDr, totalCr);
+        // add-gl-management D3：POSTED 即回写科目余额（13 域零改动；DRAFT 不写）
+        if (FinVoucher.STATUS_POSTED.equals(v.getStatus())) {
+            balanceService.writeBack(v);
+        }
         return v;
     }
 
@@ -213,6 +222,248 @@ public class GlVoucherServiceImpl implements GlVoucherService {
         }
         voucherDao.deleteById(v.getId());
         log.info("draft voucher {} voided", v.getVoucherNo());
+    }
+
+    // ------------------------------------------------------------------
+    // ---- add-gl-management：手工凭证三态（design D2）----
+
+    @Override
+    @Transactional
+    public FinVoucher createManual(FinVoucher header, List<FinVoucherLine> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new ServiceException(422, "凭证行不能为空");
+        }
+        String period = header.getVoucherDate() == null
+                ? LocalDate.now().format(PERIOD_FMT)
+                : header.getVoucherDate().format(PERIOD_FMT);
+        periodService.assertOpen(period);
+        List<String> failures = new ArrayList<>();
+        // C-4.6-06 法人/币种
+        MdmLegalEntity le = legalEntityDao.selectList(new LambdaQueryWrapper<MdmLegalEntity>()
+                .last("LIMIT 1")).stream().findFirst().orElse(null);
+        if (le == null) {
+            failures.add("缺少法人主体或记账币种（C-4.6-06）");
+        }
+        BigDecimal totalDr = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalCr = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        List<FinVoucherLine> built = new ArrayList<>();
+        int lineNo = 1;
+        for (FinVoucherLine l : lines) {
+            if (l == null || !hasText(l.getAccountCode())) {
+                failures.add("第 " + lineNo + " 行科目编码必填");
+                lineNo++;
+                continue;
+            }
+            FinAccount acct = accountDao.selectActiveByCode(l.getAccountCode().trim());
+            if (acct == null) {
+                failures.add("第 " + lineNo + " 行科目不存在：" + l.getAccountCode());
+            } else if (!"ACTIVE".equals(acct.getStatus())) {
+                failures.add("第 " + lineNo + " 行科目已停用：" + l.getAccountCode());
+            }
+            String dir = l.getDirection() == null ? null : l.getDirection().trim().toUpperCase();
+            if (!"DR".equals(dir) && !"CR".equals(dir)) {
+                failures.add("第 " + lineNo + " 行借贷方向仅 DR/CR");
+            }
+            if (l.getAmount() == null || l.getAmount().signum() == 0) {
+                failures.add("第 " + lineNo + " 行金额为零或缺失");
+            }
+            BigDecimal amt = l.getAmount() == null ? BigDecimal.ZERO
+                    : l.getAmount().abs().setScale(2, RoundingMode.HALF_UP);
+            if ("DR".equals(dir)) {
+                totalDr = totalDr.add(amt);
+            } else if ("CR".equals(dir)) {
+                totalCr = totalCr.add(amt);
+            }
+            FinVoucherLine b = new FinVoucherLine();
+            b.setLineNo(lineNo++);
+            b.setAccountCode(acct == null ? l.getAccountCode().trim() : acct.getAccountCode());
+            b.setAccountName(acct == null ? null : acct.getAccountName());
+            b.setDirection(dir);
+            b.setAmount(amt);
+            b.setSummary(l.getSummary());
+            b.setCostCenter(l.getCostCenter());
+            b.setProfitCenter(l.getProfitCenter());
+            b.setAuxCustomer(l.getAuxCustomer());
+            b.setAuxSupplier(l.getAuxSupplier());
+            b.setAuxProject(l.getAuxProject());
+            b.setAuxEmployee(l.getAuxEmployee());
+            b.setAuxDept(l.getAuxDept());
+            built.add(b);
+        }
+        // C-4.6-01 借贷平衡（差额列示）
+        if (totalDr.compareTo(totalCr) != 0) {
+            failures.add("借贷不平，借方 " + totalDr + " vs 贷方 " + totalCr
+                    + "，差额 " + totalDr.subtract(totalCr).toPlainString() + "（C-4.6-01）");
+        }
+        if (!failures.isEmpty()) {
+            throw new ServiceException(422, "手工凭证校验未通过（逐项列示）：" + String.join("；", failures));
+        }
+        FinVoucher v = new FinVoucher();
+        v.setVoucherNo(nextVoucherNo("MNL", header.getVoucherDate() == null ? LocalDate.now() : header.getVoucherDate()));
+        v.setVoucherType(hasText(header.getVoucherType()) ? header.getVoucherType() : "MANUAL");
+        v.setVoucherDate(header.getVoucherDate() == null ? LocalDate.now() : header.getVoucherDate());
+        v.setPeriod(period);
+        v.setLegalEntity(le.getId());
+        v.setCurrency(hasText(le.getBookkeepingCurrency()) ? le.getBookkeepingCurrency() : "CNY");
+        v.setSummary(header.getSummary());
+        v.setSourceType("MANUAL");
+        v.setSourceDocNo(header.getSourceDocNo());
+        v.setStatus(FinVoucher.STATUS_DRAFT);
+        v.setTotalDr(totalDr);
+        v.setTotalCr(totalCr);
+        v.setCreateBy(SecurityUtils.getCurrentUserId());
+        voucherDao.insert(v);
+        for (FinVoucherLine b : built) {
+            b.setVoucherId(v.getId());
+            b.setCreateBy(SecurityUtils.getCurrentUserId());
+            lineDao.insert(b);
+        }
+        log.info("manual voucher {} saved as DRAFT dr={} cr={}", v.getVoucherNo(), totalDr, totalCr);
+        return v;
+    }
+
+    @Override
+    public com.baomidou.mybatisplus.extension.plugins.pagination.Page<FinVoucher> manualPage(
+            long current, long size, String status, String keyword) {
+        LambdaQueryWrapper<FinVoucher> qw = new LambdaQueryWrapper<FinVoucher>()
+                .eq(FinVoucher::getSourceType, "MANUAL")
+                .eq(FinVoucher::getDelFlag, "0")
+                .orderByDesc(FinVoucher::getCreateDate);
+        if (hasText(status)) {
+            qw.eq(FinVoucher::getStatus, status);
+        }
+        if (hasText(keyword)) {
+            qw.and(w -> w.like(FinVoucher::getVoucherNo, keyword).or().like(FinVoucher::getSummary, keyword));
+        }
+        return voucherDao.selectPage(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size), qw);
+    }
+
+    @Override
+    @Transactional
+    public FinVoucher audit(String voucherId) {
+        FinVoucher v = require(voucherId);
+        if (!FinVoucher.STATUS_DRAFT.equals(v.getStatus())) {
+            throw new ServiceException(422, "仅 DRAFT 手工凭证可审核（当前 " + v.getStatus() + "）");
+        }
+        String auditor = SecurityUtils.getCurrentUserId();
+        if (auditor != null && auditor.equals(v.getCreateBy())) {
+            throw new ServiceException(422, "制单人与审核人不能为同一人（C-4.6-07 职责分离）");
+        }
+        voucherDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<FinVoucher>()
+                .eq(FinVoucher::getId, v.getId())
+                .set(FinVoucher::getStatus, "AUDITED")
+                .set(FinVoucher::getAuditBy, auditor)
+                .set(FinVoucher::getAuditDate, LocalDateTime.now())
+                .set(FinVoucher::getVerNo, v.getVerNo() + 1));
+        log.info("manual voucher {} audited by {}", v.getVoucherNo(), auditor);
+        return voucherDao.selectById(v.getId());
+    }
+
+    @Override
+    @Transactional
+    public void reject(String voucherId, String reason) {
+        FinVoucher v = require(voucherId);
+        if (!FinVoucher.STATUS_DRAFT.equals(v.getStatus())) {
+            throw new ServiceException(422, "仅 DRAFT 手工凭证可驳回");
+        }
+        voucherDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<FinVoucher>()
+                .eq(FinVoucher::getId, v.getId())
+                .set(FinVoucher::getAuditBy, SecurityUtils.getCurrentUserId())
+                .set(FinVoucher::getAuditDate, LocalDateTime.now())
+                .set(FinVoucher::getAuditOpinion, "驳回：" + (hasText(reason) ? reason : "未填写原因"))
+                .set(FinVoucher::getVerNo, v.getVerNo() + 1));
+        log.info("manual voucher {} rejected ({})", v.getVoucherNo(), reason);
+    }
+
+    @Override
+    @Transactional
+    public FinVoucher post(String voucherId) {
+        FinVoucher v = require(voucherId);
+        if (!"AUDITED".equals(v.getStatus())) {
+            throw new ServiceException(422, "仅 AUDITED 凭证可过账（当前 " + v.getStatus() + "）");
+        }
+        periodService.assertOpen(v.getPeriod());   // FR-4.6-1-7 已关期间阻断
+        voucherDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<FinVoucher>()
+                .eq(FinVoucher::getId, v.getId())
+                .set(FinVoucher::getStatus, FinVoucher.STATUS_POSTED)
+                .set(FinVoucher::getVerNo, v.getVerNo() + 1));
+        FinVoucher posted = voucherDao.selectById(v.getId());
+        balanceService.writeBack(posted);
+        log.info("manual voucher {} posted", v.getVoucherNo());
+        return posted;
+    }
+
+    // ---- 凭证模板（design D5）----
+
+    @Override
+    public com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.erp.entity.fin.FinVoucherTemplate> templatePage(
+            long current, long size, String keyword) {
+        LambdaQueryWrapper<com.erp.entity.fin.FinVoucherTemplate> qw =
+                new LambdaQueryWrapper<com.erp.entity.fin.FinVoucherTemplate>()
+                        .eq(com.erp.entity.fin.FinVoucherTemplate::getDelFlag, "0")
+                        .orderByDesc(com.erp.entity.fin.FinVoucherTemplate::getCreateDate);
+        if (hasText(keyword)) {
+            qw.like(com.erp.entity.fin.FinVoucherTemplate::getName, keyword);
+        }
+        return templateDao.selectPage(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size), qw);
+    }
+
+    @Override
+    @Transactional
+    public com.erp.entity.fin.FinVoucherTemplate saveTemplate(com.erp.entity.fin.FinVoucherTemplate template) {
+        if (!hasText(template.getName())) {
+            throw new ServiceException(422, "模板名称必填");
+        }
+        if (template.getId() == null) {
+            template.setCreateBy(SecurityUtils.getCurrentUserId());
+            templateDao.insert(template);
+        } else {
+            com.erp.entity.fin.FinVoucherTemplate old = templateDao.selectById(template.getId());
+            if (old == null) {
+                throw new ServiceException(404, "模板不存在");
+            }
+            template.setUpdateBy(SecurityUtils.getCurrentUserId());
+            template.setVerNo(old.getVerNo());
+            templateDao.updateById(template);
+        }
+        return template;
+    }
+
+    @Override
+    @Transactional
+    public void deleteTemplate(String templateId) {
+        templateDao.deleteById(templateId);
+    }
+
+    @Override
+    public Map<String, Object> applyTemplate(String templateId) {
+        com.erp.entity.fin.FinVoucherTemplate t = templateDao.selectById(templateId);
+        if (t == null) {
+            throw new ServiceException(404, "模板不存在");
+        }
+        List<Map<String, Object>> rows;
+        try {
+            rows = objectMapper.readValue(
+                    hasText(t.getRowsJson()) ? t.getRowsJson() : "[]",
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {
+                    });
+        } catch (Exception ex) {
+            throw new ServiceException(500, "模板行快照解析失败：" + ex.getMessage());
+        }
+        // 逐行校验科目 ACTIVE；停用行标注 blocked 不阻断（design D5）
+        for (Map<String, Object> r : rows) {
+            String code = r.get("accountCode") == null ? null : String.valueOf(r.get("accountCode"));
+            FinAccount acct = code == null ? null : accountDao.selectActiveByCode(code.trim());
+            r.put("blocked", acct == null || !"ACTIVE".equals(acct.getStatus()));
+            if (acct != null) {
+                r.put("accountName", acct.getAccountName());
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("templateId", templateId);
+        out.put("name", t.getName());
+        out.put("rows", rows);
+        return out;
     }
 
     // ------------------------------------------------------------------

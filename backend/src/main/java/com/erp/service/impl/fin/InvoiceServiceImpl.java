@@ -75,6 +75,8 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final MdmTaxCodeDao taxCodeDao;
     private final SysParamService paramService;
     private final OutboxPublisher outboxPublisher;
+    /** 记账汇率固化（add-fx-revaluation 决策 A） */
+    private final com.erp.service.fin.FxRateService fxRateService;
 
     public InvoiceServiceImpl(InvoiceApplyDao applyDao,
                               SalesInvoiceDao invoiceDao,
@@ -89,7 +91,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                               MdmItemDao itemDao,
                               MdmTaxCodeDao taxCodeDao,
                               SysParamService paramService,
-                              OutboxPublisher outboxPublisher) {
+                              OutboxPublisher outboxPublisher,
+                              com.erp.service.fin.FxRateService fxRateService) {
         this.applyDao = applyDao;
         this.invoiceDao = invoiceDao;
         this.redDao = redDao;
@@ -104,6 +107,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.taxCodeDao = taxCodeDao;
         this.paramService = paramService;
         this.outboxPublisher = outboxPublisher;
+        this.fxRateService = fxRateService;
     }
 
     // ---------- 10.2 发货确认触发生成 ----------
@@ -186,6 +190,13 @@ public class InvoiceServiceImpl implements InvoiceService {
         ar.setAmount(shipAmount);
         ar.setPaidAmount(BigDecimal.ZERO);
         ar.setStatus(ArInvoice.ST_UNPAID);
+        // add-fx-revaluation 决策 A：应收币种取 SO 交易币种；外币按开票日中间价固化记账汇率（缺失 L1 阻断）；CNY 置 1
+        ar.setCurrency(so != null && isNotBlank(so.getCurrency()) ? so.getCurrency() : "CNY");
+        if ("CNY".equals(ar.getCurrency())) {
+            ar.setBookingRate(BigDecimal.ONE);
+        } else {
+            ar.setBookingRate(fxRateService.requireMiddleRate(ar.getCurrency(), "CNY", today));
+        }
         ar.setCreateBy(currentUser());
         arDao.insert(ar);
 

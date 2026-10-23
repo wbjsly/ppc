@@ -4,11 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.erp.dao.fin.FinApInvoiceDao;
 import com.erp.dao.fin.FinBankAccountDao;
-import com.erp.dao.fin.FinPaymentWriteoffDao;
 import com.erp.dao.fin.FinPrepaymentDao;
 import com.erp.entity.fin.FinApInvoice;
 import com.erp.entity.fin.FinBankAccount;
-import com.erp.entity.fin.FinPaymentWriteoff;
 import com.erp.entity.fin.FinPrepayment;
 import com.erp.service.fin.PrepaymentService;
 import org.junit.jupiter.api.AfterEach;
@@ -35,7 +33,7 @@ class PaymentDbRulesTest {
     @Autowired
     private FinApInvoiceDao invoiceDao;
     @Autowired
-    private FinPaymentWriteoffDao woDao;
+    private com.erp.dao.fin.CashWriteoffDao woDao;
     @Autowired
     private FinPrepaymentDao ppDao;
     @Autowired
@@ -56,7 +54,8 @@ class PaymentDbRulesTest {
 
     @AfterEach
     void cleanup() {
-        woDao.delete(new LambdaQueryWrapper<FinPaymentWriteoff>().eq(FinPaymentWriteoff::getPpId, ppId));
+        woDao.delete(new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getDocId, ppId));
         ppDao.deleteById(ppId);
         invoiceDao.deleteById(invoiceId);
         bankDao.deleteById(accountId);
@@ -70,6 +69,9 @@ class PaymentDbRulesTest {
         acc.setAccountNo("JUNITDB" + (System.nanoTime() % 100000000));
         acc.setCurrency("CNY");
         acc.setBalance(new BigDecimal("100.00"));
+        // add-fx-revaluation 三列模型：CNY 账户 FC_BALANCE≡BALANCE、BOOKING_RATE≡1（守卫查 FC 列）
+        acc.setFcBalance(new BigDecimal("100.00"));
+        acc.setBookingRate(BigDecimal.ONE);
         acc.setStatus(FinBankAccount.ST_ACTIVE);
         bankDao.insert(acc);
 
@@ -133,13 +135,16 @@ class PaymentDbRulesTest {
                 ppDao.selectById(ppId).getSettledAmount()));
         assertEquals(0, new BigDecimal("30.00").compareTo(
                 invoiceDao.selectById(invoiceId).getPaidAmount()));
-        assertEquals(1, woDao.selectCount(new LambdaQueryWrapper<FinPaymentWriteoff>()
-                .eq(FinPaymentWriteoff::getPpId, ppId)));
+        // add-payment-collection：冲抵记录落统一核销表（SETTLE，DOC_ID=预付单 ID）
+        assertEquals(1, woDao.selectCount(new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getDocId, ppId)
+                .eq(com.erp.entity.fin.CashWriteoff::getWriteoffMode, "SETTLE")));
 
         // 预付已冲平 → 幂等 0 笔，不重复生成记录
         assertEquals(0, prepaymentService.settleForPo("PO-JUNIT-DB"));
-        assertEquals(1, woDao.selectCount(new LambdaQueryWrapper<FinPaymentWriteoff>()
-                .eq(FinPaymentWriteoff::getPpId, ppId)));
+        assertEquals(1, woDao.selectCount(new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getDocId, ppId)
+                .eq(com.erp.entity.fin.CashWriteoff::getWriteoffMode, "SETTLE")));
     }
 
     private void insertInvoice(String total) {

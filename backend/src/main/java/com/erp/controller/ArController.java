@@ -3,9 +3,7 @@ package com.erp.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.R;
 import com.erp.entity.fin.ArInvoice;
-import com.erp.entity.fin.ArReceipt;
 import com.erp.entity.fin.ArStatement;
-import com.erp.entity.fin.ArWriteoff;
 import com.erp.service.fin.ArService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -103,7 +101,7 @@ public class ArController {
 
     @GetMapping("/receipts")
     @Operation(summary = "回款单分页（含待人工核销队列）")
-    public R<Page<ArReceipt>> receiptPage(@RequestParam(defaultValue = "1") long current,
+    public R<Page<com.erp.entity.fin.CashDoc>> receiptPage(@RequestParam(defaultValue = "1") long current,
                                           @RequestParam(defaultValue = "10") long size,
                                           @RequestParam(required = false) String status,
                                           @RequestParam(required = false) String keyword,
@@ -113,7 +111,7 @@ public class ArController {
 
     @GetMapping("/writeoffs")
     @Operation(summary = "核销明细分页（核销人/时间/匹配明细）")
-    public R<Page<ArWriteoff>> writeoffPage(@RequestParam(defaultValue = "1") long current,
+    public R<Page<com.erp.entity.fin.CashWriteoff>> writeoffPage(@RequestParam(defaultValue = "1") long current,
                                             @RequestParam(defaultValue = "10") long size,
                                             @RequestParam(required = false) String keyword,
                                             @RequestParam(required = false) String customerId,

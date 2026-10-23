@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.fin.ArInvoiceDao;
-import com.erp.dao.fin.ArWriteoffDao;
+import com.erp.dao.fin.CashWriteoffDao;
 import com.erp.dao.mdm.MdmCustomerGroupDao;
 import com.erp.dao.mdm.MdmCustomerGroupVersionDao;
 import com.erp.dao.sd.CreditCheckDao;
@@ -61,7 +61,7 @@ public class CreditControlServiceImpl implements CreditControlService {
     private final CreditFreezeDao freezeDao;
     private final PrepaymentNoticeDao noticeDao;
     private final ArInvoiceDao arDao;
-    private final ArWriteoffDao writeoffDao;
+    private final CashWriteoffDao writeoffDao;
     private final SoDao soDao;
     private final MdmCustomerGroupDao customerDao;
     private final com.erp.dao.mdm.MdmCustomerViewDao viewDao;
@@ -74,7 +74,7 @@ public class CreditControlServiceImpl implements CreditControlService {
                                     CreditFreezeDao freezeDao,
                                     PrepaymentNoticeDao noticeDao,
                                     ArInvoiceDao arDao,
-                                    ArWriteoffDao writeoffDao,
+                                    CashWriteoffDao writeoffDao,
                                     SoDao soDao,
                                     MdmCustomerGroupDao customerDao,
                                     com.erp.dao.mdm.MdmCustomerViewDao viewDao,

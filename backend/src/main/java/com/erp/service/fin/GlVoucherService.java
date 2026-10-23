@@ -52,6 +52,37 @@ public interface GlVoucherService {
     /** 作废（仅 DRAFT 软删；POSTED 422 提示仅可红字冲销） */
     void voidDraft(String voucherId);
 
+    // ---- add-gl-management：手工凭证三态（SOURCE_TYPE=MANUAL，DRAFT/AUDITED/POSTED）----
+
+    /** 手工凭证保存（DRAFT）：C-4.6-01 平衡/科目 ACTIVE/零金额/C-4.6-06 法人币种全量列示 */
+    FinVoucher createManual(FinVoucher header, List<com.erp.entity.fin.FinVoucherLine> lines);
+
+    /** 手工凭证分页（状态筛选，MANUAL only） */
+    com.baomidou.mybatisplus.extension.plugins.pagination.Page<FinVoucher> manualPage(
+            long current, long size, String status, String keyword);
+
+    /** 审核通过（DRAFT→AUDITED；C-4.6-07 制单≠审核人硬卡控） */
+    FinVoucher audit(String voucherId);
+
+    /** 审核驳回（DRAFT 态留因，不推进状态） */
+    void reject(String voucherId, String reason);
+
+    /** 过账（AUDITED→POSTED + 写余额；期间 CLOSED 阻断 FR-4.6-1-7） */
+    FinVoucher post(String voucherId);
+
+    /** 凭证模板分页 */
+    com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.erp.entity.fin.FinVoucherTemplate> templatePage(
+            long current, long size, String keyword);
+
+    /** 模板保存（行 JSON 快照，金额不含） */
+    com.erp.entity.fin.FinVoucherTemplate saveTemplate(com.erp.entity.fin.FinVoucherTemplate template);
+
+    /** 模板删除（软删） */
+    void deleteTemplate(String templateId);
+
+    /** 模板一键调用 → 行草稿（停用科目行标注 blocked 不阻断，design D5） */
+    Map<String, Object> applyTemplate(String templateId);
+
     /** 分录行入参（避免服务层依赖持久化对象的填充语义） */
     class FinVoucherLineSpec {
         public String accountCode;

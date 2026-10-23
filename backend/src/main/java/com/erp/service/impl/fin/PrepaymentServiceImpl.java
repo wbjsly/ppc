@@ -6,8 +6,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.fin.FinApInvoiceDao;
 import com.erp.dao.fin.FinBankAccountDao;
-import com.erp.dao.fin.FinPaymentDao;
-import com.erp.dao.fin.FinPaymentWriteoffDao;
 import com.erp.dao.fin.FinPrepaymentDao;
 import com.erp.dao.mdm.MdmSupplierDao;
 import com.erp.dao.proc.GoodsReceiptDao;
@@ -15,8 +13,6 @@ import com.erp.dao.proc.GoodsReceiptLineDao;
 import com.erp.dao.proc.PurchaseOrderDao;
 import com.erp.entity.fin.FinApInvoice;
 import com.erp.entity.fin.FinBankAccount;
-import com.erp.entity.fin.FinPayment;
-import com.erp.entity.fin.FinPaymentWriteoff;
 import com.erp.entity.fin.FinPrepayment;
 import com.erp.entity.fin.FinVoucher;
 import com.erp.entity.mdm.MdmSupplier;
@@ -62,8 +58,9 @@ public class PrepaymentServiceImpl implements PrepaymentService {
     private BigDecimal defaultPrepayRatio;
 
     private final FinPrepaymentDao ppDao;
-    private final FinPaymentDao payDao;
-    private final FinPaymentWriteoffDao woDao;
+    private final com.erp.dao.fin.CashDocDao cashDocDao;
+    private final com.erp.dao.fin.CashWriteoffDao cashWoDao;
+    private final com.erp.service.fin.CashDocService cashDocService;
     private final FinApInvoiceDao invoiceDao;
     private final FinBankAccountDao bankDao;
     private final PurchaseOrderDao poDao;
@@ -225,42 +222,26 @@ public class PrepaymentServiceImpl implements PrepaymentService {
         if (bank == null) {
             throw new ServiceException(422, "银行账户必填");
         }
-        if (!FinBankAccount.ST_ACTIVE.equals(bank.getStatus())) {
-            throw new ServiceException(422, "银行账户已停用：" + bank.getAccountName());
-        }
         BigDecimal amount = nvl(p.getApplyAmount());
-        if (bankDao.deductBalance(bank.getId(), amount) == 0) {
-            throw new ServiceException(422, "银行账户余额不足：" + bank.getAccountName()
-                    + " 当前余额 " + nvl(bank.getBalance()).toPlainString());
-        }
-        // 预付凭证（FR-4.6-3-11：借 预付账款 / 贷 银行存款）
-        FinVoucher v = voucherService.create(FinVoucher.TYPE_PREPAY, payDate,
-                "预付款：" + p.getPpNo() + "（PO " + p.getPoNo() + "）",
-                "PREPAY", p.getPpNo(), p.getSupplierId(),
-                List.of(GlVoucherService.FinVoucherLineSpec.of("1123", "DR", amount,
-                        "预付账款-" + p.getSupplierName()),
-                        GlVoucherService.FinVoucherLineSpec.of("1002", "CR", amount,
-                                "银行存款-" + bank.getAccountName())));
 
-        FinPayment pay = new FinPayment();
-        pay.setPayNo(nextPayNo());
-        pay.setPayType(FinPayment.TYPE_PREPAY);
-        pay.setReqId(p.getId());
-        pay.setReqNo(p.getPpNo());
-        pay.setSupplierId(p.getSupplierId());
-        pay.setSupplierName(p.getSupplierName());
-        pay.setApplyAmount(amount);
-        pay.setDeductAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        pay.setActualAmount(amount);
-        pay.setPayMethod(payMethod);
-        pay.setBankAccountId(bank.getId());
-        pay.setAccountName(bank.getAccountName());
-        pay.setAccountNo(bank.getAccountNo());
-        pay.setPayDate(payDate);
-        pay.setStatus(FinPayment.ST_PAID);
-        pay.setVoucherId(v.getId());
-        pay.setCreateBy(SecurityUtils.getCurrentUserId());
-        payDao.insert(pay);
+        // add-payment-collection：预付执行走统一收付款中心（OUT + PREPAY，spec prepayment MODIFIED）
+        // 过账内核完成余额条件扣减 + PPR 凭证（借 1123 / 贷 1002，口径不变）
+        Map<String, Object> createPayload = new LinkedHashMap<>();
+        createPayload.put("direction", com.erp.entity.fin.CashDoc.DIR_OUT);
+        createPayload.put("partyId", p.getSupplierId());
+        createPayload.put("partyName", p.getSupplierName());
+        createPayload.put("amount", amount);
+        createPayload.put("payMethod", payMethod);
+        createPayload.put("bankAccountId", bank.getId());
+        createPayload.put("payDate", payDate.toString());
+        createPayload.put("currency", "CNY");
+        createPayload.put("remark", "预付执行 " + p.getPpNo());
+        com.erp.entity.fin.CashDoc doc = cashDocService.create(createPayload);
+        doc.setReqId(p.getId());
+        doc.setReqNo(p.getPpNo());
+        doc.setPayType(com.erp.entity.fin.CashDoc.TYPE_PREPAY);
+        cashDocDao.updateById(doc);
+        Map<String, Object> posted = cashDocService.post(doc.getId());
 
         p.setStatus(FinPrepayment.ST_PAID);
         p.setExecutedAmount(amount);
@@ -268,12 +249,12 @@ public class PrepaymentServiceImpl implements PrepaymentService {
         if (ppDao.updateById(p) == 0) {
             throw new ServiceException(409, "预付款状态更新冲突");
         }
-        log.info("prepayment {} executed: {} by {} voucher={}", p.getPpNo(), amount,
-                bank.getAccountNo(), v.getVoucherNo());
+        log.info("prepayment {} executed via cash doc {}: {} voucher={}",
+                p.getPpNo(), doc.getDocNo(), amount, posted.get("voucherNo"));
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("paymentId", pay.getId());
-        out.put("payNo", pay.getPayNo());
-        out.put("voucherNo", v.getVoucherNo());
+        out.put("paymentId", doc.getId());
+        out.put("payNo", doc.getDocNo());
+        out.put("voucherNo", posted.get("voucherNo"));
         out.put("actualAmount", amount);
         return out;
     }
@@ -329,10 +310,12 @@ public class PrepaymentServiceImpl implements PrepaymentService {
                     continue;
                 }
                 // 幂等：该预付单与该发票已有冲抵记录 → 跳过
-                Long exists = woDao.selectCount(new LambdaQueryWrapper<FinPaymentWriteoff>()
-                        .eq(FinPaymentWriteoff::getKind, FinPaymentWriteoff.KIND_SETTLE)
-                        .eq(FinPaymentWriteoff::getPpId, p.getId())
-                        .eq(FinPaymentWriteoff::getInvoiceId, inv.getId()));
+                Long exists = cashWoDao.selectCount(
+                        new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                        .eq(com.erp.entity.fin.CashWriteoff::getWriteoffMode,
+                                com.erp.entity.fin.CashWriteoff.MODE_SETTLE)
+                        .eq(com.erp.entity.fin.CashWriteoff::getDocId, p.getId())
+                        .eq(com.erp.entity.fin.CashWriteoff::getTargetId, inv.getId()));
                 if (exists != null && exists > 0) {
                     continue;
                 }
@@ -345,17 +328,20 @@ public class PrepaymentServiceImpl implements PrepaymentService {
                 if (rows == 0) {
                     throw new ServiceException(422, "发票 " + inv.getInvoiceNo() + " 冲抵并发冲突");
                 }
-                FinPaymentWriteoff w = new FinPaymentWriteoff();
-                w.setKind(FinPaymentWriteoff.KIND_SETTLE);
-                w.setPpId(p.getId());
-                w.setInvoiceId(inv.getId());
-                w.setInvoiceNo(inv.getInvoiceNo());
-                w.setSupplierId(inv.getSupplierId());
-                w.setPoNo(poNo);
+                com.erp.entity.fin.CashWriteoff w = new com.erp.entity.fin.CashWriteoff();
+                String wid = java.util.UUID.randomUUID().toString().replace("-", "");
+                w.setId(wid);
+                w.setWoNo("PPO" + wid.substring(0, 12).toUpperCase());
+                w.setDocId(p.getId()); // SETTLE 行以预付单为锚（cash_writeoff.DOC_ID 语义扩展）
+                w.setTargetType(com.erp.entity.fin.CashWriteoff.TARGET_AP);
+                w.setTargetId(inv.getId());
+                w.setTargetNo(inv.getInvoiceNo());
                 w.setAmount(take);
+                w.setWriteoffMode(com.erp.entity.fin.CashWriteoff.MODE_SETTLE);
                 w.setWriteoffDate(LocalDate.now());
+                w.setRemark("预付冲抵 " + poNo);
                 w.setCreateBy(SecurityUtils.getCurrentUserId());
-                woDao.insert(w);
+                cashWoDao.insert(w);
 
                 p.setSettledAmount(nvl(p.getSettledAmount()).add(take));
                 ppDao.updateById(p);
@@ -440,12 +426,14 @@ public class PrepaymentServiceImpl implements PrepaymentService {
         FinPrepayment p = require(id);
         Map<String, Object> m = row(p);
         List<Map<String, Object>> settles = new ArrayList<>();
-        for (FinPaymentWriteoff w : woDao.selectList(new LambdaQueryWrapper<FinPaymentWriteoff>()
-                .eq(FinPaymentWriteoff::getKind, FinPaymentWriteoff.KIND_SETTLE)
-                .eq(FinPaymentWriteoff::getPpId, p.getId())
-                .orderByAsc(FinPaymentWriteoff::getCreateDate))) {
+        for (com.erp.entity.fin.CashWriteoff w : cashWoDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getWriteoffMode,
+                        com.erp.entity.fin.CashWriteoff.MODE_SETTLE)
+                .eq(com.erp.entity.fin.CashWriteoff::getDocId, p.getId())
+                .orderByAsc(com.erp.entity.fin.CashWriteoff::getCreateDate))) {
             Map<String, Object> wm = new LinkedHashMap<>();
-            wm.put("invoiceNo", w.getInvoiceNo());
+            wm.put("invoiceNo", w.getTargetNo());
             wm.put("amount", w.getAmount());
             wm.put("writeoffDate", w.getWriteoffDate());
             settles.add(wm);
@@ -487,12 +475,6 @@ public class PrepaymentServiceImpl implements PrepaymentService {
     private String nextNo() {
         String p = "PP" + LocalDate.now().format(DAY_FMT);
         Integer max = ppDao.selectMaxSeq(p);
-        return p + String.format("%03d", (max == null ? 0 : max) + 1);
-    }
-
-    private String nextPayNo() {
-        String p = "PY" + LocalDate.now().format(DAY_FMT);
-        Integer max = payDao.selectMaxSeq(p);
         return p + String.format("%03d", (max == null ? 0 : max) + 1);
     }
 

@@ -40,6 +40,18 @@ public class EamAssetCategory extends BaseEntity {
     @TableField("DEFAULT_DEPRECIATION_METHOD")
     private String defaultDepreciationMethod;
 
+    /** 风险等级 HIGH/MID/LOW（抽盘比例 BR-4.13-26，138 加列，默认 MID） */
+    @TableField("RISK_LEVEL")
+    private String riskLevel;
+
+    /** 1=执行处置须环保安全评估（BR-36，139 加列） */
+    @TableField("ENV_REVIEW_FLAG")
+    private String envReviewFlag;
+
+    /** 1=执行处置须数据销毁证明（BR-36，139 加列） */
+    @TableField("DATA_DESTROY_FLAG")
+    private String dataDestroyFlag;
+
     /** 使用年限下限（L4 预警依据） */
     @TableField("LIFE_YEARS_MIN")
     private Integer lifeYearsMin;
