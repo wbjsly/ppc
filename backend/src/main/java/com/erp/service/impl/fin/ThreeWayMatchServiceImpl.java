@@ -58,6 +58,7 @@ public class ThreeWayMatchServiceImpl implements ThreeWayMatchService {
     private BigDecimal matchTolerance;
 
     private final FinApInvoiceDao invoiceDao;
+    private final com.erp.dao.mdm.MdmSupplierDao supplierDao;
     private final FinApInvoiceLineDao invoiceLineDao;
     private final FinMatchResultDao matchDao;
     private final FinAccrualDao accrualDao;
@@ -68,6 +69,8 @@ public class ThreeWayMatchServiceImpl implements ThreeWayMatchService {
     private final GlVoucherService voucherService;
     /** 预付冲抵挂点（spec prepayment，design D7：发票 POSTED 后 best-effort 触发） */
     private final PrepaymentService prepaymentService;
+    /** 记账汇率固化（add-fx-revaluation，design D1） */
+    private final com.erp.service.fin.FxRateService fxRateService;
     /** VMI 分支（MODIFIED three-way-match，add-consignment-procurement） */
     private final com.erp.dao.proc.PurchaseOrderDao poDao;
     private final com.erp.dao.vmi.VmiSettlementDao settleDao;
@@ -112,7 +115,24 @@ public class ThreeWayMatchServiceImpl implements ThreeWayMatchService {
         } catch (RuntimeException e) {
             throw new ServiceException(422, "发票日期格式须为 yyyy-MM-dd");
         }
+        // add-ap-management D6：账期治理——PAYMENT_TERMS 必填数字天数，DUE_DATE 自动计算
+        {
+            com.erp.entity.mdm.MdmSupplier sup = supplierDao.selectById(supplierId);
+            String terms = sup == null ? null : sup.getPaymentTerms();
+            if (!hasText(terms) || !terms.trim().matches("\\d+")) {
+                throw new ServiceException(422, "供应商账期未维护（PAYMENT_TERMS 须为数字天数），"
+                        + "请先在供应商主数据维护账期后再登记发票");
+            }
+            inv.setDueDate(inv.getInvoiceDate().plusDays(Integer.parseInt(terms.trim())));
+        }
         inv.setCurrency(hasText(str(payload.get("currency"))) ? str(payload.get("currency")) : "CNY");
+        // add-fx-revaluation D1：外币发票按发票日中间价固化记账汇率（缺失 L1 阻断）；CNY 置 1 不查库
+        if ("CNY".equals(inv.getCurrency())) {
+            inv.setBookingRate(BigDecimal.ONE);
+        } else {
+            inv.setBookingRate(fxRateService.requireMiddleRate(
+                    inv.getCurrency(), "CNY", inv.getInvoiceDate()));
+        }
         inv.setPoNo(str(payload.get("poNo")));
         inv.setRemark(str(payload.get("remark")));
         inv.setStatus(FinApInvoice.ST_DRAFT);

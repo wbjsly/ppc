@@ -22,4 +22,15 @@ public interface PurchaseOrderLineDao extends BaseMapper<PurchaseOrderLine> {
             "ORDER BY l.CREATE_DATE DESC LIMIT 3")
     List<BigDecimal> historyPrices(@Param("itemCode") String itemCode,
                                    @Param("excludePoId") String excludePoId);
+
+    /**
+     * 该物料最近一次已下达（APPROVED）PO 单价——成本归集材料单价兜底
+     * （spec production-cost-aggregation「直接材料归集」：标准成本缺失 → 最近一次采购价）。
+     * 无历史返回 null。
+     */
+    @Select("SELECT l.UNIT_PRICE FROM erp_proc_po_line l " +
+            "JOIN erp_proc_po p ON p.ID = l.PO_ID AND p.DEL_FLAG = '0' AND p.STATUS = 'APPROVED' " +
+            "WHERE l.ITEM_CODE = #{itemCode} " +
+            "ORDER BY l.CREATE_DATE DESC LIMIT 1")
+    BigDecimal selectLatestPrice(@Param("itemCode") String itemCode);
 }

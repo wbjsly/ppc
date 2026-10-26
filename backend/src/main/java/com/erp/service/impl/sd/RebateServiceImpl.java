@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.fin.ArInvoiceDao;
-import com.erp.dao.fin.ArWriteoffDao;
+import com.erp.dao.fin.CashWriteoffDao;
 import com.erp.dao.mdm.MdmCustomerGroupDao;
 import com.erp.dao.sd.RebateBudgetDao;
 import com.erp.dao.sd.RebatePolicyDao;
@@ -12,7 +12,6 @@ import com.erp.dao.sd.RebateSettlementDao;
 import com.erp.dao.sd.RebateTargetDao;
 import com.erp.dao.sd.SdReturnDao;
 import com.erp.entity.fin.ArInvoice;
-import com.erp.entity.fin.ArWriteoff;
 import com.erp.entity.fin.FinVoucher;
 import com.erp.entity.mdm.MdmCustomerGroup;
 import com.erp.entity.sd.RebateBudget;
@@ -59,7 +58,7 @@ public class RebateServiceImpl implements RebateService {
     private final RebateBudgetDao budgetDao;
     private final RebateSettlementDao settleDao;
     private final ArInvoiceDao arDao;
-    private final ArWriteoffDao writeoffDao;
+    private final CashWriteoffDao writeoffDao;
     private final SdReturnDao returnDao;
     private final MdmCustomerGroupDao customerDao;
     private final ApprovalEngine approvalEngine;
@@ -71,7 +70,7 @@ public class RebateServiceImpl implements RebateService {
                              RebateBudgetDao budgetDao,
                              RebateSettlementDao settleDao,
                              ArInvoiceDao arDao,
-                             ArWriteoffDao writeoffDao,
+                             CashWriteoffDao writeoffDao,
                              SdReturnDao returnDao,
                              MdmCustomerGroupDao customerDao,
                              ApprovalEngine approvalEngine,
@@ -569,15 +568,17 @@ public class RebateServiceImpl implements RebateService {
                 ar.setStatus(after.signum() <= 0 ? ArInvoice.ST_PAID
                         : (ar.getPaidAmount().signum() > 0 ? ArInvoice.ST_PARTIAL : ArInvoice.ST_UNPAID));
                 arDao.updateById(ar);
-                // 核销记录（类型 REBATE，凭证统一挂结算凭证）
-                ArWriteoff wo = new ArWriteoff();
+                // 核销记录（类型 REBATE，统一核销表 cash_writeoff，add-payment-collection）
+                com.erp.entity.fin.CashWriteoff wo = new com.erp.entity.fin.CashWriteoff();
                 wo.setId(uuid());
-                wo.setWoNo(nextNo("WO", writeoffDao::selectNosByPrefix));
-                wo.setArId(ar.getId());
-                wo.setArNo(ar.getArNo());
+                wo.setWoNo(nextWoNo());
+                wo.setTargetType("AR");
+                wo.setTargetId(ar.getId());
+                wo.setTargetNo(ar.getArNo());
                 wo.setCustomerId(ar.getCustomerId());
                 wo.setAmount(take);
-                wo.setPayDate(date);
+                wo.setWriteoffMode("SETTLE");
+                wo.setWriteoffDate(date);
                 wo.setDueDate(ar.getDueDate());
                 wo.setOnTime(ar.getDueDate() != null && !date.isAfter(ar.getDueDate()) ? "1" : "0");
                 wo.setWriteType("REBATE");
@@ -609,9 +610,10 @@ public class RebateServiceImpl implements RebateService {
         s.setVoucherId(v.getId());
         s.setVoucherNo(v.getVoucherNo());
         for (String woId : writeoffIds) {
-            ArWriteoff wo = writeoffDao.selectById(woId);
+            com.erp.entity.fin.CashWriteoff wo = writeoffDao.selectById(woId);
             if (wo != null) {
-                wo.setVoucherId(v.getId());
+                // cash_writeoff 无凭证列，凭证号追加到备注留痕
+                wo.setRemark(wo.getRemark() + " 凭证 " + v.getVoucherNo());
                 writeoffDao.updateById(wo);
             }
         }
@@ -715,6 +717,19 @@ public class RebateServiceImpl implements RebateService {
 
     private static BigDecimal nvl(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private String nextWoNo() {
+        String prefix = "RBW" + LocalDate.now().toString().replace("-", "") + "-";
+        int max = 0;
+        for (String no : writeoffDao.selectNosByPrefix(prefix + "%")) {
+            try {
+                max = Math.max(max, Integer.parseInt(no.substring(prefix.length())));
+            } catch (Exception ignore) {
+                // 流水不符跳过
+            }
+        }
+        return prefix + String.format("%04d", max + 1);
     }
 
     private static String strip(BigDecimal v) {

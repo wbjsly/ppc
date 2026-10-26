@@ -88,11 +88,23 @@ public class SecurityConfig {
                 // 质量协同（add-quality-collaboration）：六角色写权限。必须先于下方 /api/proc/** 的 ADMIN 规则，
                 // 否则 POST /api/proc/returns/** 会把仓库/质量角色先拦成 403。
                 // 细粒度（如双签节点必须由 ROLE_REQUIRED 角色签）在 ApprovalServiceImpl 内二次校验。
+                // 抽样执行记录（rework-sampling-inspection）：质检员/质量工程师/质量经理可写
+                .antMatchers(HttpMethod.POST, "/api/qms/lots/*/sampling-records")
+                .hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR")
+                .antMatchers(HttpMethod.GET, "/api/qms/lots/history").hasAnyRole("ADMIN", "INSPECTOR",
+                        "QUALITY_ENG", "QUALITY_MGR", "QUALITY_DIRECTOR")
                 .antMatchers(HttpMethod.POST, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
                 .antMatchers(HttpMethod.PUT, "/api/qms/lots/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
                 .antMatchers(HttpMethod.POST, "/api/qms/standards/**").hasAnyRole("ADMIN", "QUALITY_ENG")
                 .antMatchers(HttpMethod.PUT, "/api/qms/standards/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                // 客户质量协议（rework-inspection-tasks）：质量工程师维护 + 质量经理生效/停用
+                .antMatchers(HttpMethod.POST, "/api/qms/agreements/**").hasAnyRole("ADMIN", "QUALITY_ENG",
+                        "QUALITY_MGR")
                 .antMatchers(HttpMethod.POST, "/api/qms/exempts/**").hasAnyRole("ADMIN", "QUALITY_ENG")
+                // 6.5.1 隔离确认（rework-ncr-identification-disposition）：质检员贴标作业，
+                // 须先于下方 ncrs 通用写规则放行 INSPECTOR（细粒度在服务层 requireRole 二次校验）
+                .antMatchers(HttpMethod.POST, "/api/qms/ncrs/*/isolate")
+                .hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR")
                 .antMatchers(HttpMethod.POST, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
                 .antMatchers(HttpMethod.PUT, "/api/qms/ncrs/**").hasAnyRole("ADMIN", "QUALITY_ENG", "QUALITY_MGR")
                 // 让步接收：申请/提交（ENG/MGR）+ 核销放行（质检员/仓库）；双签签署走 approvals 规则
@@ -112,9 +124,20 @@ public class SecurityConfig {
                 // 审批底座：待办/签署入口按角色放行，节点角色不符由服务层 403
                 // （付款/预付款分级审批新增 ROLE_FINANCE_MGR / ROLE_GM 签署节点，add-payment-management）
                 // （商机 5 阶段审批新增 ROLE_SALES_MGR；SO 审批/特殊价格会签预留 SALES_DIRECTOR/CREDIT_ADMIN，add-sales-lead-to-cash）
+                // （BOM 发布签署新增 ROLE_PROCESS_MGR，add-bom-management）
                 .antMatchers(HttpMethod.POST, "/api/qms/approvals/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR",
                         "TECH_OWNER", "QUALITY_DIRECTOR", "SQE", "WAREHOUSE", "PM", "RECEIVER",
-                        "FINANCE_MGR", "GM", "SALES_MGR", "SALES_DIRECTOR", "CREDIT_ADMIN")
+                        "FINANCE_MGR", "GM", "SALES_MGR", "SALES_DIRECTOR", "CREDIT_ADMIN", "PROCESS_MGR",
+                        // 工单审批签署（add-work-order-management：MoApprove 节点 = 计划主管，各变更向名单追加先例）
+                        "PLAN_MGR",
+                        // 红冲/作废审批签署（add-red-invoice-void：税务专员主管=FINANCE_MGR 已在列，此处补财务经理）
+                        "FINANCE", "FIN_MGR",
+                        // HR 审批签署（add-employee-archive：入职开通/锁定特批/转正/调岗/离职节点）
+                        "HR", "HR_MGR",
+                        // 项目基线/预算变更审批签署（add-project-initiation：PmBaseline=PmBudgetChange 节点角色）
+                        "PMO",
+                        // 超预算解冻审批签署（add-cost-collection-freeze：BR-4.8-22 第三级分管领导）
+                        "EXEC")
                 // 2.6.1 质量退货：具体路径在前（出库过账 WAREHOUSE），兜底创建/编辑 ADMIN
                 .antMatchers(HttpMethod.POST, "/api/proc/returns/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 非质量退货创建（2.6.2，spec other-return）：采购侧发起，收窄为 ADMIN/PM（须先于下方粗规则）
@@ -178,11 +201,63 @@ public class SecurityConfig {
                         "/api/fin/ar/**").hasAnyRole("ADMIN", "FINANCE_MGR")
                 .antMatchers(HttpMethod.PUT, "/api/fin/invoice-applies/**",
                         "/api/fin/ar/**").hasAnyRole("ADMIN", "FINANCE_MGR")
+                // 计税管理（add-tax-calculation，spec tax-calculation）：税务专员/财务主管业务角色，
+                // 须先于下方 /api/fin/** 的 ADMIN+PM 兜底放行（M9-1 菜单 PERM 三角色同口径）
+                .antMatchers("/api/fin/tax-calc/**").hasAnyRole("ADMIN", "FINANCE", "FINANCE_MGR")
+                // 发票管理（add-invoice-management，spec invoice-management）：M9-2 四组接口，
+                // 与 M9-1 菜单 PERM 三角色同口径，先于 /api/fin/** 兜底
+                .antMatchers("/api/fin/input-invoices/**",
+                        "/api/fin/digital-invoices/**",
+                        "/api/fin/invoice-deliveries/**",
+                        "/api/fin/sales-invoice-ledger/**").hasAnyRole("ADMIN", "FINANCE", "FINANCE_MGR")
+                // 红冲作废（add-red-invoice-void，spec red-invoice-void）：M9-4 三组接口，
+                // 菜单 PERM 三角色（ROLE_FINANCE/FIN_MGR/ADMIN），先于 /api/fin/** 兜底
+                .antMatchers("/api/fin/red-flush-applies/**",
+                        "/api/fin/invoice-void-applies/**",
+                        "/api/fin/input-tax-transfers/**").hasAnyRole("ADMIN", "FINANCE", "FIN_MGR")
+                // 税务风控（add-tax-risk-control，spec tax-preference-register/tax-risk-monitoring/transfer-pricing）：
+                // M9-6 三组接口，菜单 PERM 三角色（ROLE_FINANCE/FIN_MGR/ADMIN），先于 /api/fin/** 兜底
+                .antMatchers("/api/fin/tax-preferences/**",
+                        "/api/fin/tax-risks/**",
+                        "/api/fin/tp/**").hasAnyRole("ADMIN", "FINANCE", "FIN_MGR")
+                // 员工档案与入转调离（add-employee-archive，spec employee-archive/employee-transfer）：
+                // M10-1/M10-7，菜单 PERM 三角色（ROLE_HR/HR_MGR/ADMIN），新前缀 /api/hr/** 先于兜底
+                // 加班 GM 特批（add-overtime-followup BR-4.7-04）：审批/视图/催办清单须放行 ROLE_GM，
+                // 先于下方 /api/hr/** 三角色兜底（GM_SPECIAL 单服务层再校验 ROLE_GM）
+                .antMatchers(HttpMethod.POST, "/api/hr/overtime/applies/*/approve",
+                        "/api/hr/overtime/applies/*/approval-view").hasAnyRole("ADMIN", "HR", "HR_MGR", "GM")
+                .antMatchers(HttpMethod.GET, "/api/hr/overtime/applies/*/approval-view",
+                        "/api/hr/overtime/approval-reminders").hasAnyRole("ADMIN", "HR", "HR_MGR", "GM")
+                // 薪酬域（add-payroll-management）：社保政策/个税/PayrollRun/发放对账须放行财务角色，
+                // 先于下方 /api/hr/** 三角色兜底（角色门控与 GM 特批同教训）
+                .antMatchers("/api/hr/payroll/**", "/api/hr/performance/**")
+                    .hasAnyRole("ADMIN", "HR", "HR_MGR", "FINANCE", "FIN_MGR")
+                // 培训认证域（add-training-certification，spec training-plan-execution/
+                // qualification-certification/skill-matrix）：费用/凭证只读放行财务，
+                // 计划管理/审核等写操作服务层再校验 HR（同 payroll 前缀先例），先于兜底
+                .antMatchers("/api/hr/train/**", "/api/hr/certs/**", "/api/hr/skill-matrix/**")
+                    .hasAnyRole("ADMIN", "HR", "HR_MGR", "FINANCE", "FIN_MGR")
+                .antMatchers("/api/hr/**").hasAnyRole("ADMIN", "HR", "HR_MGR")
+                // 税务申报（add-tax-filing，spec tax-filing/export-tax-refund）：M9-5 接口族，
+                // 菜单 PERM 三角色同口径，先于 /api/fin/** 兜底
+                .antMatchers("/api/fin/tax-returns/**",
+                        "/api/fin/tax-refunds/**",
+                        "/api/fin/export-refunds/**").hasAnyRole("ADMIN", "FINANCE", "FIN_MGR")
+                // 审批签署角色追加（红冲/作废节点 = 财务主管 + 财务经理，add-red-invoice-void）
+                // 凭证审核/过账/驳回/作废（DRAFT 三态，制单≠审核 C-4.6-07）：财务主管职责
+                .antMatchers(HttpMethod.POST, "/api/fin/manual-vouchers/*/audit",
+                        "/api/fin/manual-vouchers/*/post",
+                        "/api/fin/manual-vouchers/*/reject",
+                        "/api/fin/manual-vouchers/*/void").hasAnyRole("ADMIN", "FINANCE_MGR")
                 .antMatchers(HttpMethod.GET, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.POST, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.PUT, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.DELETE, "/api/fin/**").hasRole("ADMIN")
                 // 领料出库（add-consignment-procurement D11）：创建/过账/作废 = ADMIN/WAREHOUSE，读 + PM
+                // 试产挪用双人确认发起（add-trial-production-management 3.4）：计划侧发起（服务层再限
+                // PLANNER/PLAN_MGR/ADMIN，仓管过 HTTP 后落业务 403——spec trial-execution 权限矩阵）
+                .antMatchers(HttpMethod.POST, "/api/inv/issues/*/borrow-approval")
+                        .hasAnyRole("ADMIN", "WAREHOUSE", "PLANNER", "PLAN_MGR")
                 .antMatchers(HttpMethod.POST, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE")
                 .antMatchers(HttpMethod.GET, "/api/inv/issues/**").hasAnyRole("ADMIN", "WAREHOUSE", "PM")
                 // 仓位分配（add-bin-assignment，spec bin-assignment）：写限 ADMIN/WAREHOUSE，查询认证
@@ -251,6 +326,32 @@ public class SecurityConfig {
                 .hasAnyRole("ADMIN", "SALES", "SALES_MGR", "FINANCE_MGR")
                 .antMatchers(HttpMethod.POST, "/api/crm/contracts/**", "/api/crm/contracts")
                 .hasAnyRole("ADMIN", "SALES", "SALES_MGR", "FINANCE_MGR")
+
+                // 里程碑进度只读（add-milestone-management）：财务/总监只读看板与列表，
+                // 须置于下方 /api/pm/** 兜底前（GM/FINANCE 前缀教训）
+                .antMatchers(HttpMethod.GET, "/api/pm/milestones", "/api/pm/milestones/progress")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR")
+                // 工时归集/偏差只读（add-timesheet-management）：财务读成本与预警，
+                // 同须置于 /api/pm/** 兜底前
+                .antMatchers(HttpMethod.GET, "/api/pm/hours/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR")
+                // 预算管控（add-cost-collection-freeze）：读=归集/分析线（PM/PMO/财务/财务经理），
+                // 冻结/超预算管理端写与读=PMO/FINANCE/EXEC（不含普通 PM，四叶差异化权限）
+                .antMatchers(HttpMethod.GET, "/api/pm/cost/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR", "EXEC")
+                .antMatchers(HttpMethod.POST, "/api/pm/cost/over-budgets")
+                // 项目经理提交《超预算审批申请》（FR-4.8-5-7）；冻结清单页不含 PM 但提交入口放行
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "EXEC")
+                .antMatchers(HttpMethod.POST, "/api/pm/cost/variance/scan")
+                .hasAnyRole("ADMIN", "PMO", "FINANCE")
+                .antMatchers(HttpMethod.POST, "/api/pm/cost/material-issues/**",
+                        "/api/pm/cost/subcontracts/**", "/api/pm/cost/travels/**",
+                        "/api/pm/cost/allocs/**", "/api/pm/cost/alerts/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR")
+                // 项目立项（add-project-initiation）：PMO/PM/ADMIN 全域；模板与产能维护
+                // 写端点另在方法级 @PreAuthorize 限 PMO/ADMIN；PM 数据范围在服务层过滤
+                .antMatchers("/api/pm/**")
+                .hasAnyRole("ADMIN", "PMO", "PM")
 
                 .antMatchers("/api/portal/**").hasRole("SUPPLIER")
                 // 采购分析（add-procurement-analysis design D10）：菜单同口径四角色，

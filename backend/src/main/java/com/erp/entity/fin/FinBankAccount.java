@@ -20,8 +20,12 @@ public class FinBankAccount extends BaseEntity {
     /** 账号（唯一） */
     private String accountNo;
     private String currency;
-    /** 实时余额 */
+    /** 实时余额（本位币 CNY） */
     private BigDecimal balance;
+    /** 外币余额（add-fx-revaluation design D2 三列并存；CNY 账户恒等于 BALANCE，146 加列） */
+    private BigDecimal fcBalance;
+    /** 记账汇率（外币账户开户日中间价，CNY=1；146 加列） */
+    private BigDecimal bookingRate;
     /** ACTIVE / DISABLED */
     private String status;
     private String remark;

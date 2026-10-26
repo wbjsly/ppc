@@ -3,10 +3,8 @@ package com.erp.sd;
 import com.erp.common.ServiceException;
 import com.erp.dao.fin.ArInvoiceDao;
 import com.erp.dao.fin.ArItemDao;
-import com.erp.dao.fin.ArReceiptDao;
 import com.erp.dao.fin.ArStatementDao;
 import com.erp.dao.fin.ArStatementLineDao;
-import com.erp.dao.fin.ArWriteoffDao;
 import com.erp.dao.fin.RedInvoiceDao;
 import com.erp.dao.fin.SalesInvoiceDao;
 import com.erp.dao.mdm.MdmCustomerGroupDao;
@@ -23,8 +21,6 @@ import com.erp.dao.sd.SoLineDao;
 import com.erp.dao.crm.ContractDao;
 import com.erp.dao.crm.ContractPlanDao;
 import com.erp.entity.fin.ArInvoice;
-import com.erp.entity.fin.ArReceipt;
-import com.erp.entity.fin.ArWriteoff;
 import com.erp.entity.mdm.MdmCustomerGroup;
 import com.erp.entity.sd.InvoiceApply;
 import com.erp.entity.sd.RebateBudget;
@@ -122,7 +118,7 @@ class RebateArInvoiceRulesUnitTest {
         returnDao = mock(SdReturnDao.class);
         customerGroupDao = mock(MdmCustomerGroupDao.class);
         rebate = new RebateServiceImpl(targetDao, policyDao, budgetDao, settleDao,
-                arDao, mock(ArWriteoffDao.class), returnDao,
+                arDao, mock(com.erp.dao.fin.CashWriteoffDao.class), returnDao,
                 customerGroupDao, rebateEngine, mock(GlVoucherService.class));
         when(settleDao.selectOne(any())).thenReturn(null);
         when(returnDao.selectList(any())).thenReturn(new ArrayList<>());
@@ -219,8 +215,7 @@ class RebateArInvoiceRulesUnitTest {
 
     private ArServiceImpl arService;
     private ArInvoiceDao arInvDao;
-    private ArWriteoffDao woDao;
-    private ArReceiptDao receiptDao;
+    private com.erp.dao.fin.CashWriteoffDao woDao;
 
     private ArInvoice ar(String id, String no, String amt, String paid) {
         ArInvoice a = new ArInvoice();
@@ -239,60 +234,90 @@ class RebateArInvoiceRulesUnitTest {
 
     private void initAr() {
         arInvDao = mock(ArInvoiceDao.class);
-        woDao = mock(ArWriteoffDao.class);
-        receiptDao = mock(ArReceiptDao.class);
+        woDao = mock(com.erp.dao.fin.CashWriteoffDao.class);
         voucherService = mock(GlVoucherService.class);
         com.erp.entity.fin.FinVoucher v = new com.erp.entity.fin.FinVoucher();
         v.setId("V1");
         v.setVoucherNo("VCH-1");
         when(voucherService.create(anyString(), any(), anyString(), anyString(),
                 anyString(), any(), any())).thenReturn(v);
-        arService = new ArServiceImpl(arInvDao, mock(ArItemDao.class), woDao, receiptDao,
+        // add-payment-collection：registerReceipt 委托统一中心，构造参数含 cash 服务
+        arService = new ArServiceImpl(arInvDao, mock(ArItemDao.class), woDao,
+                mock(com.erp.service.fin.CashDocService.class),
+                mock(com.erp.service.fin.CashWriteoffService.class),
                 mock(ArStatementDao.class), mock(ArStatementLineDao.class),
                 mock(ContractDao.class), mock(ContractPlanDao.class), mock(SoDao.class),
-                voucherService);
-        when(receiptDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+                voucherService, mock(com.erp.dao.fin.FinBankAccountDao.class));
         when(arInvDao.updateById(any(ArInvoice.class))).thenReturn(1);
     }
 
     @Test
-    void fifoMatchesOldestReceivablesFirst() {
-        initAr();
+    void fifoSettlesOldestArFirst() {
+        // add-payment-collection：FIFO 语义迁至统一核销内核 CashWriteoffServiceImpl.settle
+        var arDao = mock(ArInvoiceDao.class);
+        var woDao2 = mock(com.erp.dao.fin.CashWriteoffDao.class);
+        var docDao = mock(com.erp.dao.fin.CashDocDao.class);
+        var invoiceDao = mock(com.erp.dao.fin.FinApInvoiceDao.class);
+        var engine = mock(ApprovalEngine.class);
+        var settle = new com.erp.service.impl.fin.CashWriteoffServiceImpl(
+                docDao, woDao2, arDao, invoiceDao);
+
         ArInvoice ar1 = ar("A1", "AR-1", "50000", "0");
         ArInvoice ar2 = ar("A2", "AR-2", "30000", "0");
-        when(arInvDao.selectList(any())).thenReturn(List.of(ar1)); // 客户信息 probe
-        when(arInvDao.selectFifoPool("C1")).thenReturn(List.of(ar1, ar2));
+        // 同期（202610）：避免触发跨期挂审批分支
+        ar1.setInvoiceDate(LocalDate.of(2026, 10, 1));
+        ar2.setInvoiceDate(LocalDate.of(2026, 10, 2));
+        when(arDao.selectFifoPool("C1")).thenReturn(List.of(ar1, ar2));
 
-        Map<String, Object> out = arService.registerReceipt("C1", new BigDecimal("60000"),
-                LocalDate.of(2026, 10, 7), "测试回款");
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> details = (List<Map<String, Object>>) out.get("details");
-        // 最早应收先清：AR-1 吃满 50000，AR-2 部分 10000
-        assertEquals(2, details.size());
-        assertEquals("AR-1", details.get(0).get("arNo"));
-        assertEquals(0, new BigDecimal("50000").compareTo((BigDecimal) details.get(0).get("amount")));
-        assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) details.get(0).get("balance")));
-        assertEquals("AR-2", details.get(1).get("arNo"));
-        assertEquals(0, new BigDecimal("10000").compareTo((BigDecimal) details.get(1).get("amount")));
-        assertEquals(0, new BigDecimal("20000").compareTo((BigDecimal) details.get(1).get("balance")));
-        // 回款全额匹配 → AUTO
-        ArReceipt receipt = (ArReceipt) out.get("receipt");
-        assertEquals(ArReceipt.ST_AUTO, receipt.getStatus());
-        assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) out.get("unmatched")));
-        // 核销逐笔落 writeoff（两笔 = 两条核销记录）
-        verify(woDao, org.mockito.Mockito.times(2)).insert(any(ArWriteoff.class));
+        var doc = new com.erp.entity.fin.CashDoc();
+        doc.setId("D1");
+        doc.setDocNo("RC20261007-0001");
+        doc.setDirection("IN");
+        doc.setPartyId("C1");
+        doc.setAmount(new BigDecimal("60000"));
+        doc.setPayDate(LocalDate.of(2026, 10, 7));
+        doc.setCurrency("CNY");
+
+        Map<String, Object> out = settle.settle(doc, null);
+        // 最早应收先清：AR-1 吃满 50000，AR-2 部分 10000，无剩余转预收
+        assertEquals(0, new BigDecimal("60000").compareTo((BigDecimal) out.get("writeoffTotal")));
+        assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) out.get("remaining")));
+        assertEquals(2, out.get("rowCount"));
+        assertEquals(false, out.get("crossPeriod"));
+        // 核销行落 cash_writeoff（FIFO 顺序：AR-1 在前）
+        org.mockito.ArgumentCaptor<com.erp.entity.fin.CashWriteoff> captor =
+                org.mockito.ArgumentCaptor.forClass(com.erp.entity.fin.CashWriteoff.class);
+        verify(woDao2, org.mockito.Mockito.times(2)).insert(captor.capture());
+        assertEquals("AR-1", captor.getAllValues().get(0).getTargetNo());
+        assertEquals(0, new BigDecimal("50000").compareTo(captor.getAllValues().get(0).getAmount()));
+        assertEquals("AR-2", captor.getAllValues().get(1).getTargetNo());
+        assertEquals(0, new BigDecimal("10000").compareTo(captor.getAllValues().get(1).getAmount()));
     }
 
     @Test
-    void receiptWithoutOpenArGoesManualQueue() {
-        initAr();
-        when(arInvDao.selectList(any())).thenReturn(List.of());
-        when(arInvDao.selectFifoPool("C1")).thenReturn(List.of());
-        Map<String, Object> out = arService.registerReceipt("C1", new BigDecimal("3000"),
-                null, null);
-        ArReceipt receipt = (ArReceipt) out.get("receipt");
-        assertEquals(ArReceipt.ST_PENDING, receipt.getStatus());
-        assertNotNull(out.get("manualHint"));
+    void settleWithoutOpenArLeavesPrepaymentCredit() {
+        // 无未清应收 → 核销 0，剩余全额转预收（收款单过账时贷 2205）
+        var arDao = mock(ArInvoiceDao.class);
+        var woDao2 = mock(com.erp.dao.fin.CashWriteoffDao.class);
+        var settle = new com.erp.service.impl.fin.CashWriteoffServiceImpl(
+                mock(com.erp.dao.fin.CashDocDao.class), woDao2, arDao,
+                mock(com.erp.dao.fin.FinApInvoiceDao.class));
+        when(arDao.selectFifoPool("C1")).thenReturn(List.of());
+
+        var doc = new com.erp.entity.fin.CashDoc();
+        doc.setId("D2");
+        doc.setDocNo("RC20261007-0002");
+        doc.setDirection("IN");
+        doc.setPartyId("C1");
+        doc.setAmount(new BigDecimal("3000"));
+        doc.setPayDate(LocalDate.now());
+        doc.setCurrency("CNY");
+
+        Map<String, Object> out = settle.settle(doc, null);
+        assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) out.get("writeoffTotal")));
+        assertEquals(0, new BigDecimal("3000").compareTo((BigDecimal) out.get("remaining")));
+        assertEquals(0, out.get("rowCount"));
+        verify(woDao2, org.mockito.Mockito.never()).insert(any());
     }
 
     private static void assertNotNull(Object o) {
@@ -314,7 +339,8 @@ class RebateArInvoiceRulesUnitTest {
                 mock(ShipmentDao.class), shipLineDao, mock(SoDao.class), soLineDao,
                 mock(MdmCustomerGroupDao.class), mock(com.erp.dao.mdm.MdmItemDao.class),
                 taxCodeDao, mock(com.erp.service.SysParamService.class),
-                mock(OutboxPublisher.class));
+                mock(OutboxPublisher.class),
+                mock(com.erp.service.fin.FxRateService.class));
 
         when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
         ShipmentLine sl = new ShipmentLine();
@@ -359,10 +385,167 @@ class RebateArInvoiceRulesUnitTest {
         assertEquals(apply.getId(), again.getId());
     }
 
+    // ================= 外币应收记账汇率固化（add-fx-revaluation 决策 A）=================
+
+    private InvoiceServiceImpl arServiceWithFx(ArInvoiceDao finArDao, InvoiceApplyDao applyDao,
+                                               ShipmentLineDao shipLineDao, SoLineDao soLineDao,
+                                               com.erp.dao.mdm.MdmTaxCodeDao taxCodeDao,
+                                               SoDao soDao,
+                                               com.erp.service.fin.FxRateService fx) {
+        return new InvoiceServiceImpl(applyDao, mock(SalesInvoiceDao.class),
+                mock(RedInvoiceDao.class), finArDao, mock(ArItemDao.class),
+                mock(ShipmentDao.class), shipLineDao, soDao, soLineDao,
+                mock(MdmCustomerGroupDao.class), mock(com.erp.dao.mdm.MdmItemDao.class),
+                taxCodeDao, mock(com.erp.service.SysParamService.class),
+                mock(OutboxPublisher.class), fx);
+    }
+
+    private Shipment usdShip(String soId) {
+        Shipment ship = new Shipment();
+        ship.setId("SH-FX");
+        ship.setShipNo("SH-FX-1");
+        ship.setCustomerId("C1");
+        ship.setCustomerCode("CUST-1");
+        ship.setCustomerName("外币客户");
+        ship.setTotalAmt(new BigDecimal("10000"));
+        return ship;
+    }
+
+    @Test
+    void usdArFixesBookingRate() {
+        InvoiceApplyDao applyDao = mock(InvoiceApplyDao.class);
+        ArInvoiceDao finArDao = mock(ArInvoiceDao.class);
+        ShipmentLineDao shipLineDao = mock(ShipmentLineDao.class);
+        SoLineDao soLineDao = mock(SoLineDao.class);
+        com.erp.dao.mdm.MdmTaxCodeDao taxCodeDao = mock(com.erp.dao.mdm.MdmTaxCodeDao.class);
+        SoDao soDao = mock(SoDao.class);
+        com.erp.service.fin.FxRateService fx = mock(com.erp.service.fin.FxRateService.class);
+
+        So so = new So();
+        so.setId("SO-USD");
+        so.setCurrency("USD");
+        when(soDao.selectById("SO-USD")).thenReturn(so);
+        when(fx.requireMiddleRate(eq("USD"), eq("CNY"), any())).thenReturn(new BigDecimal("7.120000"));
+
+        InvoiceServiceImpl svc = arServiceWithFx(finArDao, applyDao, shipLineDao, soLineDao,
+                taxCodeDao, soDao, fx);
+        when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
+        ShipmentLine sl = new ShipmentLine();
+        sl.setId("SL-FX");
+        sl.setShipId("SH-FX");
+        sl.setLineNo(1);
+        sl.setSoId("SO-USD");
+        sl.setItemCode("RM1");
+        sl.setQty(new BigDecimal("10"));
+        when(shipLineDao.selectList(any())).thenReturn(List.of(sl));
+        when(applyDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        when(finArDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        com.erp.entity.mdm.MdmTaxCode tc = new com.erp.entity.mdm.MdmTaxCode();
+        tc.setTaxCode("VAT13");
+        tc.setTaxRate(new BigDecimal("0.13"));
+        when(taxCodeDao.selectHit(anyString(), any())).thenReturn(tc);
+        when(applyDao.insert(any(InvoiceApply.class))).thenReturn(1);
+        when(finArDao.insert(any(ArInvoice.class))).thenReturn(1);
+        when(applyDao.updateById(any(InvoiceApply.class))).thenReturn(1);
+
+        svc.onShipmentConfirmed(usdShip("SO-USD"));
+        ArgumentCaptor<ArInvoice> arCap = ArgumentCaptor.forClass(ArInvoice.class);
+        verify(finArDao).insert(arCap.capture());
+        assertEquals("USD", arCap.getValue().getCurrency(), "应收币种取 SO 交易币种");
+        assertEquals(0, new BigDecimal("7.120000").compareTo(arCap.getValue().getBookingRate()),
+                "外币应收按开票日中间价固化记账汇率");
+    }
+
+    @Test
+    void usdArMissingRateBlocks() {
+        InvoiceApplyDao applyDao = mock(InvoiceApplyDao.class);
+        ArInvoiceDao finArDao = mock(ArInvoiceDao.class);
+        ShipmentLineDao shipLineDao = mock(ShipmentLineDao.class);
+        SoLineDao soLineDao = mock(SoLineDao.class);
+        com.erp.dao.mdm.MdmTaxCodeDao taxCodeDao = mock(com.erp.dao.mdm.MdmTaxCodeDao.class);
+        SoDao soDao = mock(SoDao.class);
+        com.erp.service.fin.FxRateService fx = mock(com.erp.service.fin.FxRateService.class);
+
+        So so = new So();
+        so.setId("SO-JPY");
+        so.setCurrency("JPY");
+        when(soDao.selectById("SO-JPY")).thenReturn(so);
+        when(fx.requireMiddleRate(eq("JPY"), eq("CNY"), any()))
+                .thenThrow(new com.erp.common.ServiceException(422, "汇率主数据缺失"));
+
+        InvoiceServiceImpl svc = arServiceWithFx(finArDao, applyDao, shipLineDao, soLineDao,
+                taxCodeDao, soDao, fx);
+        when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
+        ShipmentLine sl = new ShipmentLine();
+        sl.setId("SL-JPY");
+        sl.setShipId("SH-FX");
+        sl.setLineNo(1);
+        sl.setSoId("SO-JPY");
+        sl.setItemCode("RM1");
+        sl.setQty(new BigDecimal("10"));
+        when(shipLineDao.selectList(any())).thenReturn(List.of(sl));
+        when(applyDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        when(finArDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        com.erp.entity.mdm.MdmTaxCode tc = new com.erp.entity.mdm.MdmTaxCode();
+        tc.setTaxCode("VAT13");
+        tc.setTaxRate(new BigDecimal("0.13"));
+        when(taxCodeDao.selectHit(anyString(), any())).thenReturn(tc);
+        when(applyDao.insert(any(InvoiceApply.class))).thenReturn(1);
+
+        com.erp.common.ServiceException ex = assertThrows(com.erp.common.ServiceException.class,
+                () -> svc.onShipmentConfirmed(usdShip("SO-JPY")));
+        assertTrue(ex.getMessage().contains("汇率主数据缺失"), "缺汇率 L1 阻断");
+    }
+
+    @Test
+    void cnyArBookingRateOneNoFxQuery() {
+        InvoiceApplyDao applyDao = mock(InvoiceApplyDao.class);
+        ArInvoiceDao finArDao = mock(ArInvoiceDao.class);
+        ShipmentLineDao shipLineDao = mock(ShipmentLineDao.class);
+        SoLineDao soLineDao = mock(SoLineDao.class);
+        com.erp.dao.mdm.MdmTaxCodeDao taxCodeDao = mock(com.erp.dao.mdm.MdmTaxCodeDao.class);
+        SoDao soDao = mock(SoDao.class);
+        com.erp.service.fin.FxRateService fx = mock(com.erp.service.fin.FxRateService.class);
+
+        So so = new So();
+        so.setId("SO-CNY");
+        so.setCurrency("CNY");
+        when(soDao.selectById("SO-CNY")).thenReturn(so);
+
+        InvoiceServiceImpl svc = arServiceWithFx(finArDao, applyDao, shipLineDao, soLineDao,
+                taxCodeDao, soDao, fx);
+        when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
+        ShipmentLine sl = new ShipmentLine();
+        sl.setId("SL-CNY");
+        sl.setShipId("SH-FX");
+        sl.setLineNo(1);
+        sl.setSoId("SO-CNY");
+        sl.setItemCode("RM1");
+        sl.setQty(new BigDecimal("10"));
+        when(shipLineDao.selectList(any())).thenReturn(List.of(sl));
+        when(applyDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        when(finArDao.selectNosByPrefix(anyString())).thenReturn(List.of());
+        com.erp.entity.mdm.MdmTaxCode tc = new com.erp.entity.mdm.MdmTaxCode();
+        tc.setTaxCode("VAT13");
+        tc.setTaxRate(new BigDecimal("0.13"));
+        when(taxCodeDao.selectHit(anyString(), any())).thenReturn(tc);
+        when(applyDao.insert(any(InvoiceApply.class))).thenReturn(1);
+        when(finArDao.insert(any(ArInvoice.class))).thenReturn(1);
+        when(applyDao.updateById(any(InvoiceApply.class))).thenReturn(1);
+
+        svc.onShipmentConfirmed(usdShip("SO-CNY"));
+        ArgumentCaptor<ArInvoice> arCap = ArgumentCaptor.forClass(ArInvoice.class);
+        verify(finArDao).insert(arCap.capture());
+        assertEquals("CNY", arCap.getValue().getCurrency(), "应收币种 CNY");
+        assertEquals(0, BigDecimal.ONE.compareTo(arCap.getValue().getBookingRate()),
+                "CNY 应收记账汇率置 1");
+        verify(fx, org.mockito.Mockito.never()).requireMiddleRate(anyString(), anyString(), any());
+    }
+
     // ================= 红冲余额 =================
 
     @Test
-    void redInvoiceCannotExceedRemainingBalance() {
+    void redInvoiceRedirectsToFlushApply() {
         InvoiceApplyDao applyDao = mock(InvoiceApplyDao.class);
         SalesInvoiceDao invoiceDao = mock(SalesInvoiceDao.class);
         RedInvoiceDao redDao = mock(RedInvoiceDao.class);
@@ -372,7 +555,8 @@ class RebateArInvoiceRulesUnitTest {
                 mock(ShipmentLineDao.class), mock(SoDao.class), mock(SoLineDao.class),
                 mock(MdmCustomerGroupDao.class), mock(com.erp.dao.mdm.MdmItemDao.class),
                 mock(com.erp.dao.mdm.MdmTaxCodeDao.class),
-                mock(com.erp.service.SysParamService.class), mock(OutboxPublisher.class));
+                mock(com.erp.service.SysParamService.class), mock(OutboxPublisher.class),
+                mock(com.erp.service.fin.FxRateService.class));
 
         com.erp.entity.fin.SalesInvoice origin = new com.erp.entity.fin.SalesInvoice();
         origin.setId("INV1");
@@ -381,22 +565,26 @@ class RebateArInvoiceRulesUnitTest {
         origin.setRedAmount(BigDecimal.ZERO);
         origin.setArId("A1");
         when(invoiceDao.selectById("INV1")).thenReturn(origin);
-        when(redDao.selectNosByPrefix(anyString())).thenReturn(List.of());
-        when(redDao.insert(any(com.erp.entity.fin.RedInvoice.class))).thenReturn(1);
-        when(invoiceDao.updateById(any(com.erp.entity.fin.SalesInvoice.class))).thenReturn(1);
-        ArInvoice ar = ar("A1", "AR-1", "10000", "0");
-        when(finArDao.selectById("A1")).thenReturn(ar);
-        when(finArDao.updateById(any(ArInvoice.class))).thenReturn(1);
-        when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
 
-        // 红冲 3000 → 原票/应收累计红冲回写
-        invoiceService.redInvoice("INV1", null, null, new BigDecimal("3000"), "退货红冲");
-        assertEquals(0, new BigDecimal("3000").compareTo(origin.getRedAmount()));
-        assertEquals(0, new BigDecimal("3000").compareTo(ar.getRedAmount()));
-
-        // 再红冲 8000 > 剩余 7000 → 422 封顶
+        // 一步直达已下线（add-red-invoice-void design D3）：无重定向服务 → 503 引导
         ServiceException e = assertThrows(ServiceException.class,
-                () -> invoiceService.redInvoice("INV1", null, null, new BigDecimal("8000"), "超额"));
-        assertTrue(e.getMessage().contains("可冲余额"), e.getMessage());
+                () -> invoiceService.redInvoice("INV1", null, null, new BigDecimal("3000"), "退货红冲"));
+        assertEquals(503, e.getCode());
+
+        // 注入重定向服务 → 委托红冲申请单（余额卡控由 RedFlushService.create 承担，
+        // 场景覆盖见 RedFlushVoidDbTest.amountOverRemainingBlocked）
+        com.erp.service.impl.fin.RedFlushServiceImpl flush = mock(
+                com.erp.service.impl.fin.RedFlushServiceImpl.class);
+        com.erp.entity.fin.RedInvoice view = new com.erp.entity.fin.RedInvoice();
+        view.setRedNo("待开具-FSAP01");
+        view.setStatus("PENDING");
+        when(flush.redirectLegacy(eq("INV1"), any(), any(), any(), any())).thenReturn(view);
+        org.springframework.test.util.ReflectionTestUtils.setField(invoiceService,
+                "redFlushService", flush);
+        com.erp.entity.fin.RedInvoice out = invoiceService.redInvoice("INV1", null, null,
+                new BigDecimal("3000"), "退货红冲");
+        assertEquals("PENDING", out.getStatus(), "旧接口返回申请单视图（待审批）");
+        org.mockito.Mockito.verify(flush).redirectLegacy(eq("INV1"), any(), any(),
+                org.mockito.ArgumentMatchers.eq(new BigDecimal("3000")), any());
     }
 }

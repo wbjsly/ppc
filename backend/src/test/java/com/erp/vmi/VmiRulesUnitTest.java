@@ -278,12 +278,18 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.sd.ReservationDao.class),
                         mock(com.erp.dao.mdm.MdmItemDao.class),
                         mock(com.erp.ops.OutboxPublisher.class),
-                        sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class));
+                        sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         return new MaterialIssueServiceImpl(mock(MaterialIssueDao.class),
                 mock(MaterialIssueLineDao.class), stockDao, mock(VmiStockDao.class),
                 mock(MdmSupplierDao.class), mock(VmiAgreementService.class),
                 mock(VmiAlertService.class), mock(AccrualService.class), engine,
-                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class),
+                mock(com.erp.service.mrp.ReservationService.class),
+                mock(com.erp.dao.inv.InvBatchDao.class),
+                mock(com.erp.dao.system.ApprovalInstanceDao.class),
+                mock(com.erp.service.approval.ApprovalEngine.class),
+                mock(org.springframework.jdbc.core.JdbcTemplate.class));
     }
 
     private InvStock stockRow(String id, String batch, String avail, LocalDateTime create) {
@@ -349,13 +355,19 @@ class VmiRulesUnitTest {
                         mock(com.erp.dao.sd.ReservationDao.class),
                         mock(com.erp.dao.mdm.MdmItemDao.class),
                         mock(com.erp.ops.OutboxPublisher.class),
-                        sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class));
+                        sysParamMock(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         MaterialIssueServiceImpl svc = new MaterialIssueServiceImpl(
                 mock(MaterialIssueDao.class), mock(MaterialIssueLineDao.class), stockDao,
                 mock(VmiStockDao.class), mock(MdmSupplierDao.class),
                 mock(VmiAgreementService.class), mock(VmiAlertService.class),
                 mock(AccrualService.class), engine,
-                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class));
+                mock(com.erp.service.inv.FifoStrategyService.class), mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class),
+                mock(com.erp.service.mrp.ReservationService.class),
+                batchDao,
+                mock(com.erp.dao.system.ApprovalInstanceDao.class),
+                mock(com.erp.service.approval.ApprovalEngine.class),
+                mock(org.springframework.jdbc.core.JdbcTemplate.class));
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("issueType", "OWN");

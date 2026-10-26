@@ -78,6 +78,8 @@ public class ShipmentServiceImpl implements ShipmentService {
     private final com.erp.dao.mdm.MdmCustomerGroupDao customerGroupDao;
     private final com.erp.dao.inv.InvWaveLineDao waveLineDao;
     private final com.erp.dao.inv.InvWaveDao waveDao;
+    /** 发货确认 OQC 前置校验（rework-inspection-tasks，D5 桩回补） */
+    private final com.erp.service.qms.QualityGateService qualityGateService;
 
     public ShipmentServiceImpl(ShipmentDao shipDao,
                                ShipmentLineDao shipLineDao,
@@ -96,7 +98,8 @@ public class ShipmentServiceImpl implements ShipmentService {
                                com.erp.service.inv.PickTaskService pickTaskService,
                                com.erp.dao.mdm.MdmCustomerGroupDao customerGroupDao,
                                com.erp.dao.inv.InvWaveLineDao waveLineDao,
-                               com.erp.dao.inv.InvWaveDao waveDao) {
+                               com.erp.dao.inv.InvWaveDao waveDao,
+                               com.erp.service.qms.QualityGateService qualityGateService) {
         this.shipDao = shipDao;
         this.shipLineDao = shipLineDao;
         this.soDao = soDao;
@@ -115,6 +118,7 @@ public class ShipmentServiceImpl implements ShipmentService {
         this.customerGroupDao = customerGroupDao;
         this.waveLineDao = waveLineDao;
         this.waveDao = waveDao;
+        this.qualityGateService = qualityGateService;
     }
 
     // ---------- 9.2 部分发货 ----------
@@ -459,6 +463,21 @@ public class ShipmentServiceImpl implements ShipmentService {
         if (!Shipment.ST_POSTED.equals(ship.getStatus())) {
             throw new ServiceException(422, "仅已过账发货单可确认（当前：" + ship.getStatus() + "）");
         }
+        // 发货确认 OQC 前置校验（rework-inspection-tasks，D5 桩回补）：
+        // 未放行 OQC 批 → 422 阻断；无批按 OQC_ENFORCE ON/OFF 处理；SKIPPED 视同放行
+        List<Map<String, Object>> oqcLines = new java.util.ArrayList<>();
+        for (ShipmentLine sl : shipLines(shipId)) {
+            if (!ShipmentLine.LS_POSTED.equals(sl.getLineStatus())) {
+                continue;
+            }
+            Map<String, Object> ln = new java.util.LinkedHashMap<>();
+            ln.put("itemCode", sl.getItemCode());
+            ln.put("batchNo", sl.getBatchNo());
+            oqcLines.add(ln);
+        }
+        Map<String, Object> oqcGate = qualityGateService.assertOqcForShipment(oqcLines);
+        @SuppressWarnings("unchecked")
+        List<String> oqcWarnings = (List<String>) oqcGate.get("warnings");
         LocalDateTime now = LocalDateTime.now();
         int timeoutDays = paramService.getInt("SIGN_TIMEOUT_DAYS", 7);
         ship.setStatus(Shipment.ST_CONFIRMED);
@@ -471,6 +490,12 @@ public class ShipmentServiceImpl implements ShipmentService {
         if (!isBlank(exceptNote)) {
             ship.setExceptNote(exceptNote);
             ship.setExceptNotifyAt(now);
+        }
+        if (oqcWarnings != null && !oqcWarnings.isEmpty()) {
+            // OQC_ENFORCE=OFF 降级黄提示留痕（spec：放行并记录降级提示）
+            ship.setRemark((ship.getRemark() == null ? "" : ship.getRemark() + "；")
+                    + "OQC 降级：" + String.join("、", oqcWarnings));
+            log.warn("shipment {} OQC degraded: {}", ship.getShipNo(), oqcWarnings);
         }
         shipDao.updateById(ship);
 

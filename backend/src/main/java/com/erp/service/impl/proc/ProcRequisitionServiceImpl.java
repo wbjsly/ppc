@@ -548,6 +548,85 @@ public class ProcRequisitionServiceImpl implements ProcRequisitionService {
         return result;
     }
 
+    @Override
+    @Transactional
+    public Map<String, Object> createForOutsource(List<Map<String, Object>> rows,
+                                                  String dispatchNo, String reason) {
+        if (rows == null || rows.isEmpty()) {
+            throw new ServiceException(422, "外协请购至少一行");
+        }
+        if (dispatchNo == null || dispatchNo.trim().isEmpty()) {
+            throw new ServiceException(422, "外协请购须关联派工单号（回联锚点）");
+        }
+        if (reason == null || reason.trim().length() < 2) {
+            throw new ServiceException(422, "外协需求理由说明必填（至少 2 字）");
+        }
+        ProcRequisition pr = new ProcRequisition();
+        pr.setPrNo(support.nextPrNo());
+        pr.setSourceType("OUTSOURCE");
+        // 与 MRP 同款漏斗：待确认 → 采购员 confirm() → 既有审批链（design D5，零旁路）
+        pr.setStatus(RequisitionStateMachine.PENDING_CONFIRM);
+        pr.setReqReason(reason.trim());
+        pr.setRemindFlag("0");
+        pr.setEscalateFlag("0");
+        support.insertWithRetry(pr);
+        int no = 1;
+        for (Map<String, Object> a : rows) {
+            String itemCode = a.get("itemCode") == null ? null : String.valueOf(a.get("itemCode"));
+            if (itemCode == null || itemCode.trim().isEmpty()) {
+                throw new ServiceException(422, "行 " + no + " 物料编码必填");
+            }
+            MdmItem item = itemDao.selectOne(new LambdaQueryWrapper<MdmItem>()
+                    .eq(MdmItem::getItemCode, itemCode.trim().toUpperCase()).last("LIMIT 1"));
+            if (item == null) {
+                throw new ServiceException(422, "行 " + no + " 物料不存在：" + itemCode);
+            }
+            // BR-4.2-07 L1：非 Active 拒绝（与 createFromMrp 同一防线）
+            if (!"1".equals(item.getStatus())) {
+                throw new ServiceException(422, "行 " + no + " 物料 " + itemCode
+                        + " 状态非启用（BR-4.2-07），外协请购终止");
+            }
+            if (a.get("qty") == null) {
+                throw new ServiceException(422, "行 " + no + " 数量必填");
+            }
+            java.math.BigDecimal qty = new java.math.BigDecimal(String.valueOf(a.get("qty")));
+            if (qty.signum() <= 0) {
+                throw new ServiceException(422, "行 " + no + " 数量须大于 0");
+            }
+            if (a.get("reqDate") == null) {
+                throw new ServiceException(422, "行 " + no + " 需求日期必填");
+            }
+            LocalDate reqDate = LocalDate.parse(String.valueOf(a.get("reqDate")));
+            ProcPrLine line = new ProcPrLine();
+            line.setPrId(pr.getId());
+            line.setLineNo(no);
+            line.setItemCode(item.getItemCode());
+            line.setQty(qty);
+            line.setReqDate(reqDate);
+            line.setEstUnitPrice(BigDecimal.ZERO); // 价格不填，由采购环节价控（spec 原文）
+            line.setSourceEnum("OUTSOURCE");
+            line.setSourceDocNo(dispatchNo.trim()); // 回联锚点（design D5）
+            line.setMrpSuggestedQty(null); // 非 MRP 行 → confirm() 80% 卡控跳过
+            line.setOverdueFlag(reqDate.isBefore(LocalDate.now()) ? "1" : "0");
+            line.setLineStatus("OPEN");
+            line.setAllocQty(BigDecimal.ZERO);
+            lineDao.insert(line);
+            support.publishLine(pr, no, "PROC.PR.CREATED",
+                    line.getItemCode() + " qty=" + line.getQty() + " @" + line.getReqDate()
+                            + "（外协 " + dispatchNo + "）"
+                            + ("1".equals(line.getOverdueFlag()) ? " 逾期" : ""));
+            no++;
+        }
+        support.publishHead(pr, "PROC.PR.CREATED",
+                "外协生成 " + pr.getPrNo() + " " + (no - 1) + " 行（派工单 " + dispatchNo
+                        + "），状态 PENDING_CONFIRM");
+        log.info("Outsource PR created {} lines={} dispatch={}", pr.getPrNo(), no - 1, dispatchNo);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("prId", pr.getId());
+        result.put("prNo", pr.getPrNo());
+        return result;
+    }
+
     // ---------- 懒 sweep：催办/升级 + 90 天关闭（BR-4.2-50 / C-4.2-11） ----------
 
     private void sweep() {

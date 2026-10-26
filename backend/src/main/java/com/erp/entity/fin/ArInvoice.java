@@ -26,6 +26,10 @@ public class ArInvoice extends BaseEntity {
     private String customerId;
     private String customerCode;
     private String customerName;
+    /** 币种（ISO 4217，默认 CNY；add-fx-revaluation 决策 A，存量回填 CNY） */
+    private String currency;
+    /** 原记账汇率（外币按开票日中间价固化，CNY=1；add-fx-revaluation） */
+    private java.math.BigDecimal bookingRate;
     private String soId;
     private String soNo;
     /** 开票申请关联（tasks 10.2/10.4） */
@@ -47,5 +51,9 @@ public class ArInvoice extends BaseEntity {
     private BigDecimal amount;
     private BigDecimal paidAmount;
     private String status;
+    /** 1=已确认（账龄起算锚点，未确认不计账龄；143 加列） */
+    private String confirmFlag;
+    private String confirmBy;
+    private java.time.LocalDateTime confirmDate;
     private String remark;
 }

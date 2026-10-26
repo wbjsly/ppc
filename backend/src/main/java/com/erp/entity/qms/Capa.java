@@ -57,6 +57,10 @@ public class Capa extends BaseEntity {
     @TableField("OWNER_NAME")
     private String ownerName;
 
+    /** 8D 团队成员清单（JSON 数组 [{name,domain,duty,leader}]，D1 结构化） */
+    @TableField("TEAM_MEMBERS")
+    private String teamMembers;
+
     /** 当前 8D 步骤 D1~D8 */
     @TableField("CURRENT_STEP")
     private String currentStep;
@@ -84,6 +88,10 @@ public class Capa extends BaseEntity {
     /** 数据/实验验证证据 */
     @TableField("ROOT_CAUSE_EVIDENCE")
     private String rootCauseEvidence;
+
+    /** 经验沉淀物（JSON 数组 [{type,note,approvalId}]，D8 结构化） */
+    @TableField("LEGACY_SINK")
+    private String legacySink;
 
     /** PENDING/VALID/PARTIAL/INVALID */
     @TableField("VERIFY_RESULT")

@@ -54,6 +54,12 @@ public class MdmItem extends BaseEntity {
 
     private BigDecimal safetyStock;
 
+    /** 再订货点 ROP_QTY（BR-4.5-14 安全库存补货；0/NULL=不启用）。119 动态列 */
+    private BigDecimal ropQty;
+
+    /** 最大库存 MAX_STOCK（FR-4.5-2-6 超库存提示；0/NULL=不启用）。119 动态列 */
+    private BigDecimal maxStock;
+
     /** MOQ 最小起订量（BR-4.3-09 报价行校验；空 = 不校验）。053 动态列 */
     private BigDecimal minOrderQty;
 

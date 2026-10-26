@@ -50,3 +50,13 @@ export function getSamplingPlansApi() {
 export function saveSamplingPlanApi(data) {
   return request.post('/qms/standards/sampling-plans', data)
 }
+
+/** 复制为新方案（引用锁出口） */
+export function copySamplingPlanApi(id, newPlanCode) {
+  return request.post(`/qms/standards/sampling-plans/${id}/copy`, null, { params: { newPlanCode } })
+}
+
+/** 审批中版本平铺（6.1.2 独立待办页，含双签状态） */
+export function getPendingVersionsApi() {
+  return request.get('/qms/standards/pending-versions')
+}

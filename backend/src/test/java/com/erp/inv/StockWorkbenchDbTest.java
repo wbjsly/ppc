@@ -105,12 +105,17 @@ class StockWorkbenchDbTest {
         assertEquals(RET_NO, rows.get(0).get("docNo"));
         assertEquals("SO-WB-1", rows.get(0).get("sourceDocNo"));
 
-        // 未建域类型空态（骨架，偏差 D5）
-        Map<String, Object> wip = workbench.tasks("WIP_IN", null, null, 1, 20);
+        // WIP_IN 已由空骨架激活为真实数据源（change rework-inspection-tasks，
+        // spec inbound-workbench「WIP_IN 完工入库队列」）：按不存在关键字过滤应为空态且不报错
+        Map<String, Object> wip = workbench.tasks("WIP_IN", "NO-SUCH-MO-FINISH-XYZ", null, 1, 20);
         @SuppressWarnings("unchecked")
-        List<?> empty = (List<?>) wip.get("rows");
-        assertTrue(empty.isEmpty());
+        List<?> filtered = (List<?>) wip.get("rows");
+        assertTrue(filtered.isEmpty());
         assertEquals(0, ((Number) wip.get("total")).intValue());
+        // 全量查询可执行（行为=只读流水列表，行数随 MO_FINISH 放行联动而定）
+        Map<String, Object> wipAll = workbench.tasks("WIP_IN", null, null, 1, 20);
+        assertTrue(wipAll.containsKey("rows"));
+        assertTrue(((Number) wipAll.get("total")).intValue() >= 0);
     }
 
     @Test

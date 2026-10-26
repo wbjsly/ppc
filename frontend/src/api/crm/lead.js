@@ -76,3 +76,28 @@ export function getModelVersionsApi(key) {
 export function saveModelApi(data) {
   return request.post('/crm/lead-models', data)
 }
+
+// ---------- 自动分配配置（add-lead-auto-assign，11.1.2「分配规则」Tab） ----------
+export function getSeniorsApi() {
+  return request.get('/crm/assign/seniors')
+}
+
+export function saveSeniorsApi(seniors) {
+  return request.put('/crm/assign/seniors', seniors)
+}
+
+export function getAssignRulesApi() {
+  return request.get('/crm/assign/rules')
+}
+
+export function createAssignRuleApi(data) {
+  return request.post('/crm/assign/rules', data)
+}
+
+export function updateAssignRuleApi(id, data) {
+  return request.put(`/crm/assign/rules/${id}`, data)
+}
+
+export function deleteAssignRuleApi(id) {
+  return request.delete(`/crm/assign/rules/${id}`)
+}

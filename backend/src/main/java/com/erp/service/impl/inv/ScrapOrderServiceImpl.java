@@ -58,6 +58,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
     private final com.erp.service.inv.PickTaskService pickTaskService;
     /** 召回处置回调（spec trace-recall：带 TR 关联的报废过账后置流向行 DISPOSED） */
     private final com.erp.service.inv.RecallService recallService;
+    /** COPQ 归集（rework-copq-analysis 2.2：报废过账 → 内部失败，降级不阻断过账） */
+    private final com.erp.service.qms.CopqService copqService;
 
     public ScrapOrderServiceImpl(ScrapOrderDao scrapDao,
                                  ScrapOrderLineDao lineDao,
@@ -68,7 +70,8 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
                                  GlVoucherService voucherService,
                                  com.erp.service.inv.PickTaskGate pickTaskGate,
                                  com.erp.service.inv.PickTaskService pickTaskService,
-                                 com.erp.service.inv.RecallService recallService) {
+                                 com.erp.service.inv.RecallService recallService,
+                                 com.erp.service.qms.CopqService copqService) {
         this.scrapDao = scrapDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -79,6 +82,7 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
         this.pickTaskGate = pickTaskGate;
         this.pickTaskService = pickTaskService;
         this.recallService = recallService;
+        this.copqService = copqService;
     }
 
     // ---------- 创建 / 编辑 / 作废（4.1） ----------
@@ -350,6 +354,21 @@ public class ScrapOrderServiceImpl implements ScrapOrderService {
                         .set(InvScrapOrder::getPostAt, LocalDateTime.now()));
         // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
         pickTaskService.markCompleted("SCRAP_OUT", o.getScrapNo());
+        // ---- COPQ 归集（rework-copq-analysis 2.2，FR-4.12-6-2 ①）：报废金额 → 内部失败 ----
+        // 幂等键 SCRAP+报废单 ID（record 既有短路）；与 NCR 处置成本口径（人工/材料）并存不重复；
+        // 降级不阻断过账主流程，漏账可手工补录
+        try {
+            copqService.record(java.util.Map.of(
+                    "category", "INTERNAL_FAILURE",
+                    "sourceType", "SCRAP",
+                    "sourceId", o.getId(),
+                    "sourceNo", o.getScrapNo(),
+                    "amount", o.getTotalAmount(),
+                    "remark", "报废出库过账归集（" + o.getScrapNo() + "）"));
+        } catch (Exception ex) {
+            log.warn("COPQ record failed for scrap {}（降级不阻断过账，可手工补录）：{}",
+                    o.getScrapNo(), ex.getMessage());
+        }
         // 召回处置回调（design D6）：带 TR 关联的报废把 FROZEN/RECEIVED 流向行置 DISPOSED
         if (!isBlank(o.getTraceNo())) {
             recallService.markDisposed(o.getTraceNo(), traceBatches);

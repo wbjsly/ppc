@@ -7,11 +7,15 @@ import com.erp.dao.qms.InspectionStandardDao;
 import com.erp.dao.qms.SamplingPlanDao;
 import com.erp.dao.qms.StandardApplicabilityDao;
 import com.erp.dao.qms.StandardVersionDao;
+import com.erp.dao.system.ApprovalInstanceDao;
+import com.erp.dao.system.ApprovalTaskDao;
 import com.erp.entity.qms.Characteristic;
 import com.erp.entity.qms.InspectionStandard;
 import com.erp.entity.qms.SamplingPlan;
 import com.erp.entity.qms.StandardApplicability;
 import com.erp.entity.qms.StandardVersion;
+import com.erp.entity.system.ApprovalInstance;
+import com.erp.entity.system.ApprovalTask;
 import com.erp.service.approval.ApprovalEngine;
 import com.erp.service.approval.ApprovalNodeSpec;
 import com.erp.service.qms.InspectionStandardService;
@@ -37,19 +41,25 @@ public class InspectionStandardServiceImpl implements InspectionStandardService 
     private final StandardApplicabilityDao applicabilityDao;
     private final SamplingPlanDao samplingPlanDao;
     private final ApprovalEngine approvalEngine;
+    private final ApprovalInstanceDao approvalInstanceDao;
+    private final ApprovalTaskDao approvalTaskDao;
 
     public InspectionStandardServiceImpl(InspectionStandardDao standardDao,
                                          StandardVersionDao versionDao,
                                          CharacteristicDao characteristicDao,
                                          StandardApplicabilityDao applicabilityDao,
                                          SamplingPlanDao samplingPlanDao,
-                                         ApprovalEngine approvalEngine) {
+                                         ApprovalEngine approvalEngine,
+                                         ApprovalInstanceDao approvalInstanceDao,
+                                         ApprovalTaskDao approvalTaskDao) {
         this.standardDao = standardDao;
         this.versionDao = versionDao;
         this.characteristicDao = characteristicDao;
         this.applicabilityDao = applicabilityDao;
         this.samplingPlanDao = samplingPlanDao;
         this.approvalEngine = approvalEngine;
+        this.approvalInstanceDao = approvalInstanceDao;
+        this.approvalTaskDao = approvalTaskDao;
     }
 
     // ---------- 标准头 ----------
@@ -70,10 +80,69 @@ public class InspectionStandardServiceImpl implements InspectionStandardService 
         long total = standardDao.selectCount(qw);
         List<InspectionStandard> rows = standardDao.selectList(qw
                 .last("LIMIT " + ((current - 1) * size) + "," + size));
+        // 版本摘要批查（一次 IN 查询，消除逐行 detail 的 N+1；spec inspection-standard 列表摘要）
+        Map<String, Map<String, Object>> summaries = versionSummaries(
+                rows.stream().map(InspectionStandard::getId).toList());
+        List<Map<String, Object>> outRows = new ArrayList<>();
+        for (InspectionStandard row : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", row.getId());
+            m.put("standardCode", row.getStandardCode());
+            m.put("name", row.getName());
+            m.put("scopeType", row.getScopeType());
+            m.put("riskLevel", row.getRiskLevel());
+            m.put("status", row.getStatus());
+            m.put("description", row.getDescription());
+            m.put("ownerId", row.getOwnerId());
+            m.put("ownerName", row.getOwnerName());
+            m.put("currentVersion", row.getCurrentVersion());
+            m.put("verNo", row.getVerNo()); // 乐观锁透传：编辑回传须带 verNo，否则二次编辑 422
+            m.put("createDate", row.getCreateDate());
+            m.putAll(summaries.getOrDefault(row.getId(), emptySummary()));
+            outRows.add(m);
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("total", total);
-        out.put("records", rows);
+        out.put("records", outRows);
         return out;
+    }
+
+    /** 按 standard_id 批查版本并聚合摘要：审批中数、最新版本号与状态、是否含草稿、可发布标记 */
+    private Map<String, Map<String, Object>> versionSummaries(List<String> standardIds) {
+        Map<String, Map<String, Object>> out = new HashMap<>();
+        if (standardIds.isEmpty()) {
+            return out;
+        }
+        List<StandardVersion> versions = versionDao.selectList(new LambdaQueryWrapper<StandardVersion>()
+                .in(StandardVersion::getStandardId, standardIds));
+        for (StandardVersion v : versions) {
+            Map<String, Object> m = out.computeIfAbsent(v.getStandardId(), k -> emptySummary());
+            if ("PENDING_APPROVE".equals(v.getStatus())) {
+                m.put("pendingCount", (Integer) m.get("pendingCount") + 1);
+            }
+            if ("DRAFT".equals(v.getStatus())) {
+                m.put("hasDraft", true);
+            }
+            // 最新版本 = 版本号最大者
+            Map<String, Object> latest = (Map<String, Object>) m.get("latestVersion");
+            Integer latestNo = (Integer) latest.get("no");
+            if (latestNo == null || (v.getVersionNo() != null && v.getVersionNo() > latestNo)) {
+                latest.put("no", v.getVersionNo());
+                latest.put("status", v.getStatus());
+            }
+            m.put("hasPendingOrDraft",
+                    (Integer) m.get("pendingCount") > 0 || Boolean.TRUE.equals(m.get("hasDraft")));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> emptySummary() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("pendingCount", 0);
+        m.put("hasDraft", false);
+        m.put("latestVersion", new LinkedHashMap<>());
+        m.put("hasPendingOrDraft", false);
+        return m;
     }
 
     @Override
@@ -308,6 +377,67 @@ public class InspectionStandardServiceImpl implements InspectionStandardService 
     }
 
     @Override
+    public List<Map<String, Object>> pendingVersions() {
+        // 6.1.2 独立待办页：审批中版本平铺（跨标准），附标准头与双签状态
+        List<StandardVersion> pendings = versionDao.selectList(new LambdaQueryWrapper<StandardVersion>()
+                .eq(StandardVersion::getStatus, "PENDING_APPROVE")
+                .orderByDesc(StandardVersion::getCreateDate));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (StandardVersion v : pendings) {
+            InspectionStandard s = standardDao.selectById(v.getStandardId());
+            if (s == null) {
+                continue;
+            }
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("versionId", v.getId());
+            m.put("standardId", s.getId());
+            m.put("standardCode", s.getStandardCode());
+            m.put("standardName", s.getName());
+            m.put("versionNo", v.getVersionNo());
+            m.put("changeReason", v.getChangeReason());
+            m.put("effectiveFrom", v.getEffectiveFrom());
+            m.put("doubleSign", doubleSignStatus(v.getApprovalId()));
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** 双签状态聚合：节点列表 + 各节点签署结果（审批底座只读查询，不新建表） */
+    private Map<String, Object> doubleSignStatus(String approvalId) {
+        Map<String, Object> st = new LinkedHashMap<>();
+        if (!hasText(approvalId)) {
+            st.put("nodes", List.of());
+            st.put("total", 0);
+            st.put("passed", 0);
+            return st;
+        }
+        ApprovalInstance inst = approvalInstanceDao.selectById(approvalId);
+        st.put("apprNo", inst == null ? null : inst.getApprNo());
+        st.put("instanceStatus", inst == null ? null : inst.getStatus());
+        List<ApprovalTask> tasks = approvalTaskDao.selectList(new LambdaQueryWrapper<ApprovalTask>()
+                .eq(ApprovalTask::getApprId, approvalId)
+                .orderByAsc(ApprovalTask::getSeq));
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        int passed = 0;
+        for (ApprovalTask t : tasks) {
+            Map<String, Object> n = new LinkedHashMap<>();
+            n.put("nodeName", t.getNodeName());
+            n.put("roleRequired", t.getRoleRequired());
+            n.put("status", t.getStatus());
+            n.put("signerName", t.getSignerName());
+            n.put("opTime", t.getOpTime());
+            nodes.add(n);
+            if ("PASSED".equals(t.getStatus())) {
+                passed++;
+            }
+        }
+        st.put("nodes", nodes);
+        st.put("total", nodes.size());
+        st.put("passed", passed);
+        return st;
+    }
+
+    @Override
     public List<Map<String, Object>> characteristics(String versionId) {
         List<Characteristic> rows = characteristicDao.selectList(new LambdaQueryWrapper<Characteristic>()
                 .eq(Characteristic::getVersionId, versionId)
@@ -357,7 +487,8 @@ public class InspectionStandardServiceImpl implements InspectionStandardService 
             if (v.getEffectiveFrom() != null && v.getEffectiveFrom().isAfter(today)) continue;
             if (v.getEffectiveTo() != null && v.getEffectiveTo().isBefore(today)) continue;
             InspectionStandard s = standardDao.selectById(v.getStandardId());
-            if (s != null && "RETIRED".equals(s.getStatus())) continue; // 停用不给新任务（BR-4.12-58）
+            // 标准不存在（逻辑删/硬删残留）或已停用 → 不给新任务（BR-4.12-58；孤儿版本防御）
+            if (s == null || "RETIRED".equals(s.getStatus())) continue;
             if (!rowMatches(a, materialCode, categoryCode, supplierId, customerId, processId)) continue;
             hit.add(a);
         }
@@ -430,11 +561,58 @@ public class InspectionStandardServiceImpl implements InspectionStandardService 
             plan.setId(null);
             samplingPlanDao.insert(plan);
         } else {
+            // 引用锁（spec inspection-standard 抽样方案引用锁）：
+            // 被非草稿版本（PENDING_APPROVE/RELEASED）引用的方案禁改，防止审批后规则被改写
+            long locked = versionDao.selectCount(new LambdaQueryWrapper<StandardVersion>()
+                    .eq(StandardVersion::getSamplingPlanId, plan.getId())
+                    .in(StandardVersion::getStatus, Arrays.asList("PENDING_APPROVE", "RELEASED")));
+            if (locked > 0) {
+                throw new ServiceException(422, "该方案已被版本引用，请复制新建");
+            }
+            SamplingPlan old = samplingPlanDao.selectById(plan.getId());
+            if (old == null) {
+                throw new ServiceException(404, "抽样方案不存在");
+            }
+            // 保留原编码不可改（编码创建后不可改基线）
+            plan.setPlanCode(old.getPlanCode());
+            // 乐观锁宽松化：请求未携带 verNo（=0/空，BaseEntity 构造默认）时沿用库中版本，
+            // 避免「未带版本号的二次编辑」被误判冲突；客户端携带非零 verNo 时照常冲突检测
+            if (plan.getVerNo() == null || plan.getVerNo() == 0) {
+                plan.setVerNo(old.getVerNo());
+            }
             if (samplingPlanDao.updateById(plan) == 0) {
                 throw new ServiceException(422, "更新冲突，请刷新重试");
             }
         }
         return plan;
+    }
+
+    @Override
+    @Transactional
+    public SamplingPlan copySamplingPlan(String id, String newPlanCode) {
+        SamplingPlan src = samplingPlanDao.selectById(id);
+        if (src == null) {
+            throw new ServiceException(404, "抽样方案不存在");
+        }
+        if (!hasText(newPlanCode)) {
+            throw new ServiceException(422, "新方案编码必填");
+        }
+        long dup = samplingPlanDao.selectCount(new LambdaQueryWrapper<SamplingPlan>()
+                .eq(SamplingPlan::getPlanCode, newPlanCode));
+        if (dup > 0) {
+            throw new ServiceException(422, "方案编码已存在");
+        }
+        SamplingPlan copy = new SamplingPlan();
+        copy.setPlanCode(newPlanCode);
+        copy.setName(src.getName() + "（副本）");
+        copy.setInspectionLevel(src.getInspectionLevel());
+        copy.setAqlLevel(src.getAqlLevel());
+        copy.setSampleSizeRule(src.getSampleSizeRule());
+        copy.setAcceptRule(src.getAcceptRule());
+        copy.setRejectRule(src.getRejectRule());
+        copy.setStatus("ACTIVE");
+        samplingPlanDao.insert(copy);
+        return copy;
     }
 
     // ---------- 内部 ----------

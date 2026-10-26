@@ -28,6 +28,10 @@ public class Lead extends BaseEntity {
 
     private String leadNo;
     private String sourceChannel;
+    /** 区域（选填，自动分配规则维度，add-lead-auto-assign） */
+    private String region;
+    /** 行业（选填，自动分配规则维度） */
+    private String industry;
     private String companyName;
     private String contactName;
     private String contactPhone;

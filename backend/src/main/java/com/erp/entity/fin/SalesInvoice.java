@@ -22,6 +22,8 @@ public class SalesInvoice extends BaseEntity {
     public static final String ST_CONFIRMED = "CONFIRMED";
     public static final String ST_DISPUTED = "DISPUTED";
     public static final String ST_VOID = "VOID";
+    /** 已全额红冲（C-4.14-12：不可再红冲/作废） */
+    public static final String ST_RED_FULL = "RED_FULL";
 
     private String invoiceNo;
     /** 外部开票系统流水（桩返回） */

@@ -20,6 +20,9 @@ import java.util.Set;
  * 检验标准发布审批回调（BIZ_TYPE = StandardPublish，spec inspection-standard）。
  * 通过 → 版本置 RELEASED、旧版本生效止截为新版本生效前一日、current_version 推进（BR-4.12-57）；
  * 驳回 → 版本回 DRAFT 可修改重提。整个回调与审批在同事务内（ApprovalEngine 回调契约）。
+ * 偏差 D1（rework-standard-management proposal）：规格 §4.12.2.1 要求发布后发
+ * `QMS.INSPECTION_STANDARD.PUBLISHED` 事件，当前无事件基础设施（目标态），
+ * 本期不发事件，消费方（检验批激活等）直接轮询/查询版本状态。
  */
 @Slf4j
 @Component

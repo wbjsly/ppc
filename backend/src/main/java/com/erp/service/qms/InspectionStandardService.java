@@ -40,6 +40,9 @@ public interface InspectionStandardService {
 
     List<Map<String, Object>> characteristics(String versionId);
 
+    /** 审批中版本平铺（6.1.2 独立待办页）：标准编码/版本号/变更原因/生效起/双签状态 */
+    List<Map<String, Object>> pendingVersions();
+
     /**
      * 适用范围命中：优先级 + 生效日期唯一确定已发布版本。
      * 命中返回 {version, applicabilityBasis}；无命中返回空 Map（调用方按 BR-4.12-07 阻断）。
@@ -51,4 +54,7 @@ public interface InspectionStandardService {
     List<SamplingPlan> samplingPlans();
 
     SamplingPlan saveSamplingPlan(SamplingPlan plan);
+
+    /** 复制抽样方案（引用锁出口：深拷贝规则字段，新编码必填且唯一） */
+    SamplingPlan copySamplingPlan(String id, String newPlanCode);
 }

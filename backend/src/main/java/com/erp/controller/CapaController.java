@@ -27,19 +27,26 @@ public class CapaController {
         this.service = service;
     }
 
-    @Operation(summary = "分页（状态/关键字）")
+    @Operation(summary = "分页（状态/关键字；view=actions 未完成措施过滤+进度聚合 / view=verify 验证与回炉 / 缺省全量）")
     @GetMapping
     public R<Page<Map<String, Object>>> page(@RequestParam(defaultValue = "1") long current,
                                              @RequestParam(defaultValue = "10") long size,
                                              @RequestParam(required = false) String keyword,
-                                             @RequestParam(required = false) String status) {
-        return R.ok(service.page(current, size, keyword, status));
+                                             @RequestParam(required = false) String status,
+                                             @RequestParam(required = false) String view) {
+        return R.ok(service.page(current, size, keyword, status, view));
     }
 
     @Operation(summary = "详情（8 步骤 + 措施 + 关联 NCR）")
     @GetMapping("/{id}")
     public R<Map<String, Object>> detail(@PathVariable String id) {
         return R.ok(service.detail(id));
+    }
+
+    @Operation(summary = "按 NCR 精确反查 CAPA（待办直达幂等：已有则打开详情）")
+    @GetMapping("/by-ncr/{ncrId}")
+    public R<Capa> byNcr(@PathVariable String ncrId) {
+        return R.ok(service.findByNcr(ncrId));
     }
 
     @Operation(summary = "措施列表")
@@ -54,9 +61,9 @@ public class CapaController {
         return R.ok(service.createManual(body));
     }
 
-    @Operation(summary = "8D 步骤推进（不可跳序；D2 5W2H / D4 根因证据 / D7 验证结论校验）")
+    @Operation(summary = "8D 步骤推进（不可跳序；D1 成员清单 / D2 5W2H / D4 根因证据 / D7 三件套 / D8 沉淀校验；返回 {capa, warnings?, pendingApproval?}）")
     @PostMapping("/{id}/steps")
-    public R<Capa> advance(@PathVariable String id, @RequestBody Map<String, Object> body) {
+    public R<Map<String, Object>> advance(@PathVariable String id, @RequestBody Map<String, Object> body) {
         return R.ok(service.advanceStep(id, body));
     }
 

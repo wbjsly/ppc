@@ -34,14 +34,18 @@ public class CopqServiceImpl implements CopqService {
 
     private static final List<String> CATEGORIES = List.of(
             "PREVENTION", "APPRAISAL", "INTERNAL_FAILURE", "EXTERNAL_FAILURE");
-    private static final List<String> SOURCES = List.of("NCR", "RETURN", "SCAR", "CAPA", "MANUAL");
+    private static final List<String> SOURCES = List.of("NCR", "RETURN", "SCAR", "SCRAP", "CAPA", "MANUAL");
 
     private final CopqEntryDao entryDao;
     private final ApprovalEngine approvalEngine;
+    /** 系统参数（rework-copq-analysis 3.2：COPQ 目标值，空 = 不参与考核） */
+    private final com.erp.service.SysParamService sysParamService;
 
-    public CopqServiceImpl(CopqEntryDao entryDao, ApprovalEngine approvalEngine) {
+    public CopqServiceImpl(CopqEntryDao entryDao, ApprovalEngine approvalEngine,
+                           com.erp.service.SysParamService sysParamService) {
         this.entryDao = entryDao;
         this.approvalEngine = approvalEngine;
+        this.sysParamService = sysParamService;
     }
 
     // ================= 9.6 归集 =================
@@ -94,6 +98,8 @@ public class CopqServiceImpl implements CopqService {
         e.setBatchNo(str(body.get("batchNo")));
         e.setSupplierId(str(body.get("supplierId")));
         e.setSupplierName(str(body.get("supplierName")));
+        e.setProcessCode(str(body.get("processCode")));
+        e.setCustomerName(str(body.get("customerName")));
         e.setUnattributedFlag(hasText(e.getSupplierId()) ? "0" : "1");
         String occur = str(body.get("occurDate"));
         try {
@@ -283,7 +289,174 @@ public class CopqServiceImpl implements CopqService {
         bySupplier.forEach((k, v) -> bySup.put(k == null ? "未归因" : k, v));
         bySup.put("未归因", unattributed);
         out.put("bySupplier", bySup);
+
+        // ---- 趋势（rework-copq-analysis 3.1）：近 12 月已确认四类序列，缺月补零 ----
+        List<CopqEntry> window = entryDao.selectList(new LambdaQueryWrapper<CopqEntry>()
+                .ge(CopqEntry::getOccurDate, LocalDate.parse(period + "-01").minusMonths(11))
+                .lt(CopqEntry::getOccurDate, LocalDate.parse(period + "-01").plusMonths(1))
+                .eq(CopqEntry::getStatus, "CONFIRMED"));
+        Map<String, Map<String, BigDecimal>> byMonth = new LinkedHashMap<>();
+        for (CopqEntry e : window) {
+            String m = e.getOccurDate().format(DateTimeFormatter.ofPattern("yyyy-MM"));
+            byMonth.computeIfAbsent(m, k -> new LinkedHashMap<>())
+                    .merge(e.getCategory(), nvl(e.getAmount()), BigDecimal::add);
+        }
+        List<Map<String, Object>> trend = new ArrayList<>();
+        BigDecimal prevTotal = null;
+        BigDecimal currTotal = null;
+        java.time.YearMonth ym = java.time.YearMonth.parse(period).minusMonths(11);
+        for (int i = 0; i < 12; i++) {
+            String m = ym.toString();
+            Map<String, BigDecimal> cats = byMonth.getOrDefault(m, new LinkedHashMap<>());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("month", m);
+            BigDecimal total = BigDecimal.ZERO;
+            for (String c : CATEGORIES) {
+                BigDecimal v = cats.getOrDefault(c, BigDecimal.ZERO);
+                row.put(c, v);
+                total = total.add(v);
+            }
+            row.put("total", total);
+            trend.add(row);
+            if (i == 10) {
+                prevTotal = total;
+            } else if (i == 11) {
+                currTotal = total;
+            }
+            ym = ym.plusMonths(1);
+        }
+        out.put("trend", trend);
+
+        // ---- 环比突变（FR-6-3 异常②）：>50% 或上月 0 当月 >0 ----
+        Map<String, Object> spike = new LinkedHashMap<>();
+        if (prevTotal != null && currTotal != null && currTotal.signum() > 0) {
+            if (prevTotal.signum() == 0) {
+                spike.put("spike", true);
+                spike.put("momRatio", null);
+                spike.put("spikeAlert", "当期成本 " + currTotal + " 元，上期为 0（新增成本），触发专项分析");
+            } else {
+                BigDecimal diff = currTotal.subtract(prevTotal)
+                        .multiply(BigDecimal.valueOf(100))
+                        .divide(prevTotal, 2, RoundingMode.HALF_UP);
+                boolean hit = diff.compareTo(new BigDecimal("50")) > 0;
+                spike.put("spike", hit);
+                spike.put("momRatio", diff);
+                if (hit) {
+                    spike.put("spikeAlert", "环比增长 " + diff + "% 超 50%，触发专项分析（FR-4.12-6-3）");
+                }
+            }
+        }
+        out.put("spike", spike);
+
+        // ---- 四维排名（3.2）：产品/供应商/工序/客户，已确认口径，空值归「未归集」 ----
+        Map<String, BigDecimal> byItem = new LinkedHashMap<>();
+        Map<String, BigDecimal> byProcess = new LinkedHashMap<>();
+        Map<String, BigDecimal> byCustomer = new LinkedHashMap<>();
+        for (CopqEntry e : all) {
+            if (!"CONFIRMED".equals(e.getStatus())) {
+                continue;
+            }
+            mergeKey(byItem, e.getItemCode(), e.getAmount());
+            mergeKey(byProcess, e.getProcessCode(), e.getAmount());
+            mergeKey(byCustomer, e.getCustomerName(), e.getAmount());
+        }
+        Map<String, Object> rankings = new LinkedHashMap<>();
+        rankings.put("ITEM", ranked(byItem));
+        Map<String, BigDecimal> supForRank = new LinkedHashMap<>(bySupplier);
+        supForRank.merge("未归因", unattributed, BigDecimal::add);
+        rankings.put("SUPPLIER", ranked(supForRank));
+        rankings.put("PROCESS", ranked(byProcess));
+        rankings.put("CUSTOMER", ranked(byCustomer));
+        out.put("rankings", rankings);
+
+        // ---- 目标达成（3.2）：系统参数空 = 不参与考核 ----
+        Map<String, Object> targets = new LinkedHashMap<>();
+        boolean anyTarget = false;
+        for (String c : CATEGORIES) {
+            BigDecimal t = sysParamService.getAmount("COPQ_TARGET_" + c, null);
+            if (t != null) {
+                anyTarget = true;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("target", t);
+                row.put("actual", confirmed.getOrDefault(c, BigDecimal.ZERO));
+                row.put("gap", row.get("actual") instanceof BigDecimal a
+                        ? a.subtract(t) : BigDecimal.ZERO.subtract(t));
+                row.put("achieved", ((BigDecimal) row.get("actual")).compareTo(t) <= 0);
+                targets.put(c, row);
+            }
+        }
+        BigDecimal ratioTarget = sysParamService.getAmount("COPQ_TARGET_EXTERNAL_RATIO", null);
+        if (ratioTarget != null) {
+            anyTarget = true;
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("target", ratioTarget);
+            row.put("actual", ratio);
+            row.put("gap", ratio.subtract(ratioTarget));
+            row.put("achieved", ratio.compareTo(ratioTarget) <= 0);
+            targets.put("EXTERNAL_RATIO", row);
+        }
+        out.put("targets", anyTarget ? targets : null);
+
+        // ---- 改善建议（3.3）：三条规则式 ----
+        List<String> suggestions = new ArrayList<>();
+        if (alert) {
+            suggestions.add("外部失败成本占比 " + ratio + "% 超 30%：建议启动供应商专项改善（SCAR）并纳入月度质量会议题（BR-4.12-41）");
+        }
+        if (Boolean.TRUE.equals(spike.get("spike"))) {
+            suggestions.add(String.valueOf(spike.get("spikeAlert")));
+        }
+        if (confirmedTotal.signum() > 0) {
+            String topCat = null;
+            BigDecimal topVal = BigDecimal.ZERO;
+            for (String c : CATEGORIES) {
+                BigDecimal v = confirmed.getOrDefault(c, BigDecimal.ZERO);
+                if (v.compareTo(topVal) > 0) {
+                    topVal = v;
+                    topCat = c;
+                }
+            }
+            BigDecimal topShare = topVal.multiply(BigDecimal.valueOf(100))
+                    .divide(confirmedTotal, 2, RoundingMode.HALF_UP);
+            if ("INTERNAL_FAILURE".equals(topCat) && topShare.compareTo(new BigDecimal("50")) > 0) {
+                suggestions.add("内部失败成本占比 " + topShare + "% 最高：建议强化前端防错与来料管控");
+            }
+        }
+        out.put("suggestions", suggestions);
+        out.put("suggestion", alert ? suggestions.get(0) : null); // 兼容旧键
+
+        // ---- 数据缺失项（FR-6-3 异常① 轻量）：当月未确认类别与金额 ----
+        List<Map<String, Object>> missing = new ArrayList<>();
+        draft.forEach((c, v) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("category", c);
+            row.put("amount", v);
+            missing.add(row);
+        });
+        out.put("missing", missing);
         return out;
+    }
+
+    /** 键空归「未归集」的分组累加 */
+    private void mergeKey(Map<String, BigDecimal> map, String key, BigDecimal amount) {
+        String k = hasText(key) ? key : "未归集";
+        map.merge(k, nvl(amount), BigDecimal::add);
+    }
+
+    /** 降序排名（含占比），最多 10 行 */
+    private List<Map<String, Object>> ranked(Map<String, BigDecimal> src) {
+        BigDecimal total = src.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Map<String, Object>> list = new ArrayList<>();
+        src.forEach((k, v) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", k);
+            row.put("amount", v);
+            row.put("ratio", total.signum() > 0
+                    ? v.multiply(BigDecimal.valueOf(100)).divide(total, 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO);
+            list.add(row);
+        });
+        list.sort((a, b) -> ((BigDecimal) b.get("amount")).compareTo((BigDecimal) a.get("amount")));
+        return list.size() > 10 ? new ArrayList<>(list.subList(0, 10)) : list;
     }
 
     @Override
@@ -305,6 +478,8 @@ public class CopqServiceImpl implements CopqService {
         m.put("sourceNo", e.getSourceNo());
         m.put("ncrId", e.getNcrId());
         m.put("supplierName", e.getSupplierName());
+        m.put("processCode", e.getProcessCode());
+        m.put("customerName", e.getCustomerName());
         m.put("unattributedFlag", e.getUnattributedFlag());
         m.put("occurDate", e.getOccurDate());
         m.put("status", e.getStatus());

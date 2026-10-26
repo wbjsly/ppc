@@ -61,7 +61,11 @@ public class PaymentServiceImpl implements PaymentService {
     private final GlVoucherService voucherService;
     private final SupplierStatementService statementService;
     private final ApprovalEngine approvalEngine;
+    private final com.erp.service.fin.ApPlanService apPlanService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
+    private final com.erp.service.fin.CashDocService cashDocService;
+    private final com.erp.dao.fin.CashDocDao cashDocDao;
+    private final com.erp.dao.fin.CashWriteoffDao cashWoDao;
 
     // ================================================================
     // 3.1 申请创建
@@ -242,187 +246,9 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public Map<String, Object> execute(Map<String, Object> payload) {
-        requireRole("执行付款", "ROLE_ADMIN");
-        String reqId = str(payload.get("reqId"));
-        FinPaymentRequest r = require(reqId);
-        if (!FinPaymentRequest.ST_SCHEDULED.equals(r.getStatus())) {
-            throw new ServiceException(422, "仅排期中的申请可执行付款（待付款须先恢复排期）：" + r.getStatus());
-        }
-        BigDecimal amount = dec(payload.get("applyAmount"));
-        if (amount == null || amount.signum() <= 0) {
-            throw new ServiceException(422, "付款金额必须大于 0");
-        }
-        // L1：累计执行 ≤ 审批（申请）金额
-        BigDecimal executed = nvl(payDao.selectExecutedByReq(r.getId()));
-        if (executed.add(amount).compareTo(nvl(r.getApplyAmount())) > 0) {
-            throw new ServiceException(422, "付款金额超过审批金额（累计已付 "
-                    + executed.toPlainString() + " / 审批 " + nvl(r.getApplyAmount()).toPlainString()
-                    + "）（FR-4.6-3-10 L1 硬阻断）");
-        }
-        String payMethod = str(payload.get("payMethod"));
-        if (!PAY_METHODS.contains(payMethod)) {
-            throw new ServiceException(422, "支付方式仅支持 " + String.join("/", PAY_METHODS) + "（BR-4.6-20）");
-        }
-        LocalDate payDate;
-        try {
-            payDate = LocalDate.parse(str(payload.get("payDate")));
-        } catch (RuntimeException e) {
-            throw new ServiceException(422, "付款日期格式须为 yyyy-MM-dd");
-        }
-        FinBankAccount bank = bankDao.selectById(str(payload.get("bankAccountId")));
-        if (bank == null) {
-            throw new ServiceException(422, "银行账户必填");
-        }
-        if (!FinBankAccount.ST_ACTIVE.equals(bank.getStatus())) {
-            throw new ServiceException(422, "银行账户已停用：" + bank.getAccountName());
-        }
-
-        // SCAR 抵扣（design D6）
-        List<String> deductIds = strList(payload.get("deductIds"));
-        BigDecimal deductSum = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        List<ScarDeduction> deductions = new ArrayList<>();
-        for (String did : deductIds) {
-            ScarDeduction d = deductionDao.selectById(did);
-            if (d == null) {
-                throw new ServiceException(422, "扣款单不存在：" + did);
-            }
-            if (!"TO_DEDUCT".equals(d.getStatus())) {
-                throw new ServiceException(422, "扣款单状态不可抵扣（须待抵扣，争议/未确认不可）：" + d.getDeductNo()
-                        + " " + d.getStatus());
-            }
-            if (!r.getSupplierId().equals(d.getSupplierId())) {
-                throw new ServiceException(422, "扣款单供应商与付款申请不一致：" + d.getDeductNo());
-            }
-            deductSum = deductSum.add(nvl(d.getAmount()));
-            deductions.add(d);
-        }
-        if (deductSum.compareTo(BigDecimal.ZERO) > 0 && deductSum.compareTo(amount) > 0) {
-            throw new ServiceException(422, "抵扣合计 " + deductSum.toPlainString()
-                    + " 超过付款金额 " + amount.toPlainString());
-        }
-        BigDecimal actual = amount.subtract(deductSum).setScale(2, RoundingMode.HALF_UP);
-
-        // FIFO 核销（design D5：所选发票按 invoiceDate 升序，PAID_AMOUNT 条件增量）
-        List<FinApInvoice> invoices = loadInvoices(r);
-        BigDecimal remaining = amount;
-        List<FinPaymentWriteoff> writeoffs = new ArrayList<>();
-        for (FinApInvoice inv : invoices) {
-            if (remaining.signum() <= 0) {
-                break;
-            }
-            BigDecimal open = nvl(inv.getTotalAmount()).subtract(nvl(inv.getPaidAmount()));
-            if (open.signum() <= 0) {
-                continue;
-            }
-            BigDecimal take = remaining.min(open);
-            int rows = invoiceDao.update(null, new LambdaUpdateWrapper<FinApInvoice>()
-                    .eq(FinApInvoice::getId, inv.getId())
-                    .eq(FinApInvoice::getStatus, FinApInvoice.ST_POSTED)
-                    .apply("PAID_AMOUNT + {0} <= TOTAL_AMOUNT", take)
-                    .setSql("PAID_AMOUNT = PAID_AMOUNT + " + take.toPlainString()));
-            if (rows == 0) {
-                throw new ServiceException(422, "发票 " + inv.getInvoiceNo() + " 核销并发冲突或超未清额");
-            }
-            FinPaymentWriteoff w = new FinPaymentWriteoff();
-            w.setKind(FinPaymentWriteoff.KIND_PAYMENT);
-            w.setInvoiceId(inv.getId());
-            w.setInvoiceNo(inv.getInvoiceNo());
-            w.setSupplierId(inv.getSupplierId());
-            w.setPoNo(inv.getPoNo());
-            w.setAmount(take);
-            w.setWriteoffDate(payDate);
-            writeoffs.add(w);
-            remaining = remaining.subtract(take);
-        }
-        if (remaining.signum() > 0) {
-            throw new ServiceException(422, "所选发票未清额不足（剩余待核销 " + remaining.toPlainString() + "）");
-        }
-
-        // 余额条件扣减（BR-4.6-21）
-        if (actual.signum() > 0) {
-            if (bankDao.deductBalance(bank.getId(), actual) == 0) {
-                throw new ServiceException(422, "银行账户余额不足：" + bank.getAccountName()
-                        + " 当前余额 " + nvl(bank.getBalance()).toPlainString() + "，需实付 " + actual.toPlainString());
-            }
-        }
-
-        // 付款凭证（FR-4.6-3-11：借 应付账款 / 贷 银行存款；抵扣部分贷 1406，design D6）
-        List<GlVoucherService.FinVoucherLineSpec> lines = new ArrayList<>();
-        lines.add(GlVoucherService.FinVoucherLineSpec.of(AccrualServiceImpl.ACCT_AP, "DR", amount,
-                "应付账款（付款 " + r.getReqNo() + "）"));
-        if (actual.signum() > 0) {
-            lines.add(GlVoucherService.FinVoucherLineSpec.of("1002", "CR", actual,
-                    "银行存款-" + bank.getAccountName()));
-        }
-        if (deductSum.signum() > 0) {
-            lines.add(GlVoucherService.FinVoucherLineSpec.of("1406", "CR", deductSum,
-                    "SCAR 扣款抵扣冲减采购成本"));
-        }
-        FinVoucher v = voucherService.create(FinVoucher.TYPE_PAY, payDate,
-                "付款单：" + r.getReqNo() + (deductSum.signum() > 0 ? "（含抵扣 " + deductSum.toPlainString() + "）" : ""),
-                "PAYMENT", r.getReqNo(), r.getSupplierId(), lines);
-
-        // 付款单 + 核销记录
-        FinPayment p = new FinPayment();
-        p.setPayNo(nextNo("PY"));
-        p.setPayType(FinPayment.TYPE_PAYMENT);
-        p.setReqId(r.getId());
-        p.setReqNo(r.getReqNo());
-        p.setSupplierId(r.getSupplierId());
-        p.setSupplierName(r.getSupplierName());
-        p.setApplyAmount(amount);
-        p.setDeductAmount(deductSum);
-        p.setActualAmount(actual);
-        p.setPayMethod(payMethod);
-        p.setBankAccountId(bank.getId());
-        p.setAccountName(bank.getAccountName());
-        p.setAccountNo(bank.getAccountNo());
-        p.setPayDate(payDate);
-        p.setStatus(FinPayment.ST_PAID);
-        p.setDeductIds(toJson(deductIds));
-        p.setVoucherId(v.getId());
-        p.setCreateBy(SecurityUtils.getCurrentUserId());
-        payDao.insert(p);
-        for (FinPaymentWriteoff w : writeoffs) {
-            w.setPaymentId(p.getId());
-            w.setCreateBy(SecurityUtils.getCurrentUserId());
-            woDao.insert(w);
-        }
-
-        // 抵扣单落账（D3）
-        for (ScarDeduction d : deductions) {
-            d.setStatus("DEDUCTED");
-            d.setPaymentId(p.getId());
-            d.setDeductDate(LocalDateTime.now());
-            d.setDeductAmount(nvl(d.getAmount()));
-            if (deductionDao.updateById(d) == 0) {
-                throw new ServiceException(409, "扣款单状态更新冲突：" + d.getDeductNo());
-            }
-        }
-
-        // 申请累计执行 → PAID（累计达审批金额）
-        BigDecimal newExecuted = executed.add(amount);
-        r.setExecutedAmount(newExecuted);
-        if (newExecuted.compareTo(nvl(r.getApplyAmount())) >= 0) {
-            r.setStatus(FinPaymentRequest.ST_PAID);
-        }
-        r.setUpdateBy(SecurityUtils.getCurrentUserId());
-        if (reqDao.updateById(r) == 0) {
-            throw new ServiceException(409, "付款申请状态更新冲突");
-        }
-
-        log.info("payment {} executed: req={} amount={} deduct={} actual={} voucher={} 核销 {} 张",
-                p.getPayNo(), r.getReqNo(), amount, deductSum, actual, v.getVoucherNo(), writeoffs.size());
-        // 银行对账触发留桩（FR-4.6-3-13，8.7 未建）
-        log.info("[TODO-NOTIFY] payment {} 银行对账触发（8.7 财务域桩）", p.getPayNo());
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("paymentId", p.getId());
-        out.put("payNo", p.getPayNo());
-        out.put("voucherNo", v.getVoucherNo());
-        out.put("actualAmount", actual);
-        out.put("writeoffCount", writeoffs.size());
-        out.put("requestStatus", r.getStatus());
-        return out;
+        // add-payment-collection：执行内核迁移统一收付款中心（OUT 方向，design D1）
+        // 返回形态保持不变（paymentId/payNo/voucherNo/actualAmount/writeoffCount/requestStatus）
+        return cashDocService.executeOut(payload);
     }
 
     // ================================================================
@@ -471,12 +297,14 @@ public class PaymentServiceImpl implements PaymentService {
         }
         m.put("invoices", invoices);
         List<Map<String, Object>> pays = new ArrayList<>();
-        for (FinPayment p : payDao.selectList(new LambdaQueryWrapper<FinPayment>()
-                .eq(FinPayment::getReqId, r.getId())
-                .orderByAsc(FinPayment::getCreateDate))) {
+        for (com.erp.entity.fin.CashDoc p : cashDocDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.fin.CashDoc>()
+                .eq(com.erp.entity.fin.CashDoc::getReqId, r.getId())
+                .eq(com.erp.entity.fin.CashDoc::getDirection, com.erp.entity.fin.CashDoc.DIR_OUT)
+                .orderByAsc(com.erp.entity.fin.CashDoc::getCreateDate))) {
             Map<String, Object> pm = new LinkedHashMap<>();
-            pm.put("payNo", p.getPayNo());
-            pm.put("applyAmount", p.getApplyAmount());
+            pm.put("payNo", p.getDocNo());
+            pm.put("applyAmount", p.getAmount());
             pm.put("deductAmount", p.getDeductAmount());
             pm.put("actualAmount", p.getActualAmount());
             pm.put("payMethod", p.getPayMethod());
@@ -541,24 +369,29 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public Page<Map<String, Object>> writeoffPage(long current, long size, String kind,
                                                   String supplierId, String invoiceNo) {
-        LambdaQueryWrapper<FinPaymentWriteoff> qw = new LambdaQueryWrapper<FinPaymentWriteoff>()
-                .eq(hasText(kind), FinPaymentWriteoff::getKind, kind)
-                .eq(hasText(supplierId), FinPaymentWriteoff::getSupplierId, supplierId)
-                .like(hasText(invoiceNo), FinPaymentWriteoff::getInvoiceNo, invoiceNo)
-                .orderByDesc(FinPaymentWriteoff::getCreateDate);
-        Page<FinPaymentWriteoff> raw = woDao.selectPage(new Page<>(current, size), qw);
+        // add-payment-collection：统一核销表（TARGET_TYPE=AP），kind 映射 SETTLE/AUTO
+        LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff> qw =
+                new LambdaQueryWrapper<com.erp.entity.fin.CashWriteoff>()
+                .eq(com.erp.entity.fin.CashWriteoff::getTargetType,
+                        com.erp.entity.fin.CashWriteoff.TARGET_AP)
+                .eq("SETTLE".equals(kind), com.erp.entity.fin.CashWriteoff::getWriteoffMode,
+                        com.erp.entity.fin.CashWriteoff.MODE_SETTLE)
+                .eq(hasText(supplierId), com.erp.entity.fin.CashWriteoff::getCustomerId, supplierId)
+                .like(hasText(invoiceNo), com.erp.entity.fin.CashWriteoff::getTargetNo, invoiceNo)
+                .orderByDesc(com.erp.entity.fin.CashWriteoff::getCreateDate);
+        Page<com.erp.entity.fin.CashWriteoff> raw = cashWoDao.selectPage(new Page<>(current, size), qw);
         Page<Map<String, Object>> out = new Page<>(raw.getCurrent(), raw.getSize(), raw.getTotal());
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (FinPaymentWriteoff w : raw.getRecords()) {
+        for (com.erp.entity.fin.CashWriteoff w : raw.getRecords()) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", w.getId());
-            m.put("kind", w.getKind());
-            m.put("paymentId", w.getPaymentId());
-            m.put("ppId", w.getPpId());
-            m.put("invoiceId", w.getInvoiceId());
-            m.put("invoiceNo", w.getInvoiceNo());
-            m.put("supplierId", w.getSupplierId());
-            m.put("poNo", w.getPoNo());
+            m.put("kind", "SETTLE".equals(w.getWriteoffMode()) ? "SETTLE" : "PAYMENT");
+            m.put("paymentId", w.getDocId());
+            m.put("ppId", "SETTLE".equals(w.getWriteoffMode()) ? w.getDocId() : null);
+            m.put("invoiceId", w.getTargetId());
+            m.put("invoiceNo", w.getTargetNo());
+            m.put("supplierId", null);
+            m.put("poNo", null);
             m.put("amount", w.getAmount());
             m.put("writeoffDate", w.getWriteoffDate());
             m.put("createDate", w.getCreateDate());
@@ -619,7 +452,8 @@ public class PaymentServiceImpl implements PaymentService {
         if ("PA".equals(prefix)) {
             return reqDao.selectMaxSeq(p);
         }
-        return payDao.selectMaxSeq(p);
+        // add-payment-collection：PY 单号在统一收付款中心排号，此处仅兼容旧调用
+        return null;
     }
 
     private void requireRole(String action, String... allowed) {

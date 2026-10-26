@@ -2,10 +2,12 @@
 .DS_Store
 
 # Java / Maven
-backend/target/
+# 不带斜杠：同时匹配目录与指向 ~/.cache 的 target 软链（iCloud 同步避让）
+backend/target
 *.class
 *.jar
 *.lst
+AGENTS.md
 
 # Node / 前端
 node_modules/
@@ -14,12 +16,16 @@ npm-debug.log*
 yarn-error.log*
 
 # 本地工具配置
-.qoder/
-.workbuddy/
+.archify/
 .agents/
 .claude/
 .codebuddy/
 .codegraph/
+.dsh/
+.mimocode/
+.qoder/
+.workbuddy/
+.omd/
 
 # 需求与文档
 docs/
@@ -37,3 +43,10 @@ openspec/
 
 # Vite 运行时时间戳产物
 frontend/vite.config.js.timestamp-*
+
+# 运行时上传文件（用户附件，非代码）
+uploads/
+backend/uploads/
+
+# 前端构建备份目录（safe-delete shim 超时的 mv dist 产物）
+frontend/dist.old-*/

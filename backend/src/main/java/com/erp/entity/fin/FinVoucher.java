@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * 会计凭证头（最小总账骨架，spec gl-voucher）。
@@ -44,8 +45,17 @@ public class FinVoucher extends BaseEntity {
     private String sourceType;
     /** 来源单据号（业财锚点，业务单号 → 凭证反查） */
     private String sourceDocNo;
-    /** DRAFT / POSTED */
+    /** DRAFT / POSTED（手工凭证三态扩展 DRAFT/AUDITED/POSTED，142 审核痕迹列） */
     private String status;
+
+    /** 审核人（手工凭证 C-4.6-07 留痕，142 加列） */
+    private String auditBy;
+
+    /** 审核时间 */
+    private LocalDateTime auditDate;
+
+    /** 驳回/审核意见 */
+    private String auditOpinion;
     /** 红字冲销关联的原凭证 ID */
     private String reversesId;
     private BigDecimal totalDr;

@@ -21,6 +21,15 @@ public class FinVoucherLine extends BaseEntity {
     private String direction;
     private BigDecimal amount;
     private String summary;
-    /** 辅助核算-供应商 */
+    /** 辅助核算-供应商（历史列） */
     private String supplierId;
+
+    // ---- add-gl-management：行级辅助核算七列（142 加列，存量零影响）----
+    private String costCenter;
+    private String profitCenter;
+    private String auxCustomer;
+    private String auxSupplier;
+    private String auxProject;
+    private String auxEmployee;
+    private String auxDept;
 }

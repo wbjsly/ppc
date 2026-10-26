@@ -51,13 +51,15 @@ public class FreezeCallback implements ApprovalCallback {
     private final PurchaseOrderDao poDao;
     private final com.erp.service.inv.FreezePauseService freezePauseService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
+    private final com.erp.service.inv.FreezeImpactBuilder impactBuilder;
 
     public FreezeCallback(InvFreezeDao freezeDao, InvStockDao stockDao,
                           ReservationDao reservationDao, ReservationService reservationService,
                           NoticeService noticeService,
                           PurchaseOrderLineDao poLineDao, PurchaseOrderDao poDao,
                           com.erp.service.inv.FreezePauseService freezePauseService,
-                          com.fasterxml.jackson.databind.ObjectMapper jsonMapper) {
+                          com.fasterxml.jackson.databind.ObjectMapper jsonMapper,
+                          com.erp.service.inv.FreezeImpactBuilder impactBuilder) {
         this.freezeDao = freezeDao;
         this.stockDao = stockDao;
         this.reservationDao = reservationDao;
@@ -67,6 +69,7 @@ public class FreezeCallback implements ApprovalCallback {
         this.poDao = poDao;
         this.freezePauseService = freezePauseService;
         this.jsonMapper = jsonMapper;
+        this.impactBuilder = impactBuilder;
     }
 
     @Override
@@ -155,7 +158,7 @@ public class FreezeCallback implements ApprovalCallback {
         // 行级明细（解冻原路回补依据）
         f.setDetailJson(toJson(detail));
         // 影响面快照（FR-4.4-5-4/5.5，4.9.4 展开）：SO 预留反查 + PO 未清行 + 工单占位
-        f.setImpactJson(buildImpactJson(f));
+        f.setImpactJson(impactBuilder.build(f));   // 抽取复用（rework-qualified-release D2）
         reservationService.releaseByBatch(f.getWarehouseCode(), f.getItemCode(),
                 InvFreeze.SCOPE_ALL.equals(f.getScope())
                         ? null : (f.getBatchNo() == null ? "" : f.getBatchNo()),
@@ -299,63 +302,6 @@ public class FreezeCallback implements ApprovalCallback {
                 .setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + strip(take)));
         if (rows == 0) {
             throw new ServiceException(409, "库存解冻并发冲突，请重试：" + s.getItemCode());
-        }
-    }
-
-    /**
-     * 影响面快照（FR-4.4-5-4/5.5，spec freeze-management ADDED 需求 ②）：
-     * SO=冻结维度 ACTIVE 预留反查（精确到批次，冻结执行前取样——预留随后被释放，
-     * 快照保留受影响瞬间）；PO=该物料未清 PO 行（物料级）；工单数据源未落地
-     * （proposal 偏差 D1：mos 恒空 + moDataSource=false）。序列化失败 422 阻断冻结。
-     */
-    private String buildImpactJson(InvFreeze f) {
-        // SO：预留反查（与 affectedSoNos 同口径，扩展为含行号/数量的明细）
-        List<Map<String, Object>> sos = new ArrayList<>();
-        for (Reservation r : reservationDao.selectList(reservationQw(f))) {
-            Map<String, Object> so = new LinkedHashMap<>();
-            so.put("soNo", r.getSoNo());
-            so.put("lineNo", r.getLineNo());
-            so.put("qty", r.getQty());
-            so.put("precision", "BATCH");
-            sos.add(so);
-        }
-        // PO：该物料未清行（lineStatus=OPEN 且头未关闭），物料级
-        List<Map<String, Object>> pos = new ArrayList<>();
-        List<PurchaseOrderLine> openLines = poLineDao.selectList(
-                new LambdaQueryWrapper<PurchaseOrderLine>()
-                        .eq(PurchaseOrderLine::getItemCode, f.getItemCode())
-                        .eq(PurchaseOrderLine::getLineStatus, "OPEN"));
-        if (!openLines.isEmpty()) {
-            Map<String, PurchaseOrder> heads = new LinkedHashMap<>();
-            for (PurchaseOrder po : poDao.selectBatchIds(
-                    openLines.stream().map(PurchaseOrderLine::getPoId).distinct().toList())) {
-                heads.put(po.getId(), po);
-            }
-            for (PurchaseOrderLine l : openLines) {
-                PurchaseOrder head = heads.get(l.getPoId());
-                // 未清 PO = 已批准下达（APPROVED），草稿/审批中/已关闭不算影响面
-                if (head == null || !"APPROVED".equals(head.getStatus())) {
-                    continue;
-                }
-                Map<String, Object> po = new LinkedHashMap<>();
-                po.put("poNo", head.getPoNo());
-                po.put("lineNo", l.getLineNo());
-                po.put("qty", l.getQty() == null ? null
-                        : l.getQty().subtract(l.getReceivedQty() == null
-                                ? java.math.BigDecimal.ZERO : l.getReceivedQty()));
-                po.put("precision", "ITEM");
-                pos.add(po);
-            }
-        }
-        Map<String, Object> snap = new LinkedHashMap<>();
-        snap.put("sos", sos);
-        snap.put("pos", pos);
-        snap.put("mos", List.of());
-        snap.put("moDataSource", false);   // proposal 偏差 D1：生产工单域未落地
-        try {
-            return jsonMapper.writeValueAsString(snap);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new ServiceException(422, "影响面快照序列化失败：" + e.getMessage());
         }
     }
 

@@ -23,4 +23,7 @@ public class FinAccount extends BaseEntity {
     private String category;
     /** ACTIVE / DISABLED */
     private String status;
+
+    /** 辅助核算要求（CUST,SUPP,PROJ,EMP,DEPT,PROFIT 逗号分隔；NULL=无辅助要求，142 加列） */
+    private String auxSet;
 }

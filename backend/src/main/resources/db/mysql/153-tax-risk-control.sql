@@ -1,0 +1,189 @@
+-- ====================================================================
+-- 153-tax-risk-control.sql — 税务风控（M9-6）add-tax-risk-control
+-- 1. 税收优惠备案台账（tax-preference-register，BR-4.14-05/06 / S-4.14-11）
+-- 2. 税控设备/数字证书台账（tax-risk-monitoring，C-4.14-14）
+-- 3. 离线开票留桩（48h 补传告警）
+-- 4. 关联方 + 定价文档 + 年度自评（transfer-pricing，S-4.14-08）
+-- 5. SysParam 阈值（证书预警/离线时限/税负率双阈值/到期预警共用）
+-- 6. M9-6 三行 PERM（对齐 M9-1~5 三角色）
+-- 幂等：可重复执行
+-- ====================================================================
+
+-- ---------- 1. 税收优惠备案台账 ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tax_preference (
+    ID               VARCHAR(32)  NOT NULL,
+    PREF_NO          VARCHAR(32)  NOT NULL COMMENT '备案号 TPF+yyyyMM+流水',
+    POLICY_NAME      VARCHAR(200) NOT NULL COMMENT '政策名称',
+    POLICY_DOC_NO    VARCHAR(100) NOT NULL COMMENT '政策依据文号',
+    PREF_TYPE        VARCHAR(16)  NOT NULL COMMENT 'VAT_REFUND 即征即退 / RND_SUPER 加计扣除 / OTHER',
+    SUBJECT          VARCHAR(200) NOT NULL COMMENT '适用主体',
+    PREF_START       DATE         NOT NULL COMMENT '优惠期间起',
+    PREF_END         DATE         NOT NULL COMMENT '优惠期间止',
+    PREF_SCOPE_JSON  TEXT         NULL COMMENT '备案范围口径（收入上限/产品清单/科目口径 JSON）',
+    DOC_LIST         VARCHAR(500) NULL COMMENT '备案资料清单',
+    OBLIGATION       VARCHAR(500) NULL COMMENT '义务事项',
+    STATUS           VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/FROZEN/EXPIRED/TERMINATED',
+    FROZEN_REASON    VARCHAR(500) NULL COMMENT '冻结原因（手工标记或系统过期）',
+    REVOKE_DATE      DATE         NULL COMMENT '政策废止日期',
+    TERMINATE_REASON VARCHAR(500) NULL COMMENT '终止原因',
+    RISK_ASSESS_NOTE VARCHAR(500) NULL COMMENT '补税风险评估说明（废止时必填）',
+    RENEW_HISTORY_JSON TEXT     NULL COMMENT '续期留痕 JSON（原期间/新期间/续期依据/操作人/时间）',
+    CREATE_BY        VARCHAR(64)  NOT NULL,
+    CREATE_DATE      DATETIME     NOT NULL,
+    UPDATE_BY        VARCHAR(64)  NULL,
+    UPDATE_DATE      DATETIME     NULL,
+    DEL_FLAG         CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO           INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_TPF_NO (PREF_NO),
+    KEY IDX_FIN_TPF_TYPE (PREF_TYPE, SUBJECT, STATUS),
+    KEY IDX_FIN_TPF_END (PREF_END)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='税收优惠备案台账（M9-6-2，spec tax-preference-register）';
+
+
+-- 兼容已建表环境：补 RENEW_HISTORY_JSON 列（幂等）
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'erp_fin_tax_preference'
+               AND COLUMN_NAME = 'RENEW_HISTORY_JSON');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE erp_fin_tax_preference ADD COLUMN RENEW_HISTORY_JSON TEXT NULL COMMENT ''续期留痕 JSON'' AFTER RISK_ASSESS_NOTE',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ---------- 2. 税控设备/数字证书台账 ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tax_cert (
+    ID          VARCHAR(32)  NOT NULL,
+    CERT_TYPE   VARCHAR(16)  NOT NULL COMMENT 'TAX_DISK 税控盘 / DIGITAL_CERT 数字证书',
+    CERT_NAME   VARCHAR(200) NOT NULL COMMENT '名称',
+    CERT_NO     VARCHAR(100) NOT NULL COMMENT '证书/设备编号',
+    ISSUE_DATE  DATE         NOT NULL COMMENT '发行日期',
+    EXPIRE_DATE DATE         NOT NULL COMMENT '到期日',
+    STATUS      VARCHAR(16)  NOT NULL DEFAULT 'VALID' COMMENT 'VALID/EXPIRED/DISABLED',
+    CHANNEL     VARCHAR(64)  NULL COMMENT '绑定开票通道',
+    CREATE_BY   VARCHAR(64)  NOT NULL,
+    CREATE_DATE DATETIME     NOT NULL,
+    UPDATE_BY   VARCHAR(64)  NULL,
+    UPDATE_DATE DATETIME     NULL,
+    DEL_FLAG    CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO      INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_TCERT_NO (CERT_NO),
+    KEY IDX_FIN_TCERT_EXPIRE (EXPIRE_DATE, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='税控设备/数字证书台账（C-4.14-14）';
+
+-- ---------- 3. 离线开票留桩（48h 补传告警） ----------
+CREATE TABLE IF NOT EXISTS erp_fin_offline_invoice (
+    ID               VARCHAR(32)  NOT NULL,
+    OFFLINE_NO       VARCHAR(32)  NOT NULL COMMENT '离线开票单号 OFL+yyyyMM+流水',
+    INVOICE_APPLY_NO VARCHAR(32)  NULL COMMENT '关联网票申请单号（留桩）',
+    OPEN_TIME        DATETIME     NOT NULL COMMENT '离线开票时间',
+    REASON           VARCHAR(500) NOT NULL COMMENT '离线原因',
+    UPLOAD_TIME      DATETIME     NULL COMMENT '补传时间',
+    ALERT_FLAG       CHAR(1)      NOT NULL DEFAULT '0' COMMENT 'L4 告警标记 1=告警中',
+    CREATE_BY        VARCHAR(64)  NOT NULL,
+    CREATE_DATE      DATETIME     NOT NULL,
+    UPDATE_BY        VARCHAR(64)  NULL,
+    UPDATE_DATE      DATETIME     NULL,
+    DEL_FLAG         CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO           INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_OFL_NO (OFFLINE_NO),
+    KEY IDX_FIN_OFL_ALERT (ALERT_FLAG, UPLOAD_TIME)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='离线开票留桩（48h 未补传 L4 告警）';
+
+-- ---------- 4a. 关联方 ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tp_party (
+    ID          VARCHAR(32)  NOT NULL,
+    TP_NO       VARCHAR(32)  NOT NULL COMMENT '关联方编号 TPP+流水',
+    NAME        VARCHAR(200) NOT NULL COMMENT '关联方名称',
+    TAX_NO      VARCHAR(50)  NOT NULL COMMENT '纳税人识别号/统一社会信用代码',
+    REL_TYPE    VARCHAR(20)  NOT NULL COMMENT 'PARENT 母子 / COMMON_CONTROL 同受控制 / OTHER',
+    OVERSEAS_FLAG CHAR(1)    NOT NULL DEFAULT '0' COMMENT '是否境外 1=境外',
+    NOTE        VARCHAR(500) NULL COMMENT '关联关系说明',
+    CREATE_BY   VARCHAR(64)  NOT NULL,
+    CREATE_DATE DATETIME     NOT NULL,
+    UPDATE_BY   VARCHAR(64)  NULL,
+    UPDATE_DATE DATETIME     NULL,
+    DEL_FLAG    CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO      INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_TPP_NO (TP_NO),
+    UNIQUE KEY UK_FIN_TPP_NAME_TAX (NAME, TAX_NO)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='关联方登记（M9-6-3，spec transfer-pricing）';
+
+-- ---------- 4b. 定价文档台账 ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tp_document (
+    ID            VARCHAR(32)  NOT NULL,
+    DOC_NO        VARCHAR(32)  NOT NULL COMMENT '文档编号 TPD+yyyy+流水',
+    PARTY_ID      VARCHAR(32)  NOT NULL COMMENT '关联方 ID',
+    PARTY_NAME    VARCHAR(200) NOT NULL COMMENT '关联方名称（冗余便于检索）',
+    DOC_TYPE      VARCHAR(16)  NOT NULL COMMENT 'LOCAL 本地文档 / MASTER 主体文档 / COUNTRY 国别报告',
+    COVER_YEAR    VARCHAR(4)   NOT NULL COMMENT '覆盖年度 yyyy',
+    PRICING_METHOD VARCHAR(16) NOT NULL COMMENT 'CUP/CPM/RPM/TNMM/OTHER（独立交易原则方法族）',
+    STORAGE_PATH  VARCHAR(500) NULL COMMENT '文件存放位置',
+    VALID_UNTIL   DATE         NOT NULL COMMENT '备查有效期',
+    STATUS        VARCHAR(16)  NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/READY/EXPIRED',
+    CREATE_BY     VARCHAR(64)  NOT NULL,
+    CREATE_DATE   DATETIME     NOT NULL,
+    UPDATE_BY     VARCHAR(64)  NULL,
+    UPDATE_DATE   DATETIME     NULL,
+    DEL_FLAG      CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO        INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_TPD_NO (DOC_NO),
+    KEY IDX_FIN_TPD_PARTY_YEAR (PARTY_ID, COVER_YEAR),
+    KEY IDX_FIN_TPD_VALID (VALID_UNTIL, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='关联交易定价文档台账（S-4.14-08）';
+
+-- ---------- 4c. 特别纳税调整风险自评 ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tp_assessment (
+    ID             VARCHAR(32)  NOT NULL,
+    ASSESS_NO      VARCHAR(32)  NOT NULL COMMENT '自评单号 TPA+年度+流水',
+    ASSESS_YEAR    VARCHAR(4)   NOT NULL COMMENT '自评年度 yyyy（同年度一条）',
+    RISK_ITEMS_JSON TEXT        NULL COMMENT '勾选风险项 JSON',
+    CONCLUSION     VARCHAR(20)  NOT NULL COMMENT 'CLEAN 未发现 / IMPROVE 有待改进',
+    ASSESS_BY      VARCHAR(64)  NOT NULL COMMENT '自评人',
+    ASSESS_AT      DATETIME     NOT NULL COMMENT '自评时间',
+    CREATE_BY      VARCHAR(64)  NOT NULL,
+    CREATE_DATE    DATETIME     NOT NULL,
+    UPDATE_BY      VARCHAR(64)  NULL,
+    UPDATE_DATE    DATETIME     NULL,
+    DEL_FLAG       CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO         INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_FIN_TPA_NO (ASSESS_NO),
+    UNIQUE KEY UK_FIN_TPA_YEAR (ASSESS_YEAR)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='特别纳税调整风险自评（留痕不阻断）';
+
+-- ---------- 5. SysParam 阈值 ----------
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-TAX-CERT-WARN', 'TAX_CERT_WARNING_DAYS', '30', 'NUMBER', 'TAX',
+       '税控设备/数字证书到期预警天数（C-4.14-14，≤N 天预警）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'TAX_CERT_WARNING_DAYS');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-OFL-UPLOAD-HOURS', 'OFFLINE_INVOICE_UPLOAD_HOURS', '48', 'NUMBER', 'TAX',
+       '离线开票补传时限（小时，超时 L4 告警）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'OFFLINE_INVOICE_UPLOAD_HOURS');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-TAX-BURDEN-FLOOR', 'TAX_BURDEN_FLOOR', '0.01', 'NUMBER', 'TAX',
+       '增值税税负率下限（低于 L4 预警）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'TAX_BURDEN_FLOOR');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-TAX-BURDEN-MOM', 'TAX_BURDEN_MOM_LIMIT', '0.30', 'NUMBER', 'TAX',
+       '增值税税负率环比波动上限（超限 L4 预警）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'TAX_BURDEN_MOM_LIMIT');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-PREF-EXPIRE-WARN', 'PREF_EXPIRE_WARNING_DAYS', '90', 'NUMBER', 'TAX',
+       '到期预警天数（优惠备案续期 + 定价文档备查共用，BR-4.14-06）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'PREF_EXPIRE_WARNING_DAYS');
+
+-- ---------- 6. M9-6 税务风控菜单 PERM（对齐 M9-1~5 三角色） ----------
+UPDATE erp_admin_menu SET PERM='ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'
+ WHERE ID IN ('M9-6','M9-6-1','M9-6-2','M9-6-3') AND (PERM IS NULL OR PERM='');

@@ -329,8 +329,11 @@ public class ReturnServiceImpl implements ReturnService {
             throw new ServiceException(422, "责任方必填（我方质量/客户原因/物流破损）");
         }
         String handle = str(payload.get("handle"));
-        if (!SdReturn.HANDLE_REFUND.equals(handle) && !SdReturn.HANDLE_EXCHANGE.equals(handle)) {
-            throw new ServiceException(422, "判定处理方式 REFUND/EXCHANGE 必选");
+        // 可返修出口（change add-rework-management，sales-return delta FR-4.5-7-1 退货路径）：
+        // 判定=REWORKABLE 后可在 5.8.1 开立返工工单（同一判定单至多一张）
+        if (!SdReturn.HANDLE_REFUND.equals(handle) && !SdReturn.HANDLE_EXCHANGE.equals(handle)
+                && !SdReturn.HANDLE_REWORKABLE.equals(handle)) {
+            throw new ServiceException(422, "判定处理方式 REFUND/EXCHANGE/REWORKABLE 必选");
         }
         String basis = str(payload.get("basis"));
         if (isBlank(basis) || basis.trim().length() < 2) {

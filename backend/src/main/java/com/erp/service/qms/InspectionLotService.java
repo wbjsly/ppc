@@ -67,9 +67,32 @@ public interface InspectionLotService {
      */
     java.util.Map<String, Object> confirmRelease(String lotId);
 
-    /** 待检看板（2.4.2 数据源 = 检验批，D1 起算点 = 登记提交时间） */
+    /** 待检看板（2.4.2 数据源 = 检验批，D1 起算点 = 登记提交时间）。
+     *  samplingDone：null = 不过滤（现状，6.2 三叶）；false = 仅未抽样批（6.3.1 抽样模式）。
+     *  releaseMode：null = 不过滤（现状）；true = 仅待放行批（6.4.1 放行模式，RESULT=PASS 且 STATUS=INPUTTING）。 */
     com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
-            board(long current, long size, String status);
+            board(long current, long size, String status, Boolean samplingDone, Boolean releaseMode);
+
+    /** 兼容重载：不过滤抽样/放行模式（等价参数全 null） */
+    default com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
+            board(long current, long size, String status, Boolean samplingDone) {
+        return board(current, size, status, samplingDone, null);
+    }
+
+    /** 兼容重载：不过滤（等价参数全 null） */
+    default com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
+            board(long current, long size, String status) {
+        return board(current, size, status, null, null);
+    }
+
+    /**
+     * 外协收货检验工作台（change add-outsourcing-processing，spec outsourcing-execution
+     * 「外协收货检验工作台」）：数据源 = 检验批，筛选来源为外协 PO 的批次
+     * （GR → PO → 外协派工单回联 poNo），聚合供应商、派工单号、工单/工序、供料方式上下文；
+     * 非外协批次不出现。检验动作复用既有检验批 API，本方法仅查询。
+     */
+    com.baomidou.mybatisplus.extension.plugins.pagination.Page<java.util.Map<String, Object>>
+            outsourceBoard(long current, long size, String status);
 
     // ================= IPQC / OQC（group 5，偏差 D5） =================
 
@@ -91,6 +114,23 @@ public interface InspectionLotService {
      */
     InspectionLot createRecheck(com.erp.entity.qms.Ncr ncr);
 
+    /**
+     * 返工复检批（change add-rework-management，FR-4.5-7-6：返工产出完工触发、
+     * 按原检验方案加严一档 TIGHTENED）：refType=WORKORDER、refId=<moId>#REWORK、
+     * sourceType=RECHECK；同 refId 未放行批幂等返回。batchNo 可空。
+     */
+    InspectionLot createReworkRecheck(String refMoId, String itemCode, String itemName,
+                                      String batchNo, java.math.BigDecimal qty);
+
+    /**
+     * 试产产出检验批（change add-trial-production-management，spec trial-execution
+     * 「产出入样品仓与放行前置」：完工触发 OQC，refType=WORKORDER、refId=<moId>#TRIAL、
+     * sourceType=MANUAL；严格度沿物料既有方案 NORMAL（试产不加严）；同 refId 未放行批幂等返回。
+     * 放行经 confirmRelease → LotReleaseListener 试产分支（QC→AVAILABLE + 计价冲回）。
+     */
+    InspectionLot createTrialLot(String refMoId, String itemCode, String itemName,
+                                 String batchNo, java.math.BigDecimal qty);
+
     // ================= IPQC 巡检计划（5.10，偏差 D5） =================
 
     java.util.List<com.erp.entity.qms.PatrolPlan> patrolPlans();
@@ -102,4 +142,32 @@ public interface InspectionLotService {
 
     /** 到点计划生成 IPQC 批次（scheduler 驱动，幂等），返回生成批数 */
     int runPatrolPlans();
+
+    // ================= 分派与超时（change rework-inspection-tasks，design D2/D3） =================
+
+    /**
+     * 超时扫描（scheduler 驱动）：在途批（PENDING/INPUTTING/REVIEWING）超过时限未出结论
+     * → OVERDUE_FLAG=1 + 通知质检员（IPQC 追加通知车间主管）；无改派记录 → 自动改派在手最少
+     * 他人 + 通知质量经理；已改派过 → 仅升级通知。返回处理批数（spec inspection-lot 超时扫描）。
+     */
+    int sweepOverdue();
+
+    // ================= OQC 完工全链（change rework-inspection-tasks design D1） =================
+
+    /**
+     * 正常工单完工 OQC 批（spec OQC 完工触发与放行联动入库）：refType=WORKORDER、
+     * refId=<moId>#FG、sourceType=FG；无标准 → BLOCKED 占位不抛错；同 refId 未取消批幂等返回。
+     * moPriority=1（最高档）→ URGENT + 时限从严。
+     */
+    InspectionLot createFinishedGoodsOqc(String refMoId, String itemCode, String itemName,
+                                         String batchNo, java.math.BigDecimal qty, Integer moPriority);
+
+    /**
+     * 完工冲销联动（spec 正常工单 OQC 建批挂钩）：取消 refId=<moId>#FG 的未结论批
+     * （RELEASED 不回滚，仅提示人工红冲）。返回取消批数。
+     */
+    int cancelFgLotsForMo(String refMoId);
+
+    /** 批次合格证（OQC 放行生成；未放行返回 null） */
+    com.erp.entity.qms.Certificate certificateOf(String lotId);
 }

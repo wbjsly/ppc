@@ -1,0 +1,225 @@
+-- ============================================================
+-- 125-mrp-trial.sql  5.9 试产管理（change add-trial-production-management）
+-- 内容：
+--   1) erp_mrp_mo 加 TRIAL_STAGE（试产阶段 EVT/DVT/PVT，来源沿 124 SRC_TYPE=APPLY）
+--   2) erp_mrp_bom / erp_mrp_routing 加 TRIAL_STAGE + SRC_TRIAL_NO（试产版标记与转量产来源痕迹）
+--   3) erp_inv_batch 加 TRIAL_FLAG（试产专用批次标记，FR-4.5-8-4/BR-4.5-03）
+--   4) 四新表：erp_mrp_trial_apply / erp_mrp_trial_data / erp_mrp_trial_summary / erp_mrp_trial_cost
+--   5) 样品仓 WH-SAMPLE 种子（BR-4.5-34 产出默认入样品仓，design D1）
+--   6) sys_param 5 参（良率闸口/计价基准/样品仓/费率，偏差 D2/D5/D10）
+--   7) M5-9 菜单 PERM 幂等 UPDATE（新装库由 099 生成；存量库靠本节收敛，父=子同权防孤儿）
+-- 幂等：条件 ALTER（information_schema + PREPARE）/ CREATE TABLE IF NOT EXISTS /
+--       INSERT IGNORE / UPDATE 幂等；可连续多遍执行
+-- ============================================================
+
+-- ---------- 1) 工单头：试产阶段 ----------
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_mrp_mo'
+        AND COLUMN_NAME = 'TRIAL_STAGE') = 0,
+    'ALTER TABLE erp_mrp_mo ADD COLUMN TRIAL_STAGE VARCHAR(8) DEFAULT NULL COMMENT ''试产阶段 EVT/DVT/PVT（仅 MO_TYPE=TRIAL 非空，design D2/D11）'' AFTER MO_TYPE',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 2) BOM 版本头：试产标记与转量产来源 ----------
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_mrp_bom'
+        AND COLUMN_NAME = 'TRIAL_STAGE') = 0,
+    'ALTER TABLE erp_mrp_bom ADD COLUMN TRIAL_STAGE VARCHAR(8) DEFAULT NULL COMMENT ''试产阶段 EVT/DVT/PVT（非空=试产版，状态可入 TRIAL，试产池唯一性分池）'' AFTER STATUS',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_mrp_bom'
+        AND COLUMN_NAME = 'SRC_TRIAL_NO') = 0,
+    'ALTER TABLE erp_mrp_bom ADD COLUMN SRC_TRIAL_NO VARCHAR(32) DEFAULT NULL COMMENT ''转量产来源试产工单号 TP-（发布时校验其总结评审 APPROVED，FR-4.5-8-7）'' AFTER TRIAL_STAGE',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 3) 路线头：试产标记与转量产来源 ----------
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_mrp_routing'
+        AND COLUMN_NAME = 'TRIAL_STAGE') = 0,
+    'ALTER TABLE erp_mrp_routing ADD COLUMN TRIAL_STAGE VARCHAR(8) DEFAULT NULL COMMENT ''试产阶段 EVT/DVT/PVT（非空=试产版，状态可入 TRIAL，试产池唯一性分池）'' AFTER STATUS',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_mrp_routing'
+        AND COLUMN_NAME = 'SRC_TRIAL_NO') = 0,
+    'ALTER TABLE erp_mrp_routing ADD COLUMN SRC_TRIAL_NO VARCHAR(32) DEFAULT NULL COMMENT ''转量产来源试产工单号 TP-（发布时校验其总结评审 APPROVED，FR-4.5-8-7）'' AFTER TRIAL_STAGE',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 4) 批次台账：试产专用标记（batch-master delta：系统打标不可取消） ----------
+SET @ddl = IF(
+    (SELECT COUNT(*) FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'erp_inv_batch'
+        AND COLUMN_NAME = 'TRIAL_FLAG') = 0,
+    'ALTER TABLE erp_inv_batch ADD COLUMN TRIAL_FLAG VARCHAR(1) NOT NULL DEFAULT ''0'' COMMENT ''试产标记 1=试产专用（工程样品建档置位/试产领用过账系统置位，不可人工取消，FR-4.5-8-4）'' AFTER STATUS',
+    'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 5) 试产申请单（trial-order：TA- 编号，审批后 1:1 转开 TP- 工单） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_trial_apply (
+    ID VARCHAR(64) NOT NULL,
+    TRIAL_NO VARCHAR(32) NOT NULL COMMENT '申请单号 TA-YYYYMMDD-NNN（冲突自动递增）',
+    TRIAL_STAGE VARCHAR(8) NOT NULL COMMENT '试产阶段 EVT/DVT/PVT（缺失 422，FR-4.5-8-1）',
+    PRODUCT_CODE VARCHAR(64) NOT NULL COMMENT '产品编码（自制件 MAKE，已发布启用）',
+    PRODUCT_NAME VARCHAR(128) DEFAULT NULL COMMENT '产品名称（冗余展示）',
+    QTY DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '试产数量（>0）',
+    GOAL TEXT COMMENT '验证目标（多行文本，空白 422 阻断提交）',
+    -- DRAFT → PENDING → APPROVED / REJECTED(回 DRAFT) / CONVERTED（转开回写工单号）
+    STATUS VARCHAR(16) NOT NULL DEFAULT 'DRAFT' COMMENT '状态机（白名单 CAS 迁移）',
+    MO_ID VARCHAR(64) DEFAULT NULL COMMENT '转开试产工单 ID（1:1）',
+    MO_NO VARCHAR(32) DEFAULT NULL COMMENT '转开试产工单号 TP-（重复转开 422 锚点）',
+    APPROVAL_ID VARCHAR(64) DEFAULT NULL COMMENT 'TrialApply 审批实例 ID',
+    REJECT_REASON VARCHAR(500) DEFAULT NULL COMMENT '最近驳回意见（≥2 字）',
+    SUBMIT_BY VARCHAR(64) DEFAULT NULL, SUBMIT_AT DATETIME DEFAULT NULL COMMENT '提交留痕',
+    APPROVE_BY VARCHAR(64) DEFAULT NULL, APPROVE_AT DATETIME DEFAULT NULL COMMENT '审批通过留痕',
+    CONVERT_BY VARCHAR(64) DEFAULT NULL, CONVERT_AT DATETIME DEFAULT NULL COMMENT '转开留痕',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_TRIAL_APPLY_NO (TRIAL_NO),
+    KEY IDX_MRP_TRIAL_APPLY_STAGE (TRIAL_STAGE, STATUS),
+    KEY IDX_MRP_TRIAL_APPLY_PROD (PRODUCT_CODE, TRIAL_STAGE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='试产申请单（5.9，FR-4.5-8-1 阶段/数量/验证目标 + 审批后 1:1 转开）';
+
+-- ---------- 6) 试产数据采集表（FR-4.5-8-5：逐工序参数/不良模式/实测工时，缺记录不许结案） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_trial_data (
+    ID VARCHAR(64) NOT NULL,
+    MO_ID VARCHAR(64) NOT NULL COMMENT '试产工单 ID',
+    MO_NO VARCHAR(32) DEFAULT NULL COMMENT '试产工单号 TP-（冗余查询）',
+    OP_SEQ INT NOT NULL COMMENT '工序序号（工单工序快照行）',
+    OP_CODE VARCHAR(32) DEFAULT NULL COMMENT '工序编码（冗余展示）',
+    OP_NAME VARCHAR(64) DEFAULT NULL COMMENT '工序名称（冗余展示）',
+    PARAMS JSON DEFAULT NULL COMMENT '工艺参数（键值数组：参数名/标准值/实测值）',
+    DEFECT_MODES TEXT COMMENT '不良模式（多行文本，每行一条）',
+    ACTUAL_HOURS DECIMAL(18,4) DEFAULT NULL COMMENT '实测工时（缺省带出 5.7 CONFIRMED 报工工时，可改，偏差 D7）',
+    REMARK VARCHAR(500) DEFAULT NULL,
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_TRIAL_DATA (MO_ID, OP_SEQ),
+    KEY IDX_MRP_TRIAL_DATA_MO (MO_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='试产数据采集表（5.9，FR-4.5-8-5 逐工序采集，结案完整性卡控数据源）';
+
+-- ---------- 7) 试产总结单（FR-4.5-8-6：良率/工时达成率服务端算禁手填 + 跨部门评审） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_trial_summary (
+    ID VARCHAR(64) NOT NULL,
+    SUMMARY_NO VARCHAR(32) NOT NULL COMMENT '总结单号 TS-YYYYMMDD-NNN（冲突自动递增）',
+    MO_ID VARCHAR(64) NOT NULL COMMENT '试产工单 ID（1:1）',
+    MO_NO VARCHAR(32) DEFAULT NULL COMMENT '试产工单号 TP-（冗余查询）',
+    TRIAL_STAGE VARCHAR(8) NOT NULL COMMENT '试产阶段（快照自工单）',
+    YIELD_PCT DECIMAL(7,4) DEFAULT NULL COMMENT '良率% = 合格产出 ÷ 报工投入 × 100（服务端计算禁手填）',
+    HOURS_ACHIEVE_PCT DECIMAL(7,4) DEFAULT NULL COMMENT '工时达成率% = 标准工时Σ ÷ 实测工时Σ × 100（服务端计算）',
+    QUALIFIED_QTY DECIMAL(18,4) DEFAULT NULL COMMENT '合格产出（计算分项留痕）',
+    INPUT_QTY DECIMAL(18,4) DEFAULT NULL COMMENT '报工投入（计算分项留痕）',
+    STD_HOURS DECIMAL(18,4) DEFAULT NULL COMMENT '标准工时合计（工序快照）',
+    ACTUAL_HOURS DECIMAL(18,4) DEFAULT NULL COMMENT '实测工时合计（采集表）',
+    ISSUES TEXT COMMENT '问题清单（多行，每行 现象/建议）',
+    -- DRAFT → PENDING（TrialReview 三方并行会签）→ APPROVED / REJECTED(回 DRAFT)
+    STATUS VARCHAR(16) NOT NULL DEFAULT 'DRAFT' COMMENT '评审状态机（白名单 CAS 迁移）',
+    APPROVAL_ID VARCHAR(64) DEFAULT NULL COMMENT 'TrialReview 审批实例 ID',
+    REJECT_REASON VARCHAR(500) DEFAULT NULL COMMENT '最近驳回意见',
+    SUBMIT_BY VARCHAR(64) DEFAULT NULL, SUBMIT_AT DATETIME DEFAULT NULL COMMENT '提交评审留痕',
+    APPROVE_BY VARCHAR(64) DEFAULT NULL, APPROVE_AT DATETIME DEFAULT NULL COMMENT '会签全过留痕（三方签署明细在审批实例）',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_TRIAL_SUMMARY_NO (SUMMARY_NO),
+    UNIQUE KEY UK_MRP_TRIAL_SUMMARY_MO (MO_ID),
+    KEY IDX_MRP_TRIAL_SUMMARY_STATUS (STATUS, TRIAL_STAGE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='试产总结单（5.9，FR-4.5-8-6 三指标自动算 + 跨部门会签，阶段闸口/转量产解锁依据）';
+
+-- ---------- 8) 试产成本表（FR-4.5-8-8/BR-4.5-34/36：料工费归集 + 冲回分录 + 财务确认） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_trial_cost (
+    ID VARCHAR(64) NOT NULL,
+    ENTRY_NO VARCHAR(32) NOT NULL COMMENT '成本行号 TC+yyyyMMdd+-+6 位流水',
+    MO_ID VARCHAR(64) NOT NULL COMMENT '试产工单 ID',
+    MO_NO VARCHAR(32) DEFAULT NULL COMMENT '试产工单号 TP-（冗余查询）',
+    -- MATERIAL 材料 / LABOR 人工 / OVERHEAD 制费 / REVERSAL 转库存计价冲回
+    COST_TYPE VARCHAR(16) NOT NULL COMMENT '成本类型 MATERIAL/LABOR/OVERHEAD/REVERSAL',
+    AMOUNT DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT '金额（REVERSAL 为负向冲回额，绝对值入汇总按方向字段）',
+    EXPENSE_TYPE VARCHAR(16) NOT NULL DEFAULT 'RD' COMMENT '费用类型 RD=研发费用（BR-4.5-36 不入标准成本卷积）',
+    PROJECT_NO VARCHAR(64) DEFAULT NULL COMMENT '项目号预留（4.8 项目域落地后可挂，NULL=归研发费用，偏差 D11）',
+    DR_CR VARCHAR(32) DEFAULT NULL COMMENT '借贷方向留痕（冲回分录：DR 存货/CR 研发费用，偏差 D3）',
+    BATCH_NO VARCHAR(64) DEFAULT NULL COMMENT '关联批次（REVERSAL 转库存批次）',
+    QTY DECIMAL(18,4) DEFAULT NULL COMMENT '关联数量（REVERSAL 转库存数量）',
+    LOT_ID VARCHAR(64) DEFAULT NULL COMMENT '关联检验批 ID（REVERSAL 放行来源，幂等锚点）',
+    -- PENDING_FINANCE 待财务确认 / CONFIRMED 已确认（未确认不计入正式汇总，同 COPQ 草稿口径）
+    FIN_STATUS VARCHAR(16) NOT NULL DEFAULT 'PENDING_FINANCE' COMMENT '财务确认状态（仅 REVERSAL 走确认，归集行直接 CONFIRMED）',
+    APPROVAL_ID VARCHAR(64) DEFAULT NULL COMMENT 'TrialCostReverse 审批实例 ID',
+    CONFIRM_BY VARCHAR(64) DEFAULT NULL, CONFIRM_AT DATETIME DEFAULT NULL COMMENT '财务确认留痕',
+    REMARK VARCHAR(500) DEFAULT NULL COMMENT '摘要（归集重建 TRIAL: 前缀隔离，冲销回拨重建）',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_TRIAL_COST_NO (ENTRY_NO),
+    KEY IDX_MRP_TRIAL_COST_MO (MO_ID, COST_TYPE),
+    KEY IDX_MRP_TRIAL_COST_LOT (LOT_ID, COST_TYPE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='试产成本表（5.9，FR-4.5-8-8 料工费归集 + BR-4.5-34 转库存冲回分录 + 财务确认留痕）';
+
+-- ---------- 9) 样品仓种子（BR-4.5-34 产出默认入样品仓/待处理仓，design D1 参数 TRIAL_SAMPLE_WH 指向） ----------
+INSERT IGNORE INTO erp_inv_warehouse
+(ID, WH_CODE, WH_NAME, ORG_UNIT, STATUS, CAPACITY_DESC, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('wh-sample', 'WH-SAMPLE', '样品仓', NULL, '1', '试产/工程样品',
+ '试产产出默认入仓（BR-4.5-34，125 迁移种子；参数 TRIAL_SAMPLE_WH 可配）', 'seed', '0', 0);
+
+-- ---------- 10) sys_param 5 参（偏差 D2/D5/D10：参数不在线编辑，SQL 维护） ----------
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-trial-pvt-yield-min', 'TRIAL_PVT_YIELD_MIN', '95', 'NUMBER', 'MRP',
+ 'PVT 良率闸口%（FR-4.5-8-6 异常：未达标不得转量产，提交评审 422 阻断）', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-trial-release-cost-basis', 'TRIAL_RELEASE_COST_BASIS', 'STANDARD', 'ENUM', 'MRP',
+ '转库存计价基准（BR-4.5-34 冲回）：STANDARD=物料标准成本列（重置成本档）；NRV 档数据源未建预留（偏差 D2）', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-trial-sample-wh', 'TRIAL_SAMPLE_WH', 'WH-SAMPLE', 'STRING', 'MRP',
+ '试产产出入样仓库编码（BR-4.5-34，完工 WIP_IN 过账目标仓）', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-trial-labor-rate', 'TRIAL_LABOR_RATE', '60', 'NUMBER', 'MRP',
+ '试产人工费率兜底（元/工时，FR-4.5-8-8 归集：实测工时×费率）', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-trial-machine-rate', 'TRIAL_MACHINE_RATE', '100', 'NUMBER', 'MRP',
+ '试产设备费率兜底（元/小时，按设备运行时间归集）', 'seed', '0', 0);
+
+-- ---------- 11) M5-9 菜单 PERM 存量回填（与 099 生成结果一致；父与四子同权防孤儿） ----------
+UPDATE erp_admin_menu
+   SET PERM = 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN'
+ WHERE ID IN ('M5-9', 'M5-9-1', 'M5-9-2', 'M5-9-3');

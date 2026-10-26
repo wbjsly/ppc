@@ -5,9 +5,7 @@ import com.erp.common.R;
 import com.erp.entity.crm.OppFollowup;
 import com.erp.entity.crm.OppStageLog;
 import com.erp.entity.crm.Opportunity;
-import com.erp.entity.system.SysNotice;
 import com.erp.service.crm.OpportunityService;
-import com.erp.service.system.NoticeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,11 +32,9 @@ import java.util.Map;
 public class OpportunityController {
 
     private final OpportunityService oppService;
-    private final NoticeService noticeService;
 
-    public OpportunityController(OpportunityService oppService, NoticeService noticeService) {
+    public OpportunityController(OpportunityService oppService) {
         this.oppService = oppService;
-        this.noticeService = noticeService;
     }
 
     // ---------- 3.1.1 商机录入 ----------
@@ -126,24 +122,7 @@ public class OpportunityController {
         return R.ok(oppService.sweepOverdue());
     }
 
-    // ---------- 站内通知（FR-4.8-1-5 超百万通知销售经理） ----------
-
-    @GetMapping("/notices")
-    @Operation(summary = "我的通知", description = "按角色聚合，未读在前")
-    public R<List<SysNotice>> notices() {
-        return R.ok(noticeService.myNotices());
-    }
-
-    @GetMapping("/notices/unread-count")
-    public R<Long> unreadCount() {
-        return R.ok(noticeService.unreadCount());
-    }
-
-    @PutMapping("/notices/{id}/read")
-    public R<Void> markRead(@PathVariable String id) {
-        noticeService.markRead(id);
-        return R.ok();
-    }
+    // ---------- 站内通知端点已迁至 NoticeController（/api/notices，change add-kitting-check design D4） ----------
 
     private static String str(Object o) {
         if (o == null) {

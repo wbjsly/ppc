@@ -110,8 +110,35 @@ const PERM = {
   unfreezeApprove: 'ROLE_QUALITY_MGR,ROLE_FINANCE_MGR,ROLE_ADMIN',
   // 4.10 效期管理 4.10.3 质量评估（change add-expiry-management-menus；4.10.1/4.10.2 用 warehouse）
   expiryEval: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN',
+  // 5.1 物料清单（change add-bom-management：工艺工程师维护、工艺主管审核发布）
+  process: 'ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_ADMIN',
   // 一级域 M3：取其下各组权限并集，避免非授权角色看到空的销售管理域
-  domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'
+  domain3: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_CREDIT_ADMIN,ROLE_FINANCE_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // M5-4 工单管理：计划员 + 计划主管（审批签署）+ 管理员（change add-work-order-management）
+  planner: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-5 齐套检查：计划两方 + 仓库（到货/缺料相关方，偏差 D1 无采购员/车间主管角色）
+  kitting: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_WAREHOUSE,ROLE_ADMIN',
+  // M5-6 派工管理 5.6.1/5.6.2：计划两方 + 车间主管 + 管理员（change add-dispatch-management）
+  dispatch: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_SHOP_FLOOR,ROLE_ADMIN',
+  // M5-6-3 外协建议：车间主管不参与外协决策（outsourcing-dispatch 权限矩阵）
+  outsource: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-7-1 报工录入：车间操作工作业台（change add-reporting-management）
+  reportEntry: 'ROLE_SHOP_FLOOR,ROLE_ADMIN',
+  // M5-7-2 报工管理：计划两方（记录/冲销/完工/预警），操作工不参与管理动作
+  reportAdmin: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-8-1 返工工单：计划两方（建单/路线/转在制/进度），质量侧不建单（change add-rework-management）
+  reworkEntry: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN',
+  // M5-8-2 返修处理：质量两方+管理员+计划员只读（复检/审批/报废/入库执行侧）
+  reworkAdmin: 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN,ROLE_PLANNER',
+  // 16.11 工作日历：管理员维护、计划员只读（capacity-load 日历菜单权限）
+  calendar: 'ROLE_ADMIN,ROLE_PLANNER',
+  // M5-9 试产管理 5.9.1~5.9.3：计划两方 + 工艺两方 + 项目经理 + 管理员
+  // 三叶为同一阶段视图按 TRIAL_STAGE 过滤（change add-trial-production-management，spec trial-order 菜单需求/D9）
+  trial: 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PROCESS_ENG,ROLE_PROCESS_MGR,ROLE_PM,ROLE_ADMIN',
+  // M7 资产管理（change add-asset-capitalization）：资产管理员 + 财务资产会计
+  eam: 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_ADMIN',
+  // M7-3 资产运维（change add-asset-maintenance）：设备工程师 + 设备主管（报修全员开放不设门槛）
+  maint: 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_ADMIN'
 }
 const leaf = (ids, perm) => Object.fromEntries(ids.map(id => [id, perm]))
 const EXTRA_PERM = {
@@ -167,7 +194,137 @@ const EXTRA_PERM = {
   ...leaf(['M4-13-1', 'M4-13-2'], 'ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_WAREHOUSE,ROLE_ADMIN'),
   // M4-14 库存报表（change add-inventory-reports：周转为财务口径指标多两财务角色）
   ...leaf(['M4-14-1', 'M4-14-3'], 'ROLE_WAREHOUSE,ROLE_ADMIN'),
-  ...leaf(['M4-14-2'], 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR')
+  ...leaf(['M4-14-2'], 'ROLE_WAREHOUSE,ROLE_ADMIN,ROLE_FINANCE,ROLE_FINANCE_MGR'),
+  // M5-1 物料清单 5.1.1~5.1.4（change add-bom-management；父节点与子节点同权限防孤儿，M6 先例）
+  ...leaf(['M5-1', 'M5-1-1', 'M5-1-2', 'M5-1-3', 'M5-1-4'], PERM.process),
+  // M5-2 工艺管理 5.2.1~5.2.4（change add-routing-management；5.2.4 路线装配为本期新增叶子）
+  ...leaf(['M5-2', 'M5-2-1', 'M5-2-2', 'M5-2-3', 'M5-2-4'], PERM.process),
+  // M5-3 需求计划 5.3.1~5.3.3（change add-mrp-demand-planning：计划员+管理员，ROLE_PLANNER 新增）
+  ...leaf(['M5-3', 'M5-3-1', 'M5-3-2', 'M5-3-3'], 'ROLE_PLANNER,ROLE_ADMIN'),
+  // M5-4 工单管理 5.4.1~5.4.5（change add-work-order-management；父节点同权限防孤儿）
+  ...leaf(['M5-4', 'M5-4-1', 'M5-4-2', 'M5-4-3', 'M5-4-4', 'M5-4-5'], PERM.planner),
+  // M5-5 齐套检查 5.5.1~5.5.2（change add-kitting-check；父节点同权限防孤儿）
+  ...leaf(['M5-5', 'M5-5-1', 'M5-5-2'], PERM.kitting),
+  // M5-6 派工管理 5.6.1~5.6.3（change add-dispatch-management；父节点取四角色超集 ⊇ M5-6-3 防孤儿）
+  ...leaf(['M5-6', 'M5-6-1', 'M5-6-2'], PERM.dispatch),
+  ...leaf(['M5-6-3'], PERM.outsource),
+  // M5-7 报工管理（change add-reporting-management，偏差 D1：蓝图 4 叶改 2 叶）
+  // 5.7.1 报工录入=车间操作工；5.7.2 报工管理=计划两方（冲销/完工/预警）；父节点取两子并集防孤儿
+  ...leaf(['M5-7'], 'ROLE_SHOP_FLOOR,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-7-1'], PERM.reportEntry),
+  ...leaf(['M5-7-2'], PERM.reportAdmin),
+  // M5-8 返工返修 5.8.1/5.8.2（change add-rework-management）：按使用者切两半
+  // 5.8.1 返工工单=计划侧；5.8.2 返修处理=质量侧（计划员只读）；父节点 M5-8 取两子并集防孤儿
+  ...leaf(['M5-8'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'),
+  ...leaf(['M5-8-1'], PERM.reworkEntry),
+  ...leaf(['M5-8-2'], PERM.reworkAdmin),
+  // M5-9 试产管理 5.9.1~5.9.3（change add-trial-production-management）：三叶同一阶段视图按 TRIAL_STAGE 过滤
+  // 权限相同（计划两方+工艺两方+PM+管理员）；父节点 M5-9 与子同权防孤儿
+  ...leaf(['M5-9', 'M5-9-1', 'M5-9-2', 'M5-9-3'], PERM.trial),
+  // M5-10 外协加工 5.10.1~5.10.4（change add-outsourcing-processing）：权限两条线
+  // 5.10.1/3/4=计划采购（订单/发料/对账），5.10.2=质量（专检）；父节点取子超集防孤儿
+  ...leaf(['M5-10'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN,ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR'),
+  ...leaf(['M5-10-1', 'M5-10-3', 'M5-10-4'], 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_PURCHASER,ROLE_ADMIN'),
+  ...leaf(['M5-10-2'], 'ROLE_INSPECTOR,ROLE_QUALITY_ENG,ROLE_QUALITY_MGR,ROLE_ADMIN'),
+  // M5-11 成本归集 5.11.1~5.11.4（change add-cost-aggregation）：生产成本会计全权 + 计划线只读
+  // 5.11.4 完工凭证加财务只读（spec completion-cost-voucher）；父节点 M5-11 取子超集防孤儿
+  ...leaf(['M5-11'], 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-11-1', 'M5-11-2', 'M5-11-3'], 'ROLE_COST_ACCOUNTANT,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'),
+  ...leaf(['M5-11-4'], 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  // 16.11 工作日历 16.11.1~16.11.2（change add-dispatch-management；16 域默认 ADMIN，此映射加计划员只读）
+  // 父节点 M16 取并集（ADMIN + PLANNER 只读），否则计划员视图下 16.11 被提升为顶级孤儿（M3 域先例）
+  ...leaf(['M16'], 'ROLE_ADMIN,ROLE_PLANNER'),
+  ...leaf(['M16-11', 'M16-11-1', 'M16-11-2'], PERM.calendar),
+  // M7 资产管理 7.1.1~7.1.5（change add-asset-capitalization：资产管理员+财务资产会计）
+  // 父节点 M7/M7-1 与子同权防孤儿（M3/M16 域先例）
+  ...leaf(['M7', 'M7-1', 'M7-1-1', 'M7-1-2', 'M7-1-3', 'M7-1-4', 'M7-1-5'], PERM.eam),
+  // M7-2 折旧管理 7.2.1~7.2.3（change add-asset-depreciation：月度计提+变动处理+凭证生成）
+  // 父节点 M7-2 与子同权防孤儿；角色同 eam（资产管理员发起变更/财务资产会计执行计提审核）
+  ...leaf(['M7-2', 'M7-2-1', 'M7-2-2', 'M7-2-3'], PERM.eam),
+  // M7-3 资产运维 7.3.1~7.3.3（change add-asset-maintenance：设备工程师+设备主管）
+  // M7 父节点取并集（含财务资产会计）后 spread 覆盖，防工程师看不到域节点
+  ...leaf(['M7-3', 'M7-3-1', 'M7-3-2', 'M7-3-3'], PERM.maint),
+  // M7-4 调拨租赁 7.4.1~7.4.3（change add-asset-transfer-lease：资产/财务两方 + 部门/财务经理）
+  // 父节点 M7 取并集防孤儿
+  ...leaf(['M7-4', 'M7-4-1', 'M7-4-2', 'M7-4-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-5 资产盘点 7.5.1~7.5.2（change add-asset-count：资产/财务/部门/财务经理）
+  ...leaf(['M7-5', 'M7-5-1', 'M7-5-2'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-6 报废处置 7.6.1~7.6.3（change add-asset-disposal：资产/财务/部门/财务经理/总经理）
+  ...leaf(['M7-6', 'M7-6-1', 'M7-6-2', 'M7-6-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_GM,ROLE_ADMIN'),
+  // M7-7 技改大修 7.7.1（change add-asset-rework：资产/财务/部门/财务经理）
+  ...leaf(['M7-7', 'M7-7-1'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M7-8 资产报表 7.8.1~7.8.3（change add-asset-report：资产/财务/部门/财务经理）
+  ...leaf(['M7-8', 'M7-8-1', 'M7-8-2', 'M7-8-3'], 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-1 总账管理 8.1.1~8.1.5（change add-gl-management：财务资产/财务经理/管理员）
+  ...leaf(['M8-1', 'M8-1-1', 'M8-1-2', 'M8-1-3', 'M8-1-4', 'M8-1-5'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-2 应收管理 8.2.1~8.2.3（change add-ar-management：与 M8-1 对齐）
+  ...leaf(['M8-2', 'M8-2-1', 'M8-2-2', 'M8-2-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-3 应付管理 8.3.1~8.3.3（change add-ap-management：与 M8-1/M8-2 对齐）
+  ...leaf(['M8-3', 'M8-3-1', 'M8-3-2', 'M8-3-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-4 收付管理 8.4.1~8.4.3（change add-payment-collection：与 M8-1~3 对齐）
+  ...leaf(['M8-4', 'M8-4-1', 'M8-4-2', 'M8-4-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-5 外币核算 8.5.1~8.5.3（change add-fx-revaluation：与 M8-1~4 对齐）
+  ...leaf(['M8-5', 'M8-5-1', 'M8-5-2', 'M8-5-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-6 资产折旧 8.6.1~8.6.2（change add-depreciation-monitoring：财务只读监控，与 M8-1~5 对齐）
+  ...leaf(['M8-6', 'M8-6-1', 'M8-6-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-7 银行对账 8.7.1~8.7.4（change add-bank-reconciliation：与 M8-1~6 对齐）
+  ...leaf(['M8-7', 'M8-7-1', 'M8-7-2', 'M8-7-3', 'M8-7-4'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-8 费用报销 8.8.1~8.8.3（change add-expense-reimbursement：与 M8-1~7 对齐）
+  ...leaf(['M8-8', 'M8-8-1', 'M8-8-2', 'M8-8-3'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-9 预提待摊 8.9.1~8.9.2（change add-expense-reimbursement：与 M8-1~8 对齐）
+  ...leaf(['M8-9', 'M8-9-1', 'M8-9-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M8-10 成本核算 8.10.1~8.10.3（change add-cost-accounting：M8 惯例 + 成本会计 + spec 场景财务专员/主管）
+  ...leaf(['M8-10', 'M8-10-1', 'M8-10-2', 'M8-10-3'], 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-1 计税管理 9.1.1~9.1.3（change add-tax-calculation：ROLE_FINANCE 承担税务专员操作位）
+  ...leaf(['M9-1', 'M9-1-1', 'M9-1-2', 'M9-1-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-2 发票管理 9.2.1~9.2.4（change add-invoice-management：对齐 M9-1 三角色）
+  ...leaf(['M9-2', 'M9-2-1', 'M9-2-2', 'M9-2-3', 'M9-2-4'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-3 进项认证 9.3.1~9.3.2（change add-input-certification：接线 9.2.2 页，对齐三角色）
+  ...leaf(['M9-3', 'M9-3-1', 'M9-3-2'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-4 红冲作废 9.4.1~9.4.3（change add-red-invoice-void：红字冲销/发票作废/进项转出三叶三页）
+  ...leaf(['M9-4', 'M9-4-1', 'M9-4-2', 'M9-4-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-5 税务申报 9.5.1~9.5.4（change add-tax-filing：增值申报/所得申报/出口退税/申报归档四叶四页）
+  ...leaf(['M9-5', 'M9-5-1', 'M9-5-2', 'M9-5-3', 'M9-5-4'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-6 税务风控 9.6.1~9.6.3（change add-tax-risk-control：风险预警/优惠管理/关联定价三叶三页）
+  ...leaf(['M9-6', 'M9-6-1', 'M9-6-2', 'M9-6-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M10-1 员工档案 + M10-7 入转调离（change add-employee-archive：建档/维护/入职/转正/调岗/离职）
+  ...leaf(['M10-1', 'M10-1-1', 'M10-1-2', 'M10-7', 'M10-7-1', 'M10-7-2', 'M10-7-3', 'M10-7-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-2 组织管理 10.2.1~10.2.4（change add-org-management：部门/岗位/汇报/职级四叶四页）
+  ...leaf(['M10-2', 'M10-2-1', 'M10-2-2', 'M10-2-3', 'M10-2-4'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-3 考勤管理 10.3.1~10.3.5 + M10-4 加班调休 10.4.1~10.4.4（change add-attendance-management）
+  ...leaf(['M10-3', 'M10-3-1', 'M10-3-2', 'M10-3-3', 'M10-3-4', 'M10-3-5',
+    'M10-4', 'M10-4-1', 'M10-4-2', 'M10-4-3', 'M10-4-4'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-5 薪酬核算 10.5.1~10.5.4 + M10-6 薪酬发放 10.6.1~10.6.3（change add-payroll-management）
+  ...leaf(['M10-5', 'M10-5-1', 'M10-5-2', 'M10-5-3', 'M10-5-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M10-6', 'M10-6-1', 'M10-6-2', 'M10-6-3'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M10-8 外派借调 10.8.1/10.8.2（change add-employee-secondment）
+  ...leaf(['M10-8', 'M10-8-1', 'M10-8-2'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-9 培训认证 10.9.1~10.9.3（change add-training-certification：HR 全权 + 财务只读费用）
+  ...leaf(['M10-9', 'M10-9-1', 'M10-9-2', 'M10-9-3'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-2 报价管理 11.2.1/11.2.2（change add-quote-approval-console：11.2.1 同 3.2 三角色，11.2.2 审批节点角色）
+  ...leaf(['M11-2', 'M11-2-1'], 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN'),
+  ...leaf(['M11-2-2'], 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  // M11-3 项目立项 11.3.1~11.3.3（change add-project-initiation：PMO/PM，预算叶加财务）
+  ...leaf(['M11-3', 'M11-3-1', 'M11-3-2'], 'ROLE_PMO,ROLE_PM,ROLE_ADMIN'),
+  ...leaf(['M11-3-3'], 'ROLE_PMO,ROLE_PM,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-4 进度管理 11.4.1~11.4.3（change add-milestone-management：PM/PMO，进度叶加财务只读）
+  ...leaf(['M11-4', 'M11-4-1', 'M11-4-2'], 'ROLE_PM,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-4-3'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-5 工时管理 11.5.1~11.5.4（change add-timesheet-management：审核叶+DEPT_HEAD，归集/偏差叶+财务只读）
+  ...leaf(['M11-5', 'M11-5-1'], 'ROLE_PM,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-5-2'], 'ROLE_PM,ROLE_PMO,ROLE_DEPT_HEAD,ROLE_ADMIN'),
+  ...leaf(['M11-5-3', 'M11-5-4'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-6 预算管控 11.6.1~11.6.3（change add-cost-collection-freeze：归集/分析含财务线，冻结叶不含普通 PM）
+  ...leaf(['M11-6', 'M11-6-1', 'M11-6-2'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M11-6-3'], 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN'),
+  // M10-10 绩效管理 10.10.1~10.10.4（change add-payroll-management）
+  ...leaf(['M10-10', 'M10-10-1', 'M10-10-2', 'M10-10-3', 'M10-10-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏
 const HIDDEN = new Set(['M11-1-3', 'M11-1-4'])

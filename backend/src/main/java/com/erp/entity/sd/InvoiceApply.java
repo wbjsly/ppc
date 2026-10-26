@@ -65,5 +65,9 @@ public class InvoiceApply extends BaseEntity {
     private String confirmBy;
     private LocalDateTime confirmAt;
     private String disputeNote;
+    /** 重开关联红冲申请单号（BR-4.14-29：红冲后重开强制关联） */
+    private String redFlushApplyNo;
+    /** 重开书面说明（金额/购方与红冲不一致时必填，BR-4.14-29 L2） */
+    private String reopenNote;
     private String remark;
 }

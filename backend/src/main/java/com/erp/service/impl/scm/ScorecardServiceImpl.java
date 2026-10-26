@@ -153,6 +153,8 @@ public class ScorecardServiceImpl implements ScorecardService {
 
         List<Map<String, Object>> suppliers = collectDao.activeSuppliers(start, next);
         Map<String, Map<String, Object>> quality = index(collectDao.quality(start, next));
+        // 质量成本指标（rework-copq-analysis 4.1）：仅进采集明细展示，不参与得分（design D4）
+        Map<String, Map<String, Object>> copqCost = index(collectDao.copqCost(start, next));
         Map<String, Map<String, Object>> delivery = index(collectDao.delivery(start, next));
         Map<String, Map<String, Object>> asn = index(collectDao.asnAccuracy(start, next));
         Map<String, Map<String, Object>> po48 = index(collectDao.poConfirm(start, next));
@@ -164,6 +166,10 @@ public class ScorecardServiceImpl implements ScorecardService {
         int created = 0;
         int skipped = 0;
         for (Map<String, Object> sup : suppliers) {
+            // 手工建批无供应商时 UNION 产 NULL 行（MyBatis 对全 NULL 行返回 null 元素），跳过防 NPE
+            if (sup == null) {
+                continue;
+            }
             String sid = str(sup.get("supplierId"));
             if (sid == null) {
                 continue;
@@ -191,6 +197,11 @@ public class ScorecardServiceImpl implements ScorecardService {
                 qScore = passRate;
                 src.put("qualityLots", q.get("totalLots"));
                 src.put("qualityPassRate", passRate);
+            }
+            // 质量成本进明细（BR-4.12-42 接入；MUST NOT 参与 qScore 计算——得分公式不动）
+            Map<String, Object> qc = copqCost.get(sid);
+            if (qc != null && qc.get("qualityCost") != null) {
+                src.put("qualityCost", qc.get("qualityCost"));
             }
 
             // 交付维度 = 准时率×70% + ASN 准确率×30%（缺失子项按可用项计）

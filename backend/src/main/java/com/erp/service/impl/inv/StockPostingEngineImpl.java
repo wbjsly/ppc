@@ -59,6 +59,9 @@ public class StockPostingEngineImpl implements StockPostingEngine {
     private final com.erp.service.SysParamService sysParamService;
     private final com.erp.dao.inv.InvCountTaskDao countTaskDao;
     private final com.erp.dao.inv.InvCountLineDao countLineDao;
+    private final com.erp.dao.qms.InspectionLotDao lotDao;
+    /** 隔离态双保险（rework-ncr-control 2.2）：隔离中批次不可出库/领用 */
+    private final com.erp.dao.qms.NcrDao ncrDao;
 
     /** 盘点调整类型（spec count-management：豁免盘点锁校验——调整自身必须能过） */
     private static final java.util.Set<String> COUNT_ADJUST_TYPES =
@@ -70,7 +73,9 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                                   MdmItemDao itemDao, OutboxPublisher outboxPublisher,
                                   com.erp.service.SysParamService sysParamService,
                                   com.erp.dao.inv.InvCountTaskDao countTaskDao,
-                                  com.erp.dao.inv.InvCountLineDao countLineDao) {
+                                  com.erp.dao.inv.InvCountLineDao countLineDao,
+                                  com.erp.dao.qms.InspectionLotDao lotDao,
+                                  com.erp.dao.qms.NcrDao ncrDao) {
         this.docTypeDao = docTypeDao;
         this.stockDao = stockDao;
         this.batchDao = batchDao;
@@ -82,6 +87,8 @@ public class StockPostingEngineImpl implements StockPostingEngine {
         this.sysParamService = sysParamService;
         this.countTaskDao = countTaskDao;
         this.countLineDao = countLineDao;
+        this.lotDao = lotDao;
+        this.ncrDao = ncrDao;
     }
 
     // ================= 过账入口 =================
@@ -208,6 +215,13 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             String batch = line.batchNo == null ? "" : line.batchNo.trim();
             // IN 目标仓位：空/null = 未分配虚拟位 ''（bin-assignment 强前置由域服务把关）
             String bin = line.binCode == null ? "" : line.binCode.trim();
+
+            // 校验链 ⑥（trial-execution C-4.5-14 后半 / design D8）：目标列 AVAILABLE 且
+            // 该批次存在未放行试产检验批（refId=#TRIAL）→ L1 阻断；唯一合法路径为放行回调
+            //（回调携带 Request.releasedLotId 上下文——仅回调代码可构造）。
+            if (!line.intoQc && !batch.isEmpty() && isBlank(req.releasedLotId)) {
+                checkTrialReleaseGate(line.itemCode, batch);
+            }
             boolean needSerial = type.getNeedSerial() != null && type.getNeedSerial() == 1
                     || (item != null && "1".equals(item.getSerialFlag()));
 
@@ -235,9 +249,15 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                 if (line.intoQc) {
                     fresh.setQcQty(qty);
                     fresh.setAvailableQty(BigDecimal.ZERO);
+                    fresh.setOsQty(BigDecimal.ZERO);
+                } else if (line.intoOs) {
+                    fresh.setQcQty(BigDecimal.ZERO);
+                    fresh.setAvailableQty(BigDecimal.ZERO);
+                    fresh.setOsQty(qty);
                 } else {
                     fresh.setQcQty(BigDecimal.ZERO);
                     fresh.setAvailableQty(qty);
+                    fresh.setOsQty(BigDecimal.ZERO);
                 }
                 fresh.setFinQty(BigDecimal.ZERO);
                 fresh.setInboundDate(LocalDate.now());   // 首插记当日（FIFO 地基，行=位行）
@@ -256,6 +276,8 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                         .setSql("QTY = QTY + " + strip(qty));
                 if (line.intoQc) {
                     uw.setSql("QC_QTY = QC_QTY + " + strip(qty));
+                } else if (line.intoOs) {
+                    uw.setSql("OS_QTY = OS_QTY + " + strip(qty));
                 } else {
                     uw.setSql("AVAILABLE_QTY = AVAILABLE_QTY + " + strip(qty));
                 }
@@ -274,6 +296,27 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             a.itemName = isBlank(line.itemName)
                     ? (item == null ? line.itemCode : item.getItemName()) : line.itemName;
             out.allocations.add(a);
+        }
+    }
+
+    /**
+     * 校验链 ⑥（change add-trial-production-management，spec trial-execution
+     * 「未放行直接入可用阻断」C-4.5-14 后半 / design D8）：
+     * 批次存在试产检验批（refId 后缀 #TRIAL）且未 RELEASED → 目标列 AVAILABLE 的过账 422。
+     * 唯一合法路径 = 放行回调（TrialStockListener 平移 + 携带 releasedLotId 上下文的引擎过账）。
+     */
+    private void checkTrialReleaseGate(String itemCode, String batch) {
+        long unreleased = lotDao.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<
+                        com.erp.entity.qms.InspectionLot>()
+                        .eq(com.erp.entity.qms.InspectionLot::getRefType, "WORKORDER")
+                        .eq(com.erp.entity.qms.InspectionLot::getItemCode, itemCode)
+                        .eq(com.erp.entity.qms.InspectionLot::getBatchNo, batch)
+                        .like(com.erp.entity.qms.InspectionLot::getRefId, "#TRIAL")
+                        .notIn(com.erp.entity.qms.InspectionLot::getStatus, "RELEASED", "CANCELLED"));
+        if (unreleased > 0) {
+            throw new ServiceException(422,
+                    "试产批次未放行，禁止入可用库存（须经检验放行，C-4.5-14）：" + itemCode + "/" + batch);
         }
     }
 
@@ -417,6 +460,10 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             Map<String, LocalDate> expiryByBatch = loadExpiry(first.itemCode, locked);
             // 效期锁定（spec 校验链 ④ / BR-4.4-20）：指定批次硬拦截、缺省分配剔池
             Map<String, Boolean> lockByBatch = loadExpiryLock(first.itemCode, locked);
+            // 隔离态双保险（rework-ncr-control 2.2，spec 隔离区禁用于生产领用）：
+            // 隔离确认中的批次指定出库硬 422、缺省分配剔池——与 NCR 库存冻结（AVAILABLE→QC）
+            // 并存两道防线，防冻结缺口时隔离批次被误分配
+            java.util.Set<String> isolatedBatches = loadIsolatedBatches(first.itemCode);
             List<RowState> pickOrder = new ArrayList<>();
             for (InvStock r : locked) {
                 pickOrder.add(state.get(r.getId()));
@@ -459,6 +506,11 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                         throw new ServiceException(422, "批次已效期锁定，禁止正常出库："
                                 + line.itemCode + " / " + specified);
                     }
+                    // 隔离态双保险（rework-ncr-control 2.2）：不合格隔离批次禁止出库/领用
+                    if (isolatedBatches.contains(specified)) {
+                        throw new ServiceException(422, "不合格隔离中，禁止出库/领用："
+                                + line.itemCode + " / " + specified);
+                    }
                     // 指定批次：组内该批次全部位行按挑序逐行扣减（跨位拆行）
                     List<RowState> batchRows = rowsOfBatch(pickOrder, specified);
                     if (batchRows.isEmpty()) {
@@ -495,6 +547,10 @@ public class StockPostingEngineImpl implements StockPostingEngine {
                     BigDecimal totalBasis = BigDecimal.ZERO;
                     for (RowState st : pickOrder) {
                         if (Boolean.TRUE.equals(lockByBatch.get(st.batchKey))) {
+                            continue;
+                        }
+                        // 隔离态双保险（rework-ncr-control 2.2）：隔离批次剔池不参与缺省分配
+                        if (isolatedBatches.contains(st.batchKey)) {
                             continue;
                         }
                         BigDecimal basis = st.basis();
@@ -845,6 +901,27 @@ public class StockPostingEngineImpl implements StockPostingEngine {
             map.put(b.getBatchNo(), locked);
         }
         return map;
+    }
+
+    /**
+     * 隔离态双保险（rework-ncr-control 2.2，spec 隔离区禁用于生产领用）：
+     * 按物料查隔离确认中且 NCR 未关闭/未作废的批次集合——指定出库硬 422、
+     * 缺省分配剔池。与 NCR 库存冻结（AVAILABLE→QC）并存两道防线。
+     */
+    private java.util.Set<String> loadIsolatedBatches(String itemCode) {
+        List<com.erp.entity.qms.Ncr> isolated = ncrDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.qms.Ncr>()
+                        .eq(com.erp.entity.qms.Ncr::getItemCode, itemCode)
+                        .eq(com.erp.entity.qms.Ncr::getIsolatedFlag, "1")
+                        .notIn(com.erp.entity.qms.Ncr::getStatus, "CLOSED", "CANCELLED")
+                        .isNotNull(com.erp.entity.qms.Ncr::getBatchNo));
+        java.util.Set<String> set = new java.util.HashSet<>();
+        for (com.erp.entity.qms.Ncr n : isolated) {
+            if (str(n.getBatchNo()) != null && !str(n.getBatchNo()).isEmpty()) {
+                set.add(str(n.getBatchNo()));
+            }
+        }
+        return set;
     }
 
     /**

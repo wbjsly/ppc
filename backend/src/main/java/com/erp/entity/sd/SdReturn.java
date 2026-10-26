@@ -23,6 +23,8 @@ public class SdReturn extends BaseEntity {
 
     public static final String HANDLE_REFUND = "REFUND";
     public static final String HANDLE_EXCHANGE = "EXCHANGE";
+    /** 可返修（5.8 返工判定出口，change add-rework-management；可据以开立返工工单） */
+    public static final String HANDLE_REWORKABLE = "REWORKABLE";
 
     public static final String INV_UNINVOICED = "UNINVOICED";
     public static final String INV_INVOICED = "INVOICED";

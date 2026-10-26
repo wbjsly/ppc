@@ -75,6 +75,51 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final MdmTaxCodeDao taxCodeDao;
     private final SysParamService paramService;
     private final OutboxPublisher outboxPublisher;
+    /** 记账汇率固化（add-fx-revaluation 决策 A） */
+    private final com.erp.service.fin.FxRateService fxRateService;
+    /** 红冲全流程重定向（add-red-invoice-void design D3：字段注入避免构造器断裂既有单测） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.erp.service.fin.RedFlushService redFlushService;
+    /** 红冲申请单 DAO（BR-4.14-29 重开一致性校验） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.erp.dao.fin.RedFlushApplyDao redFlushApplyDao;
+
+    /**
+     * 红冲后重开校验（BR-4.14-29，L2）：开票申请关联红冲单时——
+     * ①红冲单必须存在且已开票（ISSUED）；②重开金额或购方与红冲不一致 → 须上传书面说明；
+     * 说明缺失 → 422 阻断。由红冲单详情页发起的重开，红冲单号由前端带入不可清空。
+     */
+    private void assertReopenCompliant(InvoiceApply apply) {
+        if (isBlank(apply.getRedFlushApplyNo()) || redFlushApplyDao == null) {
+            return;
+        }
+        var flush = redFlushApplyDao.selectList(new LambdaQueryWrapper<com.erp.entity.fin.RedFlushApply>()
+                .eq(com.erp.entity.fin.RedFlushApply::getApplyNo, apply.getRedFlushApplyNo())
+                .eq(com.erp.entity.fin.RedFlushApply::getDelFlag, "0"))
+                .stream().findFirst().orElse(null);
+        if (flush == null) {
+            throw new ServiceException(422, "关联红冲申请单不存在：" + apply.getRedFlushApplyNo());
+        }
+        if (!com.erp.entity.fin.RedFlushApply.ST_ISSUED.equals(flush.getStatus())) {
+            throw new ServiceException(422, "红冲申请单未完成开票（当前：" + flush.getStatus()
+                    + "），不可重开");
+        }
+        boolean amountDiff = nvl(apply.getApplyAmount())
+                .compareTo(nvl(flush.getAmount())) != 0;
+        boolean customerDiff = isNotBlank(apply.getCustomerId())
+                && isNotBlank(flush.getCustomerId())
+                && !apply.getCustomerId().equals(flush.getCustomerId());
+        if ((amountDiff || customerDiff) && isBlank(apply.getReopenNote())) {
+            throw new ServiceException(422, "重开" + (amountDiff ? "金额" : "")
+                    + (amountDiff && customerDiff ? "与" : "") + (customerDiff ? "购方信息" : "")
+                    + "与红冲单 " + flush.getApplyNo() + " 不一致，须上传书面说明（BR-4.14-29）");
+        }
+        // 回写重开锚（双向可溯：红冲单详情可见重开申请号）
+        if (isBlank(flush.getReopenApplyNo())) {
+            flush.setReopenApplyNo(apply.getApplyNo());
+            redFlushApplyDao.updateById(flush);
+        }
+    }
 
     public InvoiceServiceImpl(InvoiceApplyDao applyDao,
                               SalesInvoiceDao invoiceDao,
@@ -89,7 +134,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                               MdmItemDao itemDao,
                               MdmTaxCodeDao taxCodeDao,
                               SysParamService paramService,
-                              OutboxPublisher outboxPublisher) {
+                              OutboxPublisher outboxPublisher,
+                              com.erp.service.fin.FxRateService fxRateService) {
         this.applyDao = applyDao;
         this.invoiceDao = invoiceDao;
         this.redDao = redDao;
@@ -104,6 +150,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         this.taxCodeDao = taxCodeDao;
         this.paramService = paramService;
         this.outboxPublisher = outboxPublisher;
+        this.fxRateService = fxRateService;
     }
 
     // ---------- 10.2 发货确认触发生成 ----------
@@ -186,6 +233,13 @@ public class InvoiceServiceImpl implements InvoiceService {
         ar.setAmount(shipAmount);
         ar.setPaidAmount(BigDecimal.ZERO);
         ar.setStatus(ArInvoice.ST_UNPAID);
+        // add-fx-revaluation 决策 A：应收币种取 SO 交易币种；外币按开票日中间价固化记账汇率（缺失 L1 阻断）；CNY 置 1
+        ar.setCurrency(so != null && isNotBlank(so.getCurrency()) ? so.getCurrency() : "CNY");
+        if ("CNY".equals(ar.getCurrency())) {
+            ar.setBookingRate(BigDecimal.ONE);
+        } else {
+            ar.setBookingRate(fxRateService.requireMiddleRate(ar.getCurrency(), "CNY", today));
+        }
         ar.setCreateBy(currentUser());
         arDao.insert(ar);
 
@@ -295,6 +349,8 @@ public class InvoiceServiceImpl implements InvoiceService {
                 && !InvoiceApply.ST_RETURNED.equals(apply.getStatus())) {
             throw new ServiceException(422, "仅草稿/退回状态可提交（当前：" + apply.getStatus() + "）");
         }
+        // 红冲后重开校验（BR-4.14-29）：关联红冲单 → 金额/购方不一致须书面说明（L2）
+        assertReopenCompliant(apply);
         // C-4.3-06 税务资质 L1 硬阻断（结论实时计算并随异常返回；detail 同口径展示）
         MdmCustomerGroup cust = customerDao.selectById(apply.getCustomerId());
         Map<String, Object> check = taxCheck(cust, apply.getInvoiceType());
@@ -502,75 +558,19 @@ public class InvoiceServiceImpl implements InvoiceService {
         return apply;
     }
 
-    // ---------- 10.5 红字发票与应收红冲 ----------
+    // ---------- 10.5 红字发票与应收红冲（add-red-invoice-void design D3：重定向红冲申请） ----------
 
     @Override
     @Transactional
     public RedInvoice redInvoice(String originInvoiceId, String returnId, String returnNo,
                                  BigDecimal amount, String reason) {
         requireAny("开具红字发票", "ROLE_FINANCE_MGR", "ROLE_ADMIN");
-        SalesInvoice origin = invoiceDao.selectById(originInvoiceId);
-        if (origin == null) {
-            throw new ServiceException(404, "原发票不存在：" + originInvoiceId);
+        if (redFlushService == null) {
+            throw new ServiceException(503, "红冲服务未就绪，请使用 9.4.1 红字冲销页面发起红冲申请");
         }
-        if (isBlank(reason)) {
-            throw new ServiceException(422, "红冲原因必填");
-        }
-        if (amount == null || amount.signum() <= 0) {
-            throw new ServiceException(422, "红冲金额必须大于 0");
-        }
-        BigDecimal remain = nvl(origin.getAmount()).subtract(nvl(origin.getRedAmount()));
-        if (amount.compareTo(remain) > 0) {
-            throw new ServiceException(422, "红冲金额超出可冲余额 " + strip(remain));
-        }
-        BigDecimal rate = nvl(origin.getTaxRate());
-
-        RedInvoice red = new RedInvoice();
-        red.setId(uuid());
-        red.setRedNo(nextNo("FPZ", redDao::selectNosByPrefix));
-        red.setOriginInvoiceId(origin.getId());
-        red.setOriginInvoiceNo(origin.getInvoiceNo());
-        red.setArId(origin.getArId());
-        red.setArNo(origin.getArNo());
-        red.setReturnId(returnId);
-        red.setReturnNo(returnNo);
-        red.setCustomerId(origin.getCustomerId());
-        red.setCustomerCode(origin.getCustomerCode());
-        red.setCustomerName(origin.getCustomerName());
-        red.setRedDate(LocalDate.now());
-        red.setAmount(amount);
-        red.setNetAmount(netOf(amount, rate));
-        red.setTaxRate(rate);
-        red.setTaxAmount(amount.subtract(netOf(amount, rate)));
-        red.setReason(reason);
-        red.setStatus(RedInvoice.ST_ISSUED);
-        red.setIssueBy(currentUser());
-        red.setIssueAt(LocalDateTime.now());
-        red.setCreateBy(currentUser());
-        redDao.insert(red);
-
-        // 原票累计红冲 + 状态
-        origin.setRedAmount(nvl(origin.getRedAmount()).add(amount));
-        invoiceDao.updateById(origin);
-
-        // 原应收红冲：余额 = AMOUNT − RED − PAID 相应减少并回到匹配池（spec 场景）
-        ArInvoice ar = arDao.selectById(origin.getArId());
-        if (ar != null) {
-            ar.setRedAmount(nvl(ar.getRedAmount()).add(amount));
-            BigDecimal balance = nvl(ar.getAmount()).subtract(nvl(ar.getRedAmount()))
-                    .subtract(nvl(ar.getPaidAmount()));
-            ar.setStatus(statusOf(ar, balance));
-            arDao.updateById(ar);
-        }
-        // 申请单置红字终态
-        List<InvoiceApply> applies = applyDao.selectList(new LambdaQueryWrapper<InvoiceApply>()
-                .eq(InvoiceApply::getInvoiceId, origin.getId()));
-        for (InvoiceApply a : applies) {
-            a.setStatus(InvoiceApply.ST_RED);
-            applyDao.updateById(a);
-        }
-        log.info("red invoice {} for {} amount {}", red.getRedNo(), origin.getInvoiceNo(), amount);
-        return red;
+        // 一步直达已下线（C-4.14-03 全程留痕）：内部创建红冲申请单并提交审批，
+        // 真红票在审批通过 + 信息表编号登记 + 开票后落台账（退货链路异步，进度见 9.4.1）
+        return redFlushService.redirectLegacy(originInvoiceId, returnId, returnNo, amount, reason);
     }
 
     // ---------- 销项发票台账 ----------

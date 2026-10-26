@@ -262,6 +262,42 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     }
 
     @Override
+    public List<Map<String, Object>> listByBizType(String bizType, String status) {
+        if (bizType == null || bizType.isBlank()) {
+            throw new com.erp.common.ServiceException(422, "bizType 必填");
+        }
+        LambdaQueryWrapper<ApprovalInstance> qw = new LambdaQueryWrapper<ApprovalInstance>()
+                .eq(ApprovalInstance::getBizType, bizType.trim())
+                .orderByDesc(ApprovalInstance::getApplyDate);
+        if (status != null && !status.isBlank()) {
+            qw.eq(ApprovalInstance::getStatus, status.trim());
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ApprovalInstance inst : instanceDao.selectList(qw)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", inst.getId());
+            row.put("apprNo", inst.getApprNo());
+            row.put("bizType", inst.getBizType());
+            row.put("bizId", inst.getBizId());
+            row.put("title", inst.getTitle());
+            row.put("status", inst.getStatus());
+            row.put("applyBy", inst.getApplyBy());
+            row.put("applyDate", inst.getApplyDate());
+            row.put("finishDate", inst.getFinishDate());
+            // 当前活跃节点摘要（PENDING 实例才有可签节点）
+            ApprovalTask active = taskDao.selectOne(new LambdaQueryWrapper<ApprovalTask>()
+                    .eq(ApprovalTask::getApprId, inst.getId())
+                    .eq(ApprovalTask::getStatus, "ACTIVE")
+                    .orderByAsc(ApprovalTask::getSeq)
+                    .last("LIMIT 1"));
+            row.put("nodeName", active == null ? null : active.getNodeName());
+            row.put("roleRequired", active == null ? null : active.getRoleRequired());
+            out.add(row);
+        }
+        return out;
+    }
+
+    @Override
     public Map<String, Object> logs(String bizType, String bizId) {
         ApprovalInstance inst = findByBiz(bizType, bizId);
         if (inst == null) {

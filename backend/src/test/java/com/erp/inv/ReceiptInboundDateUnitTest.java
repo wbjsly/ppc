@@ -101,6 +101,7 @@ class ReceiptInboundDateUnitTest {
                 mock(VmiAlertService.class),
                 mock(ObjectMapper.class),
                 engine,
+                mock(com.erp.service.mrp.DispatchService.class),
                 putawayDao);
         ReflectionTestUtils.setField(service, "receiptTolerance", new BigDecimal("0.005"));
         ReflectionTestUtils.setField(service, "qcHoursA", 24);

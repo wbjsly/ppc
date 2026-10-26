@@ -58,6 +58,10 @@ public class CopqEntry extends BaseEntity {
     @TableField("BATCH_NO")
     private String batchNo;
 
+    /** 工序编码（可选维度，rework-copq-analysis） */
+    @TableField("PROCESS_CODE")
+    private String processCode;
+
     /** 供应商 */
     @TableField("SUPPLIER_ID")
     private String supplierId;
@@ -65,6 +69,10 @@ public class CopqEntry extends BaseEntity {
     /** 供应商名称 */
     @TableField("SUPPLIER_NAME")
     private String supplierName;
+
+    /** 客户名称（可选维度，rework-copq-analysis） */
+    @TableField("CUSTOMER_NAME")
+    private String customerName;
 
     /** 1=无法归因（未归因类别） */
     @TableField("UNATTRIBUTED_FLAG")

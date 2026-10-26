@@ -102,6 +102,9 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
     private final com.erp.service.vmi.VmiAlertService vmiAlertService;
     private final com.fasterxml.jackson.databind.ObjectMapper jsonMapper;
     private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+
+    /** 外协回联 RECEIVED（change add-dispatch-management design D5：过账后按 PO 号回写派工单） */
+    private final com.erp.service.mrp.DispatchService dispatchService;
     /** 仓位分配台账（强前置 ①' + 取位，spec receipt-posting MODIFIED / bin-assignment） */
     private final com.erp.dao.inv.InvPutawayDao putawayDao;
 
@@ -981,6 +984,8 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         }
         String userId = SecurityUtils.getCurrentUserId();
         int postedLines = 0;
+        // 本次过账 within-tolerance 合计（外协自动报工闭环用，change add-outsourcing-processing）
+        java.math.BigDecimal postedWithinTotal = java.math.BigDecimal.ZERO;
         List<GoodsReceiptLine> postedLineEntities = new ArrayList<>();
         for (GoodsReceiptLine gl : lineList(grId)) {
             if (!"PENDING".equals(gl.getStatus())) {
@@ -1024,6 +1029,7 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
             lineDao.updateById(gl);
             postedLineEntities.add(gl);
             postedLines++;
+            postedWithinTotal = postedWithinTotal.add(within);
         }
         if (postedLines == 0) {
             throw new ServiceException(422, "无可过账行（全部已过账或被拒收）");
@@ -1033,6 +1039,12 @@ public class GoodsReceiptServiceImpl implements GoodsReceiptService {
         gr.setPostingDate(LocalDateTime.now());
         gr.setUpdateBy(userId);
         grDao.updateById(gr);
+        // 外协回联 RECEIVED + 自动报工闭环（change add-outsourcing-processing）：
+        // 传 GR 单号与本次过账量（within-tolerance 合计），触发 AUTO_OUTSOURCE 报工与收足完成工序。
+        // 非外协派工的 PO 内部静默跳过，不影响本过账事务。
+        if (gr.getPoNo() != null && !gr.getPoNo().isEmpty()) {
+            dispatchService.recallReceived(gr.getPoNo(), gr.getGrNo(), postedWithinTotal);
+        }
         if (consign) {
             // 寄售 PO 跳过暂估（BR-4.2-01 物权属供应商，不确认应付；暂估于领用物权转移时经
             // createFromVmiTransfer 生成，MODIFIED receipt-posting ⑥）；消费水位放行额度（一次性）

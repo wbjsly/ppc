@@ -192,11 +192,14 @@ class AtpShipmentRulesUnitTest {
                         mock(com.erp.dao.inv.InvTransactionDao.class),
                         mock(com.erp.dao.inv.InvSerialDao.class), reservationDao,
                         mock(com.erp.dao.mdm.MdmItemDao.class), mock(OutboxPublisher.class),
-                        sysParamForEngine(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class));
+                        sysParamForEngine(), mock(com.erp.dao.inv.InvCountTaskDao.class), mock(com.erp.dao.inv.InvCountLineDao.class),
+                mock(com.erp.dao.qms.InspectionLotDao.class), mock(com.erp.dao.qms.NcrDao.class));
         shipment = new ShipmentServiceImpl(shipDao, shipLineDao, soDao, soLineDao,
                 mock(SdReturnDao.class), mock(SdReturnLineDao.class), stockDao, reservationDao,
                 mock(OutboxPublisher.class), mock(NoticeService.class),
-                mock(SysParamService.class), mock(InvoiceService.class), realEngine, mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class), mock(com.erp.dao.mdm.MdmCustomerGroupDao.class), mock(com.erp.dao.inv.InvWaveLineDao.class), mock(com.erp.dao.inv.InvWaveDao.class) );
+                mock(SysParamService.class), mock(InvoiceService.class), realEngine, mock(com.erp.service.inv.PickTaskGate.class), mock(com.erp.service.inv.PickTaskService.class), mock(com.erp.dao.mdm.MdmCustomerGroupDao.class), mock(com.erp.dao.inv.InvWaveLineDao.class), mock(com.erp.dao.inv.InvWaveDao.class),
+                mock(com.erp.service.qms.QualityGateService.class,
+                        inv -> java.util.Map.of("decision", "ALLOWED", "warnings", java.util.List.of())) );
     }
 
     private InvStock stock(String id, String batch, String qty) {

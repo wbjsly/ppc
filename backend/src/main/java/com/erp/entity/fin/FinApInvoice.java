@@ -26,7 +26,11 @@ public class FinApInvoice extends BaseEntity {
     private String supplierId;
     private String supplierName;
     private LocalDate invoiceDate;
+    /** 到期日=INVOICE_DATE+供应商账期天数（账龄落段基准；存量留 NULL 人工补录，144 加列） */
+    private LocalDate dueDate;
     private String currency;
+    /** 原记账汇率（外币按发票日中间价固化，CNY=1；146 加列，add-fx-revaluation） */
+    private BigDecimal bookingRate;
     /** 含税总额（本期不拆进项税，design D9） */
     private BigDecimal totalAmount;
     /** 已核销金额（FIFO 核销，047 增列；未清 = totalAmount − paidAmount） */

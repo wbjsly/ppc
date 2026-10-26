@@ -11,6 +11,7 @@ import com.erp.entity.crm.LeadFollowup;
 import com.erp.entity.crm.LeadPool;
 import com.erp.entity.crm.LeadScoreModel;
 import com.erp.service.crm.LeadScoreModelService;
+import com.erp.service.crm.LeadAutoAssignService;
 import com.erp.service.crm.LeadService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,15 +41,18 @@ public class LeadServiceImpl implements LeadService {
     private static final int RECYCLE_DAYS = 30;
 
     private final LeadDao leadDao;
+    private final LeadAutoAssignService autoAssignService;
     private final LeadFollowupDao followupDao;
     private final LeadPoolDao poolDao;
     private final LeadScoreModelService scoreModelService;
 
     public LeadServiceImpl(LeadDao leadDao,
+                           LeadAutoAssignService autoAssignService,
                            LeadFollowupDao followupDao,
                            LeadPoolDao poolDao,
                            LeadScoreModelService scoreModelService) {
         this.leadDao = leadDao;
+        this.autoAssignService = autoAssignService;
         this.followupDao = followupDao;
         this.poolDao = poolDao;
         this.scoreModelService = scoreModelService;
@@ -121,6 +125,8 @@ public class LeadServiceImpl implements LeadService {
         row.setDemandDesc(lead.getDemandDesc());
         row.setExpectAmount(lead.getExpectAmount());
         row.setExpectCloseDate(lead.getExpectCloseDate());
+        row.setRegion(lead.getRegion());
+        row.setIndustry(lead.getIndustry());
         row.setRemark(lead.getRemark());
         // 查重命中的既有线索：允许带差异说明关联（L4 语义，非阻断）
         if (!isBlank(lead.getDuplicateOf())) {
@@ -163,6 +169,8 @@ public class LeadServiceImpl implements LeadService {
         stored.setDemandDesc(lead.getDemandDesc());
         stored.setExpectAmount(lead.getExpectAmount());
         stored.setExpectCloseDate(lead.getExpectCloseDate());
+        stored.setRegion(lead.getRegion());
+        stored.setIndustry(lead.getIndustry());
         stored.setRemark(lead.getRemark());
         leadDao.updateById(stored);
         return stored;
@@ -252,10 +260,27 @@ public class LeadServiceImpl implements LeadService {
         lead.setScoreModelVersion(model.getVersion());
         lead.setScoreAt(LocalDateTime.now());
         leadDao.updateById(lead);
+        Map<String, Object> missingW = new LinkedHashMap<>();
+        Map<String, Object> outW = new LinkedHashMap<>();
 
         // FR-4.8-1-3：D 级线索进入线索池暂存
         if ("D".equals(grade)) {
             poolIn(lead, LeadPool.RS_D_GRADE, "D 级线索自动入池");
+        } else {
+            // add-lead-auto-assign：A→资深 / B·C→规则 / 回落最少在手；失败不阻断评分
+            try {
+                Map<String, Object> routed = autoAssignService.route(lead);
+                if (routed.get("warning") != null) {
+                    missingW.put("assignWarning", routed.get("warning"));
+                }
+                if (routed.get("ownerId") != null) {
+                    outW.put("autoAssignedTo", routed.get("ownerId"));
+                    outW.put("autoAssignSource", routed.get("source"));
+                }
+            } catch (Exception ex) {
+                missingW.put("assignWarning", "自动分配失败（线索保持未分配）：" + ex.getMessage());
+                log.warn("lead auto assign failed {}: {}", lead.getId(), ex.getMessage());
+            }
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -263,6 +288,8 @@ public class LeadServiceImpl implements LeadService {
         out.put("grade", grade);
         out.put("missing", missing);
         out.put("model", model.getModelKey() + " v" + model.getVersion());
+        out.putAll(outW);
+        out.putAll(missingW);
         if (!missing.isEmpty()) {
             out.put("warning", "L4 以下维度未评分按 0 分计，请补充：" + String.join("、", missing));
         }

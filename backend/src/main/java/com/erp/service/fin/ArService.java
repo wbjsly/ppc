@@ -2,9 +2,7 @@ package com.erp.service.fin;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.entity.fin.ArInvoice;
-import com.erp.entity.fin.ArReceipt;
 import com.erp.entity.fin.ArStatement;
-import com.erp.entity.fin.ArWriteoff;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,8 +29,8 @@ public interface ArService {
     Map<String, Object> arDetail(String arId);
 
     /**
-     * 客户回款登记（10.6）：FIFO 自动匹配最早未清应收，支持部分核销；
-     * 未匹配余额转人工队列。返回回款单 + 核销明细 + 凭证号。
+     * 客户回款登记（10.6，add-payment-collection：委托统一收付款中心 IN 方向）：
+     * FIFO 自动匹配最早未清应收；未匹配差额转预收账款 2205。返回收付款单 + 核销明细 + 凭证号。
      */
     Map<String, Object> registerReceipt(String customerId, BigDecimal amount,
                                         LocalDate payDate, String remark);
@@ -41,11 +39,13 @@ public interface ArService {
     Map<String, Object> manualWriteoff(String receiptId, String arId, BigDecimal amount,
                                        LocalDate payDate, String remark);
 
-    Page<ArReceipt> receiptPage(long current, long size, String status,
-                                String keyword, String customerId);
+    /** 回款单分页（= 统一收付款单 IN 方向） */
+    Page<com.erp.entity.fin.CashDoc> receiptPage(long current, long size, String status,
+                                                 String keyword, String customerId);
 
-    Page<ArWriteoff> writeoffPage(long current, long size, String keyword,
-                                  String customerId, String arNo);
+    /** 核销明细分页（= 统一核销表 TARGET_TYPE=AR） */
+    Page<com.erp.entity.fin.CashWriteoff> writeoffPage(long current, long size, String keyword,
+                                                       String customerId, String arNo);
 
     /**
      * 月度对账单生成（10.7）：期初/本期开票/本期核销/期末 + 未核销逐笔明细。

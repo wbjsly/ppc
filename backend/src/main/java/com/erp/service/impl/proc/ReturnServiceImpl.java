@@ -66,6 +66,11 @@ public class ReturnServiceImpl implements ReturnService {
     /** 应付冲减（BR-4.2-34 落地，add-accrual-three-way-match D5） */
     private final com.erp.service.fin.AccrualService accrualService;
     private final com.erp.service.inv.StockPostingEngine stockPostingEngine;
+    /** 外协自动报工冲回（task 4.2，spec outsourcing-execution「红冲同步冲回」）：
+     *  退货出库时按 PO 冲减 RECV_QTY/自动报工产出行，非外协静默跳过 */
+    private final com.erp.service.mrp.DispatchService dispatchService;
+    /** 甲供在途红冲恢复（task 5.2）：退货出库时反向恢复外协在途，非外协静默跳过 */
+    private final com.erp.service.mrp.OsMaterialService osMaterialService;
 
     public ReturnServiceImpl(ReturnOrderDao returnDao,
                              ReturnOrderLineDao lineReturnDao,
@@ -78,7 +83,9 @@ public class ReturnServiceImpl implements ReturnService {
                              @Lazy NcrService ncrService,
                              com.erp.service.qms.CopqService copqService,
                              com.erp.service.fin.AccrualService accrualService,
-                             com.erp.service.inv.StockPostingEngine stockPostingEngine) {
+                             com.erp.service.inv.StockPostingEngine stockPostingEngine,
+                             @Lazy com.erp.service.mrp.DispatchService dispatchService,
+                             @Lazy com.erp.service.mrp.OsMaterialService osMaterialService) {
         this.returnDao = returnDao;
         this.lineReturnDao = lineReturnDao;
         this.grDao = grDao;
@@ -91,6 +98,8 @@ public class ReturnServiceImpl implements ReturnService {
         this.copqService = copqService;
         this.accrualService = accrualService;
         this.stockPostingEngine = stockPostingEngine;
+        this.dispatchService = dispatchService;
+        this.osMaterialService = osMaterialService;
     }
 
     // ================= 8.1 NCR 自动带出 =================
@@ -511,6 +520,32 @@ public class ReturnServiceImpl implements ReturnService {
                 r.getTotalAmt(), r.getReturnNo());
         log.info("return {} red {} 应付冲减 {} / 退货金额 {}",
                 r.getReturnNo(), r.getRedDocNo(), offsetted, r.getTotalAmt());
+
+        // 外协自动报工冲回（task 4.2，spec outsourcing-execution「红冲同步冲回」）：
+        // 该 PO 若为外协 PO，则按退货量冲减 RECV_QTY 与自动报工产出行，收足状态回退；
+        // 非外协/无自动报工 → reverseAutoReport 内部静默返回 false，不影响退货主流程。
+        // 甲供在途红冲恢复（task 5.2，spec「红冲恢复在途」）同事务挂接：已冲减的收货发生红冲
+        // → 按退货件数 × 定额单耗反向恢复外协在途；非外协/无冲减记录内部静默 false。
+        if (hasText(r.getPoNo())) {
+            try {
+                BigDecimal returnQty = java.util.Objects.requireNonNullElse(
+                        r.getTotalQty(), BigDecimal.ZERO);
+                if (returnQty.signum() > 0) {
+                    boolean reversed = dispatchService.reverseAutoReport(
+                            r.getPoNo(), r.getReturnNo(), returnQty);
+                    log.info("return {} 外协自动报工冲回 po={} qty={} applied={}",
+                            r.getReturnNo(), r.getPoNo(), returnQty, reversed);
+                    boolean osRestored = osMaterialService.reverseConsume(
+                            r.getPoNo(), r.getReturnNo(), returnQty);
+                    log.info("return {} 甲供在途红冲恢复 po={} qty={} applied={}",
+                            r.getReturnNo(), r.getPoNo(), returnQty, osRestored);
+                }
+            } catch (Exception ex) {
+                // 冲回失败随出库事务回滚，避免外协收货累计与退货不一致
+                throw new ServiceException(422,
+                        "外协自动报工冲回失败（随退货出库回滚）：" + ex.getMessage());
+            }
+        }
 
         // COPQ 归集（tasks 9.6）：退货金额记内部失败成本（来源 RETURN，幂等按 sourceId）
         if (r.getTotalAmt() != null && r.getTotalAmt().signum() > 0) {

@@ -99,6 +99,12 @@ public class InspectionStandardController {
         return R.ok(service.characteristics(versionId));
     }
 
+    @Operation(summary = "审批中版本平铺（6.1.2 独立待办页，含双签状态）")
+    @GetMapping("/pending-versions")
+    public R<List<Map<String, Object>>> pendingVersions() {
+        return R.ok(service.pendingVersions());
+    }
+
     @Operation(summary = "适用范围命中解析（任务生成快照用）")
     @GetMapping("/resolve")
     public R<Map<String, Object>> resolve(@RequestParam(required = false) String materialCode,
@@ -115,10 +121,17 @@ public class InspectionStandardController {
         return R.ok(service.samplingPlans());
     }
 
-    @Operation(summary = "保存抽样方案（编码唯一）")
+    @Operation(summary = "保存抽样方案（编码唯一；被非草稿版本引用 → 422 引用锁）")
     @PostMapping("/sampling-plans")
     public R<SamplingPlan> saveSamplingPlan(@RequestBody SamplingPlan plan) {
         return R.ok(service.saveSamplingPlan(plan));
+    }
+
+    @Operation(summary = "复制为新方案（引用锁出口）")
+    @PostMapping("/sampling-plans/{id}/copy")
+    public R<SamplingPlan> copySamplingPlan(@PathVariable String id,
+                                             @RequestParam(required = false) String newPlanCode) {
+        return R.ok(service.copySamplingPlan(id, newPlanCode));
     }
 
     private String str(Object o) {

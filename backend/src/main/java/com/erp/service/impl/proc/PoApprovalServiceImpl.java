@@ -63,6 +63,8 @@ public class PoApprovalServiceImpl implements PoApprovalService {
     private final com.erp.service.vmi.VmiAgreementService vmiAgreementService;
     /** 门户协同下达推送（spec po-collaboration：审批通过同事务推送） */
     private final com.erp.service.proc.PoCoopService poCoopService;
+    /** 外协回联 ORDERED（change add-dispatch-management design D5：下达后按 PR 号回写派工单） */
+    private final com.erp.service.mrp.DispatchService dispatchService;
 
     public PoApprovalServiceImpl(PoApprovalTaskDao taskDao,
                                  PoApprovalLogDao logDao,
@@ -73,7 +75,9 @@ public class PoApprovalServiceImpl implements PoApprovalService {
                                  SysUserDao sysUserDao,
                                  MdmSupplierDao supplierDao,
                                  com.erp.service.vmi.VmiAgreementService vmiAgreementService,
-                                 com.erp.service.proc.PoCoopService poCoopService) {
+                                 com.erp.service.proc.PoCoopService poCoopService,
+                                 // @Lazy 断潜在构造环（DispatchServiceImpl → 审批引擎 → 回调收集）
+                                 @org.springframework.context.annotation.Lazy com.erp.service.mrp.DispatchService dispatchService) {
         this.taskDao = taskDao;
         this.logDao = logDao;
         this.poDao = poDao;
@@ -84,6 +88,7 @@ public class PoApprovalServiceImpl implements PoApprovalService {
         this.supplierDao = supplierDao;
         this.vmiAgreementService = vmiAgreementService;
         this.poCoopService = poCoopService;
+        this.dispatchService = dispatchService;
     }
 
     // ---------- 判级与建链（FR-4.2-3-2 / design D1） ----------
@@ -331,6 +336,10 @@ public class PoApprovalServiceImpl implements PoApprovalService {
             log.info("PO {} approved (batch={}, all nodes passed)", po.getPoNo(), t.getSubmitBatch());
             // 门户协同（spec po-collaboration）：下达即推送供应商门户（PUSHED 流水 + PROC.PO_PUSHED）
             poCoopService.push(po);
+            // 外协回联 ORDERED（design D5）：非外协派工的 PO 内部静默跳过，不影响本流程
+            if (po.getPrNo() != null && !po.getPrNo().isEmpty()) {
+                dispatchService.recallOrdered(po.getPrNo(), po.getPoNo());
+            }
         }
         return logs(po.getId());
     }

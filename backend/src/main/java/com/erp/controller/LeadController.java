@@ -3,11 +3,17 @@ package com.erp.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.R;
 import com.erp.entity.crm.Lead;
+import io.swagger.v3.oas.annotations.Operation;
 import com.erp.entity.crm.LeadFollowup;
 import com.erp.entity.crm.LeadPool;
 import com.erp.entity.crm.LeadScoreModel;
+import com.erp.entity.crm.CrmAssignRule;
+import com.erp.entity.crm.CrmSalesProfile;
+import com.erp.service.crm.LeadAutoAssignService;
 import com.erp.service.crm.LeadScoreModelService;
 import com.erp.service.crm.LeadService;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,10 +36,13 @@ public class LeadController {
 
     private final LeadService leadService;
     private final LeadScoreModelService modelService;
+    private final LeadAutoAssignService autoAssignService;
 
-    public LeadController(LeadService leadService, LeadScoreModelService modelService) {
+    public LeadController(LeadService leadService, LeadScoreModelService modelService,
+                           LeadAutoAssignService autoAssignService) {
         this.leadService = leadService;
         this.modelService = modelService;
+        this.autoAssignService = autoAssignService;
     }
 
     // ---------- 线索 ----------
@@ -169,5 +178,51 @@ public class LeadController {
         }
         String s = String.valueOf(v).trim();
         return s.isEmpty() ? null : Integer.parseInt(s);
+    }
+
+    // ---------- 自动分配配置（add-lead-auto-assign，FR-4.8-1-3；11.1.2「分配规则」Tab） ----------
+
+    @GetMapping("/assign/seniors")
+    @Operation(summary = "资深销售名单（含全部已有档案行，便于 Tab 展示勾选态）")
+    public R<List<CrmSalesProfile>> seniorList() {
+        return R.ok(autoAssignService.seniorList());
+    }
+
+    @PutMapping("/assign/seniors")
+    @PreAuthorize("hasAnyRole('SALES_MGR','ADMIN')")
+    @Operation(summary = "批量保存资深名单（全量覆盖：未勾选的既有标记清除）")
+    public R<Void> saveSeniors(@RequestBody List<Map<String, String>> seniors) {
+        autoAssignService.saveSeniors(seniors);
+        return R.ok(null);
+    }
+
+    @GetMapping("/assign/rules")
+    @Operation(summary = "分配规则清单（优先级升序）")
+    public R<List<CrmAssignRule>> ruleList() {
+        return R.ok(autoAssignService.ruleList());
+    }
+
+    @PostMapping("/assign/rules")
+    @PreAuthorize("hasAnyRole('SALES_MGR','ADMIN')")
+    @Operation(summary = "新建规则（目标销售集为空 422；区域/行业空=通配）")
+    public R<CrmAssignRule> createRule(@RequestBody CrmAssignRule rule) {
+        rule.setId(null);
+        return R.ok(autoAssignService.saveRule(rule));
+    }
+
+    @PutMapping("/assign/rules/{id}")
+    @PreAuthorize("hasAnyRole('SALES_MGR','ADMIN')")
+    @Operation(summary = "更新规则")
+    public R<CrmAssignRule> updateRule(@PathVariable String id, @RequestBody CrmAssignRule rule) {
+        rule.setId(id);
+        return R.ok(autoAssignService.saveRule(rule));
+    }
+
+    @DeleteMapping("/assign/rules/{id}")
+    @PreAuthorize("hasAnyRole('SALES_MGR','ADMIN')")
+    @Operation(summary = "删除规则（逻辑删）")
+    public R<Void> deleteRule(@PathVariable String id) {
+        autoAssignService.deleteRule(id);
+        return R.ok(null);
     }
 }

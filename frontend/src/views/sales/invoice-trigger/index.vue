@@ -50,6 +50,16 @@
         <el-table-column label="发票号" width="150">
           <template #default="{ row }">{{ row.invoiceNo || '—' }}</template>
         </el-table-column>
+        <el-table-column label="重开关联" width="150">
+          <template #default="{ row }">
+            <template v-if="row.redFlushApplyNo">
+              <el-tooltip :content="`重开原因：${row.reopenNote || '—'}（金额/购方与红冲不一致时须书面说明，BR-4.14-29）`" placement="top">
+                <el-tag size="small" type="warning">{{ row.redFlushApplyNo }}</el-tag>
+              </el-tooltip>
+            </template>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag size="small" :type="statusTag(row.status)">{{ statusName(row.status) }}</el-tag>

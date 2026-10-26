@@ -1,0 +1,253 @@
+-- 123 生产管理-报工管理（5.7，spec 4.5-05 报工）：四新表 + 路线/工单快照两列 + 七参数 + M5-7 菜单 4→2 叶
+--     （change add-reporting-management，spec shop-floor-reporting ADDED 九需求 /
+--       in-process-quality ADDED 六需求 / completion-backflush ADDED 三需求 /
+--       routing-management MODIFIED 路线装配与下游契约 / inspection-lot MODIFIED IPQC 触发源 /
+--       work-order-management MODIFIED 完工接管；design D1：单迁移只增不改）
+-- 幂等：CREATE TABLE IF NOT EXISTS / INSERT IGNORE / UPDATE / information_schema 条件 ALTER（可重复执行）
+
+-- ---------- 1) 报工单（shop-floor-reporting：一单一序，OPEN→CONFIRMED→REVERSED） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_reporting (
+    ID VARCHAR(64) NOT NULL,
+    RPT_NO VARCHAR(64) NOT NULL COMMENT '报工单号 RP+yyyyMMdd+流水',
+    DISPATCH_ID VARCHAR(64) NOT NULL COMMENT '来源派工单（FR-4.5-5-1 扫码定位）',
+    DISPATCH_NO VARCHAR(64) DEFAULT NULL COMMENT '派工单号（冗余查询）',
+    MO_ID VARCHAR(64) NOT NULL COMMENT '所属工单',
+    MO_NO VARCHAR(64) DEFAULT NULL COMMENT '工单号（冗余查询）',
+    OP_SEQ INT NOT NULL COMMENT '工序序号',
+    OP_NAME VARCHAR(64) DEFAULT NULL COMMENT '工序名称（冗余展示）',
+    WC_CODE VARCHAR(64) DEFAULT NULL COMMENT '工作中心（设备运行时间挂点，偏差 D4）',
+    MODE VARCHAR(16) NOT NULL DEFAULT 'BATCH' COMMENT 'BATCH 批量 / PIECE 逐件（BR-4.5-23）',
+    STATUS VARCHAR(20) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN 可增改 / CONFIRMED 只读 / REVERSED 冲销终态',
+    START_AT DATETIME DEFAULT NULL COMMENT '实际开工时间（FR-4.5-5-1）',
+    OVERDUE_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '超期黄标：计划开工日早于当日放行（FR-4.5-5-1 偏差 D2 不阻断）',
+    CONFIRM_BY VARCHAR(64) DEFAULT NULL COMMENT '确认人',
+    CONFIRM_AT DATETIME DEFAULT NULL,
+    REVERSES_ID VARCHAR(64) DEFAULT NULL COMMENT '红字冲销单指向原单（原单置 REVERSED，BR-4.5-25）',
+    REVERSED_BY_ID VARCHAR(64) DEFAULT NULL COMMENT '原单被哪张红字单冲销',
+    REVERSE_REASON VARCHAR(500) DEFAULT NULL COMMENT '冲销原因（必填，审批提交校验）',
+    REVERSE_BY VARCHAR(64) DEFAULT NULL COMMENT '冲销审批通过人',
+    REVERSE_AT DATETIME DEFAULT NULL,
+    OVERPROD_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '本单触发超产挂起（FR-4.5-5-4 分级）',
+    SETUP_HOURS DECIMAL(12,4) DEFAULT NULL COMMENT '实际准备工时（FR-4.5-5-6 分项）',
+    RUN_HOURS DECIMAL(12,4) DEFAULT NULL COMMENT '实际加工工时',
+    MACHINE_HOURS DECIMAL(12,4) DEFAULT NULL COMMENT '设备运行时间（挂 WC，偏差 D4/D11）',
+    HOUR_ALERT_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '工时异常待办已生成（WORKHOUR_DEVIATION_ALERT）',
+    HOUR_CONFIRM_BY VARCHAR(64) DEFAULT NULL COMMENT '工时异常主管确认人',
+    HOUR_CONFIRM_AT DATETIME DEFAULT NULL,
+    PROD_CONFIRM_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '超产二次确认/审批已通过（阈值内操作工自确认）',
+    REPORTER VARCHAR(64) DEFAULT NULL COMMENT '实际报工人（扫码/代报场景 = 操作账号）',
+    DISPATCH_OWNER VARCHAR(64) DEFAULT NULL COMMENT '派工单原派工人（人单不匹配提示留痕，FR-4.5-5-1）',
+    PROXY_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '代报标记（操作人 ≠ 派工人且确认继续）',
+    REMARK VARCHAR(500) DEFAULT NULL,
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_RPT_NO (RPT_NO),
+    KEY IDX_MRP_RPT_MO_OP (MO_ID, OP_SEQ),
+    KEY IDX_MRP_RPT_DISPATCH (DISPATCH_ID),
+    KEY IDX_MRP_RPT_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 1.1) 开工准入黄标列（2.2：CREATE 后补——已建表环境靠条件 ALTER 收敛，两遍幂等） ----------
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_reporting ADD COLUMN OVERDUE_FLAG VARCHAR(1) NOT NULL DEFAULT ''0'' COMMENT ''超期黄标：计划开工日早于当日放行（FR-4.5-5-1 偏差 D2 不阻断）'' AFTER START_AT',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_reporting' AND COLUMN_NAME = 'OVERDUE_FLAG');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 2) 投料行（design D3：投料即扣，FLOW_TYPE 区分手工/倒冲——冲销反向恢复的判断依据） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_feed (
+    ID VARCHAR(64) NOT NULL,
+    RPT_ID VARCHAR(64) DEFAULT NULL COMMENT '所属报工单（倒冲补投行为空，mo 级归属）',
+    MO_ID VARCHAR(64) NOT NULL COMMENT '所属工单（差额防御公式聚合键）',
+    OP_SEQ INT DEFAULT NULL COMMENT '工序序号（NULL=工单级投料，FR-4.5-5-2 扫码投料）',
+    ITEM_CODE VARCHAR(64) NOT NULL COMMENT '物料',
+    ITEM_NAME VARCHAR(128) DEFAULT NULL,
+    BATCH_CODE VARCHAR(64) DEFAULT NULL COMMENT '批次（扫码批号文本命中，偏差 D3）',
+    QTY DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '投料数量（>0，保存即扣 AVAILABLE_QTY）',
+    FLOW_TYPE VARCHAR(16) NOT NULL DEFAULT 'HAND' COMMENT 'HAND 手工投料 / BFLUSH 完工倒冲补投（design D8）',
+    SOURCE_ISSUE_NO VARCHAR(64) DEFAULT NULL COMMENT '倒冲差额参照的 POSTED 领料单号（防御公式审计）',
+    FEED_AT DATETIME DEFAULT NULL COMMENT '投料时间',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    KEY IDX_MRP_FEED_RPT (RPT_ID),
+    KEY IDX_MRP_FEED_MO (MO_ID, ITEM_CODE),
+    KEY IDX_MRP_FEED_FLOW (FLOW_TYPE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 2.1) 投料退回幂等标记（2.3：冲销回加防双退，条件 ALTER 两遍幂等） ----------
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_feed ADD COLUMN RETURNED_FLAG VARCHAR(1) NOT NULL DEFAULT ''0'' COMMENT ''冲销已回加 1（reverseFeeds 幂等锚点，防双退）'' AFTER SOURCE_ISSUE_NO',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_feed' AND COLUMN_NAME = 'RETURNED_FLAG');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 2.2) 倒冲补投行的报工单归属可空（4.2：BFLUSH 行 mo 级归属，
+--     不挂具体报工单——完工倒冲发生在报工单之外；HAND 行仍必挂） ----------
+SET @ddl = (SELECT IF(EXISTS(
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_feed'
+      AND COLUMN_NAME = 'RPT_ID' AND IS_NULLABLE = 'NO'),
+    'ALTER TABLE erp_mrp_feed MODIFY RPT_ID VARCHAR(64) NULL COMMENT ''所属报工单（倒冲补投行为空，mo 级归属）''',
+    'SELECT 1'));
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 3) 产出行（FR-4.5-5-4 合格+不合格；BR-4.5-26 分级处置落点） ----------
+CREATE TABLE IF NOT EXISTS erp_mrp_output (
+    ID VARCHAR(64) NOT NULL,
+    RPT_ID VARCHAR(64) NOT NULL COMMENT '所属报工单',
+    MO_ID VARCHAR(64) NOT NULL COMMENT '所属工单',
+    OP_SEQ INT NOT NULL COMMENT '工序序号（良率工序级累计，design D2）',
+    GOOD_QTY DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '合格产出（良率分子）',
+    NG_QTY DECIMAL(18,4) NOT NULL DEFAULT 0 COMMENT '不合格产出',
+    NG_DISPOSE VARCHAR(20) DEFAULT NULL COMMENT 'SCRAP 报废 / REWORK 返工 / CONCESSION 让步接收（BR-4.5-26）',
+    NCR_ID VARCHAR(64) DEFAULT NULL COMMENT '关联生产 NCR（refType=WORKORDER；小额报废域内处置为 NULL）',
+    DIRECT_DISPOSE_FLAG VARCHAR(1) NOT NULL DEFAULT '0' COMMENT '域内直接处置（报废 < NCR_AUTO_QTY，design D6 分级豁免）',
+    OUTPUT_AT DATETIME DEFAULT NULL COMMENT '产出记录时间',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    KEY IDX_MRP_OUT_RPT (RPT_ID),
+    KEY IDX_MRP_OUT_MO_OP (MO_ID, OP_SEQ),
+    KEY IDX_MRP_OUT_NCR (NCR_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 4) 良率冻结台账（design D4：活动行模式仿 erp_mrp_reservation；派工/完工双挂点校验） ----------
+--     ACTIVE_FLAG 技巧：活动=1 关闭=NULL —— UNIQUE(MO_ID, ACTIVE_FLAG) 保证同工单至多一条活动冻结，
+--     关闭历史可无限累积（冲销回拨解冻 / NCR 关闭解冻可能多轮）
+CREATE TABLE IF NOT EXISTS erp_mrp_mo_freeze (
+    ID VARCHAR(64) NOT NULL,
+    MO_ID VARCHAR(64) NOT NULL COMMENT '被冻结工单',
+    MO_NO VARCHAR(64) DEFAULT NULL COMMENT '工单号（冗余展示）',
+    WC_CODE VARCHAR(64) DEFAULT NULL COMMENT 'SCOPE=WC 时的工作中心（YIELD_FREEZE_SCOPE 冻全线）',
+    SCOPE VARCHAR(8) NOT NULL DEFAULT 'MO' COMMENT 'MO 工单级（默认，偏差 D6）/ WC 工作中心级',
+    REASON VARCHAR(20) NOT NULL DEFAULT 'YIELD' COMMENT '冻结原因（良率超差 FR-4.5-5-5）',
+    YIELD_VALUE DECIMAL(7,4) DEFAULT NULL COMMENT '触发时实际良率（%）',
+    DEVIATION_VALUE DECIMAL(7,4) DEFAULT NULL COMMENT '触发时良率偏差（%）',
+    NCR_ID VARCHAR(64) DEFAULT NULL COMMENT '关联 NCR（≥Major 升 WC 级）',
+    FROZEN_BY VARCHAR(64) DEFAULT NULL COMMENT '触发人（系统自动 = SYSTEM）',
+    FROZEN_AT DATETIME DEFAULT NULL,
+    ACTIVE_FLAG VARCHAR(1) DEFAULT NULL COMMENT '活动=1 关闭=NULL（唯一索引多 NULL 技巧）',
+    RELEASED_BY VARCHAR(64) DEFAULT NULL COMMENT '解冻人（NCR 关闭/冲销回拨自动 = SYSTEM）',
+    RELEASED_AT DATETIME DEFAULT NULL,
+    RELEASE_REASON VARCHAR(200) DEFAULT NULL COMMENT '解冻原因',
+    NOTICE_IDS VARCHAR(1000) DEFAULT NULL COMMENT '首次通知接收方快照（解冻通知原接收人幂等，design D4）',
+    CREATE_BY VARCHAR(64) DEFAULT NULL,
+    CREATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY VARCHAR(64) DEFAULT NULL,
+    UPDATE_DATE DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    DEL_FLAG VARCHAR(1) NOT NULL DEFAULT '0',
+    VER_NO INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_MRP_FREEZE_ACTIVE (MO_ID, ACTIVE_FLAG),
+    KEY IDX_MRP_FREEZE_WC (WC_CODE, SCOPE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 5) 路线行两列（routing-management MODIFIED：标准良率 (0,100] 默认 98 + 关键工序标记） ----------
+--     MySQL 无 ADD COLUMN IF NOT EXISTS：information_schema 条件 DDL（119/120 同款），两遍幂等
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_routing_op ADD COLUMN STANDARD_YIELD DECIMAL(5,2) NOT NULL DEFAULT 98 COMMENT ''标准良率（%，(0,100]，FR-4.5-5-5 良率判定基准；保存时应用层校验越界）'' AFTER LEAD_TIME',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_routing_op' AND COLUMN_NAME = 'STANDARD_YIELD');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_routing_op ADD COLUMN KEY_OP_FLAG VARCHAR(1) NOT NULL DEFAULT ''0'' COMMENT ''关键工序标记（FR-4.5-5-3 首次完工报工自动建 IPQC 批）'' AFTER STANDARD_YIELD',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_routing_op' AND COLUMN_NAME = 'KEY_OP_FLAG');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 6) 工单工序快照两列（work-order-management MODIFIED：随创建快照带入，在制按快照判定） ----------
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_mo_op ADD COLUMN STANDARD_YIELD DECIMAL(5,2) NOT NULL DEFAULT 98 COMMENT ''标准良率快照（路线后续改版不影响在制，in-process-quality）'' AFTER MOVE_HOURS',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_mo_op' AND COLUMN_NAME = 'STANDARD_YIELD');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_mrp_mo_op ADD COLUMN KEY_OP_FLAG VARCHAR(1) NOT NULL DEFAULT ''0'' COMMENT ''关键工序标记快照（IPQC 自动建批触发位）'' AFTER STANDARD_YIELD',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_mrp_mo_op' AND COLUMN_NAME = 'KEY_OP_FLAG');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 6.1) 生产 NCR 来源两列（任务 1.3 核实：erp_qms_ncr 原无 refType——
+--     ncr-management spec 零改动前提=其只规定 IQC 触发源；报工来源扩展属实现层；
+--     FREEZE_SCOPE 为无 CHECK VARCHAR，报工来源用新值 WORKORDER=挡派工/完工不冻库存） ----------
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_qms_ncr ADD COLUMN REF_TYPE VARCHAR(16) DEFAULT NULL COMMENT ''来源类型：GR（检验批判定，既有）/ WORKORDER（报工不合格，design D6）'' AFTER CAPA_ID',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_qms_ncr' AND COLUMN_NAME = 'REF_TYPE');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @ddl = (SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE erp_qms_ncr ADD COLUMN REF_ID VARCHAR(64) DEFAULT NULL COMMENT ''来源单据：报工来源=moId#opSeq#rptNo'' AFTER REF_TYPE',
+    'SELECT 1')
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'erp_qms_ncr' AND COLUMN_NAME = 'REF_ID');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ---------- 7) 七个参数（proposal D12：本批 sys_param，沿用「参数不在线编辑」口径） ----------
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-yield-tolerance', 'YIELD_TOLERANCE', '10', 'PERCENT', 'MRP',
+ '良率偏差预警阈值（FR-4.5-5-5）：|实际良率−标准良率|/标准良率 超此值触发 L3 冻结+通知+NCR', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-workhour-deviation-alert', 'WORKHOUR_DEVIATION_ALERT', '50', 'PERCENT', 'MRP',
+ '报工工时偏差预警阈值（FR-4.5-5-6）：分项实际工时偏离快照标准工时超此值生成主管确认待办', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-ncr-auto-qty', 'NCR_AUTO_QTY', '5', 'COUNT', 'MRP',
+ '报工不合格分级豁免量（BR-4.5-26 分级，design D6）：处置=报废且数量低于此值域内直接处置不建 NCR；返工/让步/良率超差一律建', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-overprod-tolerance', 'OVERPROD_TOLERANCE', '5', 'PERCENT', 'MRP',
+ '超产分级容差（FR-4.5-5-4）：合格累计超投入累计在此容差内操作工二次确认入账，超阈值挂主管审批', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-fai-enforce', 'FAI_ENFORCE', 'ON', 'ENUM', 'MRP',
+ '首件检验卡控开关（FR-4.5-5-3）：ON=首件检验批未出合格结论 L1 阻断后续报工；OFF=降级黄提示', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-ipqc-enforce', 'IPQC_ENFORCE', 'ON', 'ENUM', 'MRP',
+ '关键工序过程检验卡控开关：ON=IPQC 未出合格结论阻断本工序后续报工；OFF=降级黄提示', 'seed', '0', 0);
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, DEL_FLAG, VER_NO) VALUES
+('param-yield-freeze-scope', 'YIELD_FREEZE_SCOPE', 'MO', 'ENUM', 'MRP',
+ '良率冻结作用域（FR-4.5-5-5 偏差 D6）：MO=仅冻结该工单后续派工（默认，不误伤同 WC 急单）；WC=冻结整个工作中心（规格字面口径）', 'seed', '0', 0);
+
+-- ---------- 8) M5-7 菜单 4 叶 → 2 叶（proposal D1：蓝图修订；新装库由 099 生成，本节收敛已执行过 099 的库） ----------
+--     5.7.1 报工录入 = 作业台（SHOP_FLOOR）；5.7.2 报工管理 = 管理台（PLANNER/PLAN_MGR）；
+--     父 M5-7 取两子并集防孤儿；M5-7-3/M5-7-4 行删除（编号语义已并入两叶）
+UPDATE erp_admin_menu
+   SET TITLE = '报工录入', PATH = '/m/5.7.1',
+       PERM = 'ROLE_SHOP_FLOOR,ROLE_ADMIN'
+ WHERE ID = 'M5-7-1';
+UPDATE erp_admin_menu
+   SET TITLE = '报工管理', PATH = '/m/5.7.2',
+       PERM = 'ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'
+ WHERE ID = 'M5-7-2';
+UPDATE erp_admin_menu
+   SET PERM = 'ROLE_SHOP_FLOOR,ROLE_PLANNER,ROLE_PLAN_MGR,ROLE_ADMIN'
+ WHERE ID = 'M5-7';
+DELETE FROM erp_admin_menu WHERE ID IN ('M5-7-3', 'M5-7-4');

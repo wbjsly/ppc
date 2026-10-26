@@ -2,7 +2,7 @@ package com.erp.sd;
 
 import com.erp.common.ServiceException;
 import com.erp.dao.fin.ArInvoiceDao;
-import com.erp.dao.fin.ArWriteoffDao;
+import com.erp.dao.fin.CashWriteoffDao;
 import com.erp.dao.mdm.MdmCustomerGroupDao;
 import com.erp.dao.mdm.MdmCustomerGroupVersionDao;
 import com.erp.dao.mdm.MdmCustomerViewDao;
@@ -54,7 +54,7 @@ class CreditRulesUnitTest {
     private CreditCheckDao checkDao;
     private CreditFreezeDao freezeDao;
     private ArInvoiceDao arDao;
-    private ArWriteoffDao writeoffDao;
+    private CashWriteoffDao writeoffDao;
     private SoDao soDao;
     private MdmCustomerGroupDao customerDao;
     private MdmCustomerViewDao viewDao;
@@ -73,7 +73,7 @@ class CreditRulesUnitTest {
         checkDao = mock(CreditCheckDao.class);
         freezeDao = mock(CreditFreezeDao.class);
         arDao = mock(ArInvoiceDao.class);
-        writeoffDao = mock(ArWriteoffDao.class);
+        writeoffDao = mock(CashWriteoffDao.class);
         soDao = mock(SoDao.class);
         customerDao = mock(MdmCustomerGroupDao.class);
         viewDao = mock(MdmCustomerViewDao.class);

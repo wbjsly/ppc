@@ -60,6 +60,8 @@ public class So extends BaseEntity {
     private String orderType;
     private String paymentTerms;
     private String tradeTerms;
+    /** 交易币种（ISO 4217，默认 CNY；add-fx-revaluation 决策 A，应收生成据此固化记账汇率） */
+    private String currency;
     private BigDecimal totalAmount;
     private String status;
     /** 挂起前的稳定状态（业务逻辑 6：解除后回前一状态） */

@@ -14,4 +14,8 @@ public interface SalesInvoiceDao extends BaseMapper<SalesInvoice> {
     /** 既有发票号（FP-YYYYMMDD-NNNN 前缀） */
     @Select("SELECT INVOICE_NO FROM erp_fin_sales_invoice WHERE INVOICE_NO LIKE #{prefix}")
     List<String> selectNosByPrefix(@Param("prefix") String prefix);
+
+    /** 悲观锁读取（红冲开具前锁定原票，防并发超冲——design D6） */
+    @Select("SELECT * FROM erp_fin_sales_invoice WHERE ID = #{id} FOR UPDATE")
+    SalesInvoice selectForUpdate(@Param("id") String id);
 }

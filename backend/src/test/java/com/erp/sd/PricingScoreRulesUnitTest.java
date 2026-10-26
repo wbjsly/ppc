@@ -99,7 +99,8 @@ class PricingScoreRulesUnitTest {
         modelDao = mock(LeadScoreModelDao.class);
         scoreModel = new LeadScoreModelServiceImpl(modelDao);
         leadDao = mock(LeadDao.class);
-        leadService = new LeadServiceImpl(leadDao, mock(LeadFollowupDao.class),
+        leadService = new LeadServiceImpl(leadDao, mock(com.erp.service.crm.LeadAutoAssignService.class),
+                mock(LeadFollowupDao.class),
                 poolDao = mock(LeadPoolDao.class), scoreModel);
     }
 

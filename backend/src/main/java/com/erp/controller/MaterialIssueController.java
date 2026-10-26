@@ -67,4 +67,10 @@ public class MaterialIssueController {
         service.cancel(id, reason == null ? null : String.valueOf(reason));
         return R.ok(null);
     }
+
+    @Operation(summary = "试产挪用量产料双人确认发起（TrialBorrow：计划发起、工艺主管签署；FR-4.5-8-4）")
+    @PostMapping("/{id}/borrow-approval")
+    public R<Map<String, Object>> applyBorrow(@PathVariable String id) {
+        return R.ok(service.applyBorrow(id));
+    }
 }

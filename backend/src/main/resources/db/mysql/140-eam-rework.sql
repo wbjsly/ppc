@@ -1,0 +1,84 @@
+-- 140-eam-rework.sql
+-- add-asset-rework：资产技改大修（design D1：两表 + CIP 项目互锚列 + 科目种子 + 菜单权限回填）
+-- 幂等：CREATE TABLE IF NOT EXISTS + INSERT IGNORE + information_schema 判存/PREPARE（同 133~139）
+
+-- ---------- 1. 科目种子（660201 管理费用-修理费，费用化凭证借方；design D2 假设编码待财务确认） ----------
+INSERT IGNORE INTO erp_fin_account (ID, ACCOUNT_CODE, ACCOUNT_NAME, DIRECTION, CATEGORY, STATUS, CREATE_BY)
+VALUES ('acc-eam-rework-exp', '660201', '管理费用-修理费', 'D', 'EXPENSE', 'ACTIVE', 'seed');
+
+-- ---------- 2. 菜单权限回填（7.7.1 资本确认行已由 099 种子预插，此处仅补权限；099 EXTRA_PERM 同步重生成） ----------
+UPDATE erp_admin_menu SET PERM = 'ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN'
+WHERE ID IN ('M7-7', 'M7-7-1') AND (PERM IS NULL OR PERM = '');
+
+-- ---------- 3. 技改大修单 ----------
+CREATE TABLE IF NOT EXISTS erp_eam_rework_order (
+    ID VARCHAR(64) NOT NULL,
+    RWF_NO VARCHAR(32) NOT NULL COMMENT '技改单号 RWF+yyMM+4位流水',
+    CARD_ID VARCHAR(64) NOT NULL COMMENT '原卡锚',
+    CARD_NO VARCHAR(32) COMMENT '原卡号快照',
+    ASSET_NAME VARCHAR(256) COMMENT '原资产名快照',
+    CATEGORY_CODE VARCHAR(32) COMMENT '分类快照（资本化下限取数）',
+    DEPT_NAME VARCHAR(128),
+    CONTENT VARCHAR(1024) NOT NULL COMMENT '技改/大修内容',
+    BUDGET_AMOUNT DECIMAL(18,2) COMMENT '技改预算（→CIP 项目预算）',
+    EXPECTED_EFFECT VARCHAR(1024) COMMENT '预期效果描述',
+    FLOOR_REVIEW_FLAG CHAR(1) DEFAULT '0' COMMENT '1=已提足卡，须财务经理复核后判定',
+    FLOOR_MERGE_FLAG CHAR(1) DEFAULT '0' COMMENT '1=BR-38 防拆分命中（12月同卡≥3笔或单笔低于下限合计达标），判定强制财务经理复核',
+    CAP_JUDGE VARCHAR(8) COMMENT '资本化判定：CAP 资本化 / EXPENSE 费用化 / null 待判定',
+    JUDGE_NOTE VARCHAR(512) COMMENT '判定说明/争议裁定留痕',
+    JUDGE_EVIDENCE VARCHAR(256) COMMENT '判定证据附件锚（技术评估报告/寿命测算）',
+    JUDGE_BY VARCHAR(64),
+    JUDGE_DATE DATETIME,
+    CONTINUE_DEPR_FLAG CHAR(1) DEFAULT '0' COMMENT '1=特批续提（BR-39 财务经理特批，期间继续计提）',
+    CONTINUE_APPR_ID VARCHAR(64) COMMENT '特批续提审批实例',
+    CIP_PROJECT_ID VARCHAR(64) COMMENT '1:1 CIP 项目互锚（转在建时创建）',
+    ORIG_NBV DECIMAL(18,2) COMMENT '转入时 NBV 快照（BR-40 新原值基数）',
+    NEW_CARD_ID VARCHAR(64) COMMENT '重建新卡锚（验收后回写）',
+    NEW_COST DECIMAL(18,2) COMMENT '新原值 = 转入时NBV + 项目已结算（BR-40）',
+    NEW_LIFE_YEARS INT COMMENT '剩余年限（技术评估值）',
+    TRANSFER_VOUCHER_ID VARCHAR(64) COMMENT '转在建凭证锚（REWORK_TRANSFER）',
+    REBUILD_VOUCHER_ID VARCHAR(64) COMMENT '完工转资凭证锚（REWORK_REBUILD）',
+    EXPENSE_VOUCHER_ID VARCHAR(64) COMMENT '费用化凭证锚（REWORK_EXPENSE）',
+    ACCEPT_DATE DATE COMMENT '验收日（新卡生效日，次月起提锚）',
+    REWORK_STATUS VARCHAR(24) NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/PENDING_JUDGE/JUDGED/IN_REWORK/COMPLETED/REBUILT/EXPENSED/CLOSED',
+    APPR_ID VARCHAR(64) COMMENT '判定复核/防拆分审批实例',
+    CREATE_BY VARCHAR(64),
+    CREATE_DATE DATETIME,
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME,
+    VER_NO INT DEFAULT 0,
+    DEL_FLAG CHAR(1) DEFAULT '0',
+    REMARK VARCHAR(512),
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_EAM_RWF_NO (RWF_NO),
+    KEY IDX_EAM_RWF_STATUS (REWORK_STATUS),
+    KEY IDX_EAM_RWF_CARD (CARD_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 4. 判定依据明细（BR-37 三条件量化 + 证据） ----------
+CREATE TABLE IF NOT EXISTS erp_eam_rework_item (
+    ID VARCHAR(64) NOT NULL,
+    ORDER_ID VARCHAR(64) NOT NULL,
+    COND_TYPE VARCHAR(24) NOT NULL COMMENT 'LIFT_LIFE 寿命延长 / LIFT_CAPACITY 产能提升 / LIFT_QUALITY 精度性能',
+    QUANT_VALUE DECIMAL(18,4) COMMENT '量化值（寿命=延长年数；产能=提升百分比数值如 12.5；精度=空）',
+    EVIDENCE_NO VARCHAR(256) COMMENT '证据附件锚',
+    REMARK VARCHAR(512),
+    CREATE_BY VARCHAR(64),
+    CREATE_DATE DATETIME,
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME,
+    VER_NO INT DEFAULT 0,
+    DEL_FLAG CHAR(1) DEFAULT '0',
+    PRIMARY KEY (ID),
+    KEY IDX_EAM_RWFI_ORDER (ORDER_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- ---------- 5. CIP 项目加技改单互锚列（D4：1:1 双向可查） ----------
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'erp_eam_cip_project'
+               AND COLUMN_NAME = 'REWORK_ORDER_ID');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE erp_eam_cip_project ADD COLUMN REWORK_ORDER_ID VARCHAR(64) COMMENT ''技改单互锚（add-asset-rework 1:1 项目）'' AFTER REMARK',
+    'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

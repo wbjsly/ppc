@@ -9,6 +9,7 @@ import com.erp.dao.vmi.MaterialIssueDao;
 import com.erp.dao.vmi.MaterialIssueLineDao;
 import com.erp.dao.vmi.VmiStockDao;
 import com.erp.entity.fin.FinAccrual;
+import com.erp.entity.inv.InvBatch;
 import com.erp.entity.inv.InvStock;
 import com.erp.entity.vmi.MaterialIssue;
 import com.erp.entity.vmi.MaterialIssueLine;
@@ -51,6 +52,13 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
 
     private final com.erp.service.inv.PickTaskGate pickTaskGate;
     private final com.erp.service.inv.PickTaskService pickTaskService;
+    private final com.erp.service.mrp.ReservationService reservationService;
+    private final com.erp.dao.inv.InvBatchDao batchDao;
+    private final com.erp.dao.system.ApprovalInstanceDao approvalInstanceDao;
+    private final com.erp.service.approval.ApprovalEngine approvalEngine;
+
+    /** 维修领料标准成本取数（design D5 偏差修订：库存域无移动平均，取物料 STANDARD_COST） */
+    private final org.springframework.jdbc.core.JdbcTemplate maintJdbc;
 
     public MaterialIssueServiceImpl(MaterialIssueDao issueDao,
                                     MaterialIssueLineDao lineDao,
@@ -63,7 +71,14 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                                     com.erp.service.inv.StockPostingEngine stockPostingEngine,
                                     com.erp.service.inv.FifoStrategyService fifoStrategyService,
                                     com.erp.service.inv.PickTaskGate pickTaskGate,
-                                    com.erp.service.inv.PickTaskService pickTaskService) {
+                                    com.erp.service.inv.PickTaskService pickTaskService,
+                                    com.erp.service.mrp.ReservationService reservationService,
+                                    com.erp.dao.inv.InvBatchDao batchDao,
+                                    com.erp.dao.system.ApprovalInstanceDao approvalInstanceDao,
+                                    @org.springframework.context.annotation.Lazy
+                                            com.erp.service.approval.ApprovalEngine approvalEngine,
+                                    org.springframework.jdbc.core.JdbcTemplate maintJdbc) {
+        this.maintJdbc = maintJdbc;
         this.issueDao = issueDao;
         this.lineDao = lineDao;
         this.stockDao = stockDao;
@@ -76,6 +91,15 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         this.fifoStrategyService = fifoStrategyService;
         this.pickTaskGate = pickTaskGate;
         this.pickTaskService = pickTaskService;
+        this.reservationService = reservationService;
+        this.batchDao = batchDao;
+        this.approvalInstanceDao = approvalInstanceDao;
+        this.approvalEngine = approvalEngine;
+    }
+
+    /** 是否试产工单领料（TP- 前缀，change add-trial-production-management） */
+    private static boolean isTrialIssue(String workOrderNo) {
+        return workOrderNo != null && workOrderNo.startsWith("TP-");
     }
 
     // ---------- 创建（DRAFT，FIFO 配批固化） ----------
@@ -115,6 +139,59 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         out.put("issue", head);
         out.put("lines", plan);
         return out;
+    }
+
+    /** 维修备件领料建单透传（add-asset-maintenance，design D5）：MAINT + 工单锚定，复用 FIFO 配批 */
+    @Override
+    @Transactional
+    public Map<String, Object> createMaintIssue(Map<String, Object> payload) {
+        requireRole("创建维修领料单", "ROLE_EQUIP_ENG", "ROLE_EQUIP_MGR", "ROLE_ASSET_ADMIN");
+        MaterialIssue head = new MaterialIssue();
+        head.setIssueType("MAINT");
+        String wo = payload.get("workOrderNo") == null ? null
+                : String.valueOf(payload.get("workOrderNo")).trim();
+        if (!hasText(wo)) {
+            throw new ServiceException(422, "工单号必填（备件领用须锚定维护/维修工单）");
+        }
+        head.setWorkOrderNo(wo);
+        head.setDept(payload.get("dept") == null ? null : String.valueOf(payload.get("dept")));
+        head.setPurpose(payload.get("purpose") == null ? null : String.valueOf(payload.get("purpose")));
+        head.setIssueNo(nextIssueNo());
+        head.setStatus(MaterialIssue.ST_DRAFT);
+        head.setCreateBy(SecurityUtils.getCurrentUserId());
+        issueDao.insert(head);
+        List<MaterialIssueLine> plan = fifoPlan(head, requested(payload));
+        int no = 1;
+        for (MaterialIssueLine l : plan) {
+            // 备件成本取数（design D5 偏差修订）：库存域无移动平均基础设施，
+            // 按物料主数据 STANDARD_COST 填行单价（BR-4.13-17 归集按行金额）
+            if (l.getUnitPrice() == null || l.getUnitPrice().signum() == 0) {
+                BigDecimal std = standardCostOf(l.getItemCode());
+                if (std != null) {
+                    l.setUnitPrice(std);
+                    l.setAmount(std.multiply(l.getQty()));
+                }
+            }
+            l.setIssueId(head.getId());
+            l.setLineNo(no++);
+            lineDao.insert(l);
+        }
+        log.info("维修领料单 {} created wo={} lines={}", head.getIssueNo(), wo, plan.size());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("issue", head);
+        out.put("lines", plan);
+        return out;
+    }
+
+    /** 物料标准成本（无主数据/未维护 → null，行价保持 0 计入"待调整"口径） */
+    private BigDecimal standardCostOf(String itemCode) {
+        try {
+            return maintJdbc.queryForObject(
+                    "SELECT STANDARD_COST FROM erp_mdm_item WHERE ITEM_CODE = ? AND DEL_FLAG = '0'",
+                    BigDecimal.class, itemCode);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     // ---------- 查询 ----------
@@ -184,10 +261,33 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         if (lines.isEmpty()) {
             throw new ServiceException(422, "领料单无明细行");
         }
+        // 试产挪用量产料双人确认（change add-trial-production-management，spec trial-execution
+        // 「试产备料与批次打标」FR-4.5-8-4）：试产单（TP-）且全部批次非试产专用 →
+        // 须已通过 TrialBorrow（计划发起、工艺主管签署）；含 TRIAL_FLAG=1 批次免审批直过。
+        if (isTrialIssue(h.getWorkOrderNo())) {
+            trialBorrowGate(h, lines);
+        }
+        // ④ 预扣核销（spec material-issue MODIFIED 步骤④ / dispatch-management 预扣生命周期）：
+        //    关联工单存在活动预扣 → 同事务按 min(领料行量, 核销余量) 释放锁（REMAIN 递减、takes 回补，
+        //    释放优先落到领料行将扣的批次）。时序硬约束：核销释放 MUST 先于①引擎扣减——
+        //    预扣实扣后本工单自己的领料会被引擎可用量复核挡住（锁挡住自己）；先归位锁再过账，
+        //    单事务失败整体回滚。无预扣/无关工单静默跳过（既有行为零变化）。
+        if (h.getWorkOrderNo() != null && !h.getWorkOrderNo().isEmpty()) {
+            List<com.erp.service.mrp.ReservationService.IssuePart> parts = new ArrayList<>();
+            for (MaterialIssueLine l : lines) {
+                parts.add(new com.erp.service.mrp.ReservationService.IssuePart(
+                        l.getItemCode(), l.getBatchNo(), l.getQty()));
+            }
+            reservationService.consumeOnIssue(h.getWorkOrderNo(), parts);
+        }
         if (MaterialIssue.TYPE_VMI.equals(h.getIssueType())) {
             postVmi(h, lines);
         } else {
             postOwn(h, lines);
+        }
+        // 试产领料过账打标（FR-4.5-8-4：所领批次置试产专用，同事务）
+        if (isTrialIssue(h.getWorkOrderNo())) {
+            markTrialBatches(lines);
         }
         h.setStatus(MaterialIssue.ST_POSTED);
         h.setPostBy(SecurityUtils.getCurrentUserId());
@@ -290,6 +390,110 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                 "VMI_TRANSFER_IN", "MATERIAL_ISSUE", docNo, List.of(el)));
     }
 
+    // ---------- 试产备料三挂点（change add-trial-production-management，FR-4.5-8-4） ----------
+
+    /**
+     * 挪用双人确认闸门：试产单全部批次 TRIAL_FLAG=0（挪用量产料）→ 须已通过 TrialBorrow；
+     * 含任一 TRIAL_FLAG=1 批次 → 免审批直过（spec 场景「样品批次领料免审批」）。
+     */
+    private void trialBorrowGate(MaterialIssue h, List<MaterialIssueLine> lines) {
+        boolean anyTrialBatch = false;
+        for (MaterialIssueLine l : lines) {
+            if (l.getBatchNo() == null || l.getBatchNo().isEmpty()) {
+                continue;
+            }
+            InvBatch b = batchDao.selectOne(new LambdaQueryWrapper<InvBatch>()
+                    .eq(InvBatch::getItemCode, l.getItemCode())
+                    .eq(InvBatch::getBatchNo, l.getBatchNo())
+                    .last("LIMIT 1"));
+            if (b != null && "1".equals(b.getTrialFlag())) {
+                anyTrialBatch = true;
+                break;
+            }
+        }
+        if (anyTrialBatch) {
+            return; // 含试产专用批次 → 免确认
+        }
+        Long approved = approvalInstanceDao.selectCount(new LambdaQueryWrapper<
+                com.erp.entity.system.ApprovalInstance>()
+                .eq(com.erp.entity.system.ApprovalInstance::getBizType, BIZ_TRIAL_BORROW)
+                .eq(com.erp.entity.system.ApprovalInstance::getBizId, h.getIssueNo())
+                .eq(com.erp.entity.system.ApprovalInstance::getStatus, "APPROVED"));
+        if (approved == null || approved == 0) {
+            throw new ServiceException(422,
+                    "挪用量产料须经计划员发起、工艺主管双人确认（FR-4.5-8-4），"
+                            + "请先发起挪用确认（TrialBorrow）：" + h.getIssueNo());
+        }
+    }
+
+    /** 试产过账打标：所领批次置 TRIAL_FLAG=1（台账已存在则更新，缺失则补建最小台账行） */
+    private void markTrialBatches(List<MaterialIssueLine> lines) {
+        for (MaterialIssueLine l : lines) {
+            if (l.getBatchNo() == null || l.getBatchNo().isEmpty()) {
+                continue;
+            }
+            int upd = batchDao.update(null, new LambdaUpdateWrapper<InvBatch>()
+                    .eq(InvBatch::getItemCode, l.getItemCode())
+                    .eq(InvBatch::getBatchNo, l.getBatchNo())
+                    .set(InvBatch::getTrialFlag, "1"));
+            if (upd == 0) {
+                InvBatch b = new InvBatch();
+                b.setBatchNo(l.getBatchNo());
+                b.setItemCode(l.getItemCode());
+                b.setItemName(l.getItemName());
+                b.setTrialFlag("1");
+                b.setStatus("1");
+                try {
+                    batchDao.insert(b);
+                } catch (org.springframework.dao.DuplicateKeyException dup) {
+                    batchDao.update(null, new LambdaUpdateWrapper<InvBatch>()
+                            .eq(InvBatch::getItemCode, l.getItemCode())
+                            .eq(InvBatch::getBatchNo, l.getBatchNo())
+                            .set(InvBatch::getTrialFlag, "1"));
+                }
+            }
+        }
+        log.info("试产领料过账打标：{} 批次 {} 个", lines.get(0).getIssueId(), lines.size());
+    }
+
+    @Override
+    public Map<String, Object> applyBorrow(String id) {
+        requireRole("发起挪用双人确认", "ROLE_PLANNER", "ROLE_PLAN_MGR", "ROLE_ADMIN");
+        MaterialIssue h = require(id);
+        if (!isTrialIssue(h.getWorkOrderNo())) {
+            throw new ServiceException(422,
+                    "仅试产工单（TP-）领料单可发起挪用双人确认：" + h.getIssueNo());
+        }
+        if (!MaterialIssue.ST_DRAFT.equals(h.getStatus())) {
+            throw new ServiceException(422,
+                    "仅草稿领料单可发起挪用确认（当前 " + h.getStatus() + "）");
+        }
+        // 幂等：APPROVED → already；PENDING → 复用同实例
+        com.erp.entity.system.ApprovalInstance latest =
+                approvalEngine.findByBiz(BIZ_TRIAL_BORROW, h.getIssueNo());
+        if (latest != null) {
+            if ("APPROVED".equals(latest.getStatus())) {
+                return Map.of("already", true, "issueNo", h.getIssueNo());
+            }
+            if ("PENDING".equals(latest.getStatus())) {
+                return Map.of("apprNo", latest.getApprNo(), "pending", true,
+                        "issueNo", h.getIssueNo());
+            }
+            // REJECTED → 修订后重新发起新实例
+        }
+        com.erp.entity.system.ApprovalInstance inst = approvalEngine.submit(
+                BIZ_TRIAL_BORROW, h.getIssueNo(),
+                "试产挪用量产料双人确认：" + h.getIssueNo()
+                        + "（工单 " + h.getWorkOrderNo() + "）",
+                null,
+                java.util.List.of(java.util.List.of(
+                        com.erp.service.approval.ApprovalNodeSpec.sign(
+                                "ROLE_PROCESS_MGR", "工艺主管"))));
+        log.info("试产挪用确认发起：{} apprNo={} by {}", h.getIssueNo(), inst.getApprNo(),
+                SecurityUtils.getCurrentUserId());
+        return Map.of("apprNo", inst.getApprNo(), "pending", true, "issueNo", h.getIssueNo());
+    }
+
     // ---------- 作废 ----------
 
     @Override
@@ -349,8 +553,92 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         return out;
     }
 
-    /** FIFO 配批：逐需求行按最早批次拆分；任一需求不足 422（spec material-issue 创建 R1） */
-    private List<MaterialIssueLine> fifoPlan(MaterialIssue head, List<Map<String, Object>> req) {
+    /**
+     * 试产领料配批（change add-trial-production-management，FR-4.5-8-4 样品批次优先）：
+     * TRIAL_FLAG=1 批次先按 FIFO 占满需求，不足部分由其余批次 FIFO 补齐；
+     * 效期锁定批次（EXPIRY_LOCK_FLAG=1）剔除不分配（C-4.4-03 口径）；
+     * 任一需求不足 422（文案同引擎「自有可用量不足…缺口」）。
+     * 系统分配规则非用户改批，不记偏离台账。
+     */
+    private void trialBatchAlloc(MaterialIssue head, String item, String reqName,
+                                 BigDecimal need, List<MaterialIssueLine> plan) {
+        // 批次标记索引（效期锁定 + 试产专用）
+        Map<String, boolean[]> flags = new HashMap<>();
+        for (InvBatch b : batchDao.selectList(new LambdaQueryWrapper<InvBatch>()
+                .eq(InvBatch::getItemCode, item))) {
+            flags.put(b.getBatchNo(), new boolean[]{
+                    "1".equals(b.getTrialFlag()), "1".equals(b.getExpiryLockFlag())});
+        }
+        // 库存行 FIFO（同 ownRows 口径），试产专用批次优先排序（稳定：先 trial 组后其余组）
+        List<InvStock> rows = stockDao.selectList(new LambdaQueryWrapper<InvStock>()
+                .eq(InvStock::getWarehouseCode, InvStock.DEFAULT_WH)
+                .eq(InvStock::getItemCode, item)
+                .gt(InvStock::getAvailableQty, BigDecimal.ZERO)
+                .orderByAsc(InvStock::getCreateDate));
+        List<InvStock> trialRows = new ArrayList<>();
+        List<InvStock> massRows = new ArrayList<>();
+        for (InvStock s : rows) {
+            boolean[] f = flags.get(s.getBatchNo());
+            if (f != null && f[1]) {
+                continue; // 效期锁定剔除
+            }
+            if (f != null && f[0]) {
+                trialRows.add(s);
+            } else {
+                massRows.add(s);
+            }
+        }
+        BigDecimal remain = need;
+        for (InvStock s : trialRows) {
+            if (remain.signum() <= 0) {
+                break;
+            }
+            BigDecimal take = nvl(s.getAvailableQty()).min(remain);
+            if (take.signum() <= 0) {
+                continue;
+            }
+            MaterialIssueLine l = issueLine(head, item, reqName, s, take);
+            l.setLineNo(plan.size() + 1);
+            plan.add(l);
+            remain = remain.subtract(take);
+        }
+        for (InvStock s : massRows) {
+            if (remain.signum() <= 0) {
+                break;
+            }
+            BigDecimal take = nvl(s.getAvailableQty()).min(remain);
+            if (take.signum() <= 0) {
+                continue;
+            }
+            MaterialIssueLine l = issueLine(head, item, reqName, s, take);
+            l.setLineNo(plan.size() + 1);
+            plan.add(l);
+            remain = remain.subtract(take);
+        }
+        if (remain.signum() > 0) {
+            BigDecimal got = need.subtract(remain);
+            throw new ServiceException(422, "自有可用量不足：" + item
+                    + " 需要 " + need.stripTrailingZeros().toPlainString()
+                    + "，可配 " + got.stripTrailingZeros().toPlainString()
+                    + "，缺口 " + remain.stripTrailingZeros().toPlainString());
+        }
+    }
+
+    /** 领料明细行（按库存位行生成） */
+    private MaterialIssueLine issueLine(MaterialIssue head, String item, String reqName,
+                                        InvStock s, BigDecimal qty) {
+        MaterialIssueLine l = new MaterialIssueLine();
+        l.setItemCode(item);
+        l.setItemName(reqName == null || reqName.isEmpty() ? s.getItemName() : reqName);
+        l.setBatchNo(s.getBatchNo());
+        l.setQty(qty);
+        l.setStockType(head.getIssueType());
+        l.setSupplierId(null);
+        l.setCreateBy(SecurityUtils.getCurrentUserId());
+        return l;
+    }
+
+    /** FIFO 配批：逐需求行按最早批次拆分；任一需求不足 422（spec material-issue 创建 R1） */    private List<MaterialIssueLine> fifoPlan(MaterialIssue head, List<Map<String, Object>> req) {
         boolean vmi = MaterialIssue.TYPE_VMI.equals(head.getIssueType());
         List<MaterialIssueLine> plan = new ArrayList<>();
         for (Map<String, Object> r : req) {
@@ -376,11 +664,19 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                         batchItemName = br.getItemName();
                     }
                 }
-                if (basis.compareTo(need) < 0) {
+                // 本单预扣锁额度（options A）：指定批次正是本单锁所在批次时计入可领额度
+                // （过账 release-first 优先释放到该批次，行级复核恰好通过）
+                BigDecimal ownLocked = reservationService
+                        .lockedBatchesOf(head.getWorkOrderNo())
+                        .getOrDefault(item, List.of()).stream()
+                        .filter(lb -> overrideBatch.equals(lb.batchNo()))
+                        .map(com.erp.service.mrp.ReservationService.LockedBatch::qty)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                if (basis.add(ownLocked).compareTo(need) < 0) {
                     throw new ServiceException(422, "自有可用量不足："
                             + item + " 需要 " + need.stripTrailingZeros().toPlainString()
-                            + "，可配 " + basis.stripTrailingZeros().toPlainString()
-                            + "，缺口 " + need.subtract(basis).stripTrailingZeros().toPlainString());
+                            + "，可配 " + basis.add(ownLocked).stripTrailingZeros().toPlainString()
+                            + "，缺口 " + need.subtract(basis.add(ownLocked)).stripTrailingZeros().toPlainString());
                 }
                 // 改批偏离留痕（spec outbound-strategy，C-4.4-08 非波次首期仅留痕）：
                 // 推荐值 = 缺省 FIFO 分配的首批次（只读试算，异常时视为无推荐值）；
@@ -446,19 +742,67 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
                 }
             } else {
                 // 自有配批经引擎分配（FIFO+效期统一分配器，material-issue MODIFIED 创建；
-                // 缺口 422 文案「可用量不足…缺口」由引擎给出）
-                for (com.erp.service.inv.StockPostingEngine.Alloc a
-                        : stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, need)) {
-                    MaterialIssueLine l = new MaterialIssueLine();
-                    l.setLineNo(no++);
-                    l.setItemCode(item);
-                    l.setItemName(reqName == null ? a.itemName : reqName);
-                    l.setBatchNo(a.batchNo);
-                    l.setQty(a.qty);
-                    l.setStockType(head.getIssueType());
-                    l.setSupplierId(null);
-                    l.setCreateBy(SecurityUtils.getCurrentUserId());
-                    plan.add(l);
+                // 缺口 422 文案「可用量不足…缺口」由引擎给出）。
+                // 预扣拆分分配（options A / dispatch-management 核销联动）：本单预扣锁内的量
+                // 从本单 takes 批次占位（过账 release-first 后该批次可用量恰好覆盖），
+                // 锁外量走引擎 FIFO——保证"派工预扣在前、领料建单在后"的自然顺序可用；
+                // 无预扣/无关工单时 locked 为空 → 全量走引擎（既有行为零变化）。
+                Map<String, List<com.erp.service.mrp.ReservationService.LockedBatch>> locked =
+                        reservationService.lockedBatchesOf(head.getWorkOrderNo());
+                BigDecimal lockable = locked.getOrDefault(item, List.of()).stream()
+                        .map(com.erp.service.mrp.ReservationService.LockedBatch::qty)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal reservedPart = need.min(lockable);
+                BigDecimal unlockedPart = need.subtract(reservedPart);
+                if (unlockedPart.signum() > 0) {
+                    if (isTrialIssue(head.getWorkOrderNo())) {
+                        // 试产领料配批：试产专用批次（TRIAL_FLAG=1）优先，其余批次 FIFO 补齐
+                        // （FR-4.5-8-4 样品批次优先——系统分配规则，非用户改批，不记偏离台账）
+                        trialBatchAlloc(head, item, reqName, unlockedPart, plan);
+                        no = plan.size() + 1; // 试产优先行已入 plan，行号续排
+                    } else {
+                        for (com.erp.service.inv.StockPostingEngine.Alloc a
+                                : stockPostingEngine.allocate(InvStock.DEFAULT_WH, item, unlockedPart)) {
+                            MaterialIssueLine l = new MaterialIssueLine();
+                            l.setLineNo(no++);
+                            l.setItemCode(item);
+                            l.setItemName(reqName == null ? a.itemName : reqName);
+                            l.setBatchNo(a.batchNo);
+                            l.setQty(a.qty);
+                            l.setStockType(head.getIssueType());
+                            l.setSupplierId(null);
+                            l.setCreateBy(SecurityUtils.getCurrentUserId());
+                            plan.add(l);
+                        }
+                    }
+                }
+                if (reservedPart.signum() > 0) {
+                    BigDecimal left = reservedPart;
+                    for (com.erp.service.mrp.ReservationService.LockedBatch lb
+                            : locked.getOrDefault(item, List.of())) {
+                        if (left.signum() <= 0) {
+                            break;
+                        }
+                        BigDecimal take = lb.qty().min(left);
+                        if (take.signum() <= 0) {
+                            continue;
+                        }
+                        MaterialIssueLine l = new MaterialIssueLine();
+                        l.setLineNo(no++);
+                        l.setItemCode(item);
+                        l.setItemName(reqName == null ? item : reqName);
+                        l.setBatchNo(lb.batchNo());
+                        l.setQty(take);
+                        l.setStockType(head.getIssueType());
+                        l.setSupplierId(null);
+                        l.setCreateBy(SecurityUtils.getCurrentUserId());
+                        plan.add(l);
+                        left = left.subtract(take);
+                    }
+                    if (left.signum() > 0) {
+                        throw new ServiceException(422, "本单预扣批次不足以占位："
+                                + item + " 缺口 " + left.stripTrailingZeros().toPlainString());
+                    }
                 }
             }
         }

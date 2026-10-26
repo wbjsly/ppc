@@ -7,6 +7,11 @@ export function getLotBoardApi(params) {
   return request.get('/qms/lots/board', { params })
 }
 
+/** 外协收货检验工作台（5.10.2，spec outsourcing-execution）：外协 PO 来源批 + 派工上下文 */
+export function getOutsourceBoardApi(params) {
+  return request.get('/qms/lots/outsource-board', { params })
+}
+
 /** 检验批分页（按状态/类型/物料筛选） */
 export function getLotPageApi(params) {
   return request.get('/qms/lots', { params })
@@ -72,4 +77,58 @@ export function getExemptsApi(params) {
 
 export function applyExemptApi(data) {
   return request.post('/qms/exempts', data)
+}
+
+/** 批次合格证（OQC 放行生成，rework-inspection-tasks） */
+export function getCertificateApi(lotId) {
+  return request.get(`/qms/lots/${lotId}/certificate`)
+}
+
+/** 手动触发超时扫描（运维/测试；scheduler 每 5min 自动） */
+export function sweepOverdueApi() {
+  return request.post('/qms/lots/sweep-overdue')
+}
+
+/** 客户质量协议（spec customer-quality-agreement） */
+export function getAgreementsApi(params) {
+  return request.get('/qms/agreements', { params })
+}
+
+export function getAgreementDetailApi(id) {
+  return request.get(`/qms/agreements/${id}`)
+}
+
+export function saveAgreementApi(data) {
+  return request.post('/qms/agreements', data)
+}
+
+export function activateAgreementApi(id) {
+  return request.post(`/qms/agreements/${id}/activate`)
+}
+
+export function stopAgreementApi(id) {
+  return request.post(`/qms/agreements/${id}/stop`)
+}
+
+export function logComplaintApi(id, reason) {
+  return request.post(`/qms/agreements/${id}/complaint`, { reason })
+}
+
+export function clearStreakApi(id, reason) {
+  return request.post(`/qms/agreements/${id}/clear`, { reason })
+}
+
+// ================= 抽样执行记录（6.3.1，rework-sampling-inspection） =================
+
+export function getSamplingRecordsApi(lotId) {
+  return request.get(`/qms/lots/${lotId}/sampling-records`)
+}
+
+export function createSamplingRecordApi(lotId, data) {
+  return request.post(`/qms/lots/${lotId}/sampling-records`, data)
+}
+
+/** 检验记录全状态历史（6.3.2，与在途 /board 分离） */
+export function getLotHistoryApi(params) {
+  return request.get('/qms/lots/history', { params })
 }

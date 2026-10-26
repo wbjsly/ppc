@@ -95,6 +95,10 @@ public class BiMetricSeed implements ApplicationRunner {
             def("SC_RESPONSE_CPFR", "补货反馈及时率", "补货确认/反馈在时限内完成比例×100", "MONTH",
                 "{\"expr\":\"timely_cnt / NULLIF(total_cnt,0) * 100\",\"unit\":\"%\"}",
                 "{\"erp_inv_replenish_confirm\":\"confirm_at,create_date\"}"),
+            def("SC_QUALITY_COST", "质量成本", "当月 COPQ 已确认金额（供应商维度，rework-copq-analysis；仅明细展示不参与得分）",
+                "MONTH",
+                "{\"expr\":\"SUM(confirmed_amount)\",\"unit\":\"CNY\",\"score_participation\":\"none\"}",
+                "{\"erp_qms_copq_entry\":\"amount,status,supplier_id\"}"),
             def("SC_TOTAL", "记分卡总分", "四维得分按模型权重加权和（FR-4.9-7-3）", "MONTH",
                 "{\"expr\":\"q*W_Q + d*W_D + c*W_C + r*W_R\",\"weights\":\"model.W_QUALITY..W_RESPONSE\"}",
                 "{\"derived\":\"SC_QUALITY_PASS,SC_DELIVERY_OTD,SC_COST_SCORE,SC_RESPONSE_PO_48H\"}")
