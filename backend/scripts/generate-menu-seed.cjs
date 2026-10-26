@@ -275,6 +275,55 @@ const EXTRA_PERM = {
   ...leaf(['M8-9', 'M8-9-1', 'M8-9-2'], 'ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
   // M8-10 成本核算 8.10.1~8.10.3（change add-cost-accounting：M8 惯例 + 成本会计 + spec 场景财务专员/主管）
   ...leaf(['M8-10', 'M8-10-1', 'M8-10-2', 'M8-10-3'], 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-1 计税管理 9.1.1~9.1.3（change add-tax-calculation：ROLE_FINANCE 承担税务专员操作位）
+  ...leaf(['M9-1', 'M9-1-1', 'M9-1-2', 'M9-1-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-2 发票管理 9.2.1~9.2.4（change add-invoice-management：对齐 M9-1 三角色）
+  ...leaf(['M9-2', 'M9-2-1', 'M9-2-2', 'M9-2-3', 'M9-2-4'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-3 进项认证 9.3.1~9.3.2（change add-input-certification：接线 9.2.2 页，对齐三角色）
+  ...leaf(['M9-3', 'M9-3-1', 'M9-3-2'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-4 红冲作废 9.4.1~9.4.3（change add-red-invoice-void：红字冲销/发票作废/进项转出三叶三页）
+  ...leaf(['M9-4', 'M9-4-1', 'M9-4-2', 'M9-4-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-5 税务申报 9.5.1~9.5.4（change add-tax-filing：增值申报/所得申报/出口退税/申报归档四叶四页）
+  ...leaf(['M9-5', 'M9-5-1', 'M9-5-2', 'M9-5-3', 'M9-5-4'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M9-6 税务风控 9.6.1~9.6.3（change add-tax-risk-control：风险预警/优惠管理/关联定价三叶三页）
+  ...leaf(['M9-6', 'M9-6-1', 'M9-6-2', 'M9-6-3'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M10-1 员工档案 + M10-7 入转调离（change add-employee-archive：建档/维护/入职/转正/调岗/离职）
+  ...leaf(['M10-1', 'M10-1-1', 'M10-1-2', 'M10-7', 'M10-7-1', 'M10-7-2', 'M10-7-3', 'M10-7-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-2 组织管理 10.2.1~10.2.4（change add-org-management：部门/岗位/汇报/职级四叶四页）
+  ...leaf(['M10-2', 'M10-2-1', 'M10-2-2', 'M10-2-3', 'M10-2-4'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-3 考勤管理 10.3.1~10.3.5 + M10-4 加班调休 10.4.1~10.4.4（change add-attendance-management）
+  ...leaf(['M10-3', 'M10-3-1', 'M10-3-2', 'M10-3-3', 'M10-3-4', 'M10-3-5',
+    'M10-4', 'M10-4-1', 'M10-4-2', 'M10-4-3', 'M10-4-4'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-5 薪酬核算 10.5.1~10.5.4 + M10-6 薪酬发放 10.6.1~10.6.3（change add-payroll-management）
+  ...leaf(['M10-5', 'M10-5-1', 'M10-5-2', 'M10-5-3', 'M10-5-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M10-6', 'M10-6-1', 'M10-6-2', 'M10-6-3'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M10-8 外派借调 10.8.1/10.8.2（change add-employee-secondment）
+  ...leaf(['M10-8', 'M10-8-1', 'M10-8-2'], 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'),
+  // M10-9 培训认证 10.9.1~10.9.3（change add-training-certification：HR 全权 + 财务只读费用）
+  ...leaf(['M10-9', 'M10-9-1', 'M10-9-2', 'M10-9-3'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-2 报价管理 11.2.1/11.2.2（change add-quote-approval-console：11.2.1 同 3.2 三角色，11.2.2 审批节点角色）
+  ...leaf(['M11-2', 'M11-2-1'], 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN'),
+  ...leaf(['M11-2-2'], 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  // M11-3 项目立项 11.3.1~11.3.3（change add-project-initiation：PMO/PM，预算叶加财务）
+  ...leaf(['M11-3', 'M11-3-1', 'M11-3-2'], 'ROLE_PMO,ROLE_PM,ROLE_ADMIN'),
+  ...leaf(['M11-3-3'], 'ROLE_PMO,ROLE_PM,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-4 进度管理 11.4.1~11.4.3（change add-milestone-management：PM/PMO，进度叶加财务只读）
+  ...leaf(['M11-4', 'M11-4-1', 'M11-4-2'], 'ROLE_PM,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-4-3'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-5 工时管理 11.5.1~11.5.4（change add-timesheet-management：审核叶+DEPT_HEAD，归集/偏差叶+财务只读）
+  ...leaf(['M11-5', 'M11-5-1'], 'ROLE_PM,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-5-2'], 'ROLE_PM,ROLE_PMO,ROLE_DEPT_HEAD,ROLE_ADMIN'),
+  ...leaf(['M11-5-3', 'M11-5-4'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-6 预算管控 11.6.1~11.6.3（change add-cost-collection-freeze：归集/分析含财务线，冻结叶不含普通 PM）
+  ...leaf(['M11-6', 'M11-6-1', 'M11-6-2'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  ...leaf(['M11-6-3'], 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN'),
+  // M10-10 绩效管理 10.10.1~10.10.4（change add-payroll-management）
+  ...leaf(['M10-10', 'M10-10-1', 'M10-10-2', 'M10-10-3', 'M10-10-4'],
+    'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
   ...leaf(['M7'], 'ROLE_EQUIP_ENG,ROLE_EQUIP_MGR,ROLE_ASSET_ADMIN,ROLE_FIN_ASSET,ROLE_DEPT_HEAD,ROLE_FIN_MGR,ROLE_ADMIN')
 }
 // add-sales-lead-to-cash design D2/D15：商机操作集中到 3.1，11.1.3/11.1.4 隐藏

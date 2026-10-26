@@ -34,6 +34,74 @@ const routes = [
         meta: { title: '通知中心', group: '系统管理' }
       },
       {
+        // 我的离职（add-transfer-followup FR-4.7-4-11：员工自助入口，认证即可不进菜单种子）
+        path: '/my/exit',
+        name: 'MyExit',
+        component: () => import('@/views/my/exit.vue'),
+        meta: { title: '我的离职申请', group: '我的' }
+      },
+      {
+        // 我的工时（add-timesheet-management：员工每日填报，0.5h 步长/24h/补录分档）
+        path: '/my/timesheet',
+        name: 'MyTimesheet',
+        component: () => import('@/views/my/timesheet.vue'),
+        meta: { title: '我的工时', group: '我的' }
+      },
+      {
+        // 10.8.1 外派管理（add-employee-secondment：主体转移，生效写回法人主体+社保双单）
+        path: '/m/10.8.1',
+        name: 'DispatchManage',
+        component: () => import('@/views/hr/secondment/secondment-manage.vue'),
+        meta: { title: '外派管理', group: '人力资源', secType: 'DISPATCH',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.8.2 借调管理（add-employee-secondment：主档零改动+分摊凭证+返岗延期）
+        path: '/m/10.8.2',
+        name: 'SecondmentManage',
+        component: () => import('@/views/hr/secondment/secondment-manage.vue'),
+        meta: { title: '借调管理', group: '人力资源', secType: 'SECOND',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.9.1 培训计划（add-training-certification：编制即发布+任务展开+结果登记+费用凭证）
+        path: '/m/10.9.1',
+        name: 'TrainPlanManage',
+        component: () => import('@/views/hr/training/plan-list.vue'),
+        meta: { title: '培训计划', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.9.2 资格认证（add-training-certification：类别字典+上传审核+台账）
+        path: '/m/10.9.2',
+        name: 'CertManage',
+        component: () => import('@/views/hr/training/cert-manage.vue'),
+        meta: { title: '资格认证', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.9.3 到期预警（add-training-certification：三清单+带病排班处置）
+        path: '/m/10.9.3',
+        name: 'CertAlert',
+        component: () => import('@/views/hr/training/cert-alert.vue'),
+        meta: { title: '到期预警', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 我的培训任务（add-training-certification：自助确认，认证即可不进菜单种子）
+        path: '/my/train',
+        name: 'MyTrain',
+        component: () => import('@/views/my/train-tasks.vue'),
+        meta: { title: '我的培训', group: '我的' }
+      },
+      {
+        // 我的证书（add-training-certification：上传提交+到期倒计时）
+        path: '/my/certs',
+        name: 'MyCerts',
+        component: () => import('@/views/my/my-certs.vue'),
+        meta: { title: '我的证书', group: '我的' }
+      },
+      {
         path: '/system/menu',
         name: 'MenuManagement',
         component: () => import('@/views/system/menu/index.vue'),
@@ -489,6 +557,136 @@ const routes = [
         name: 'QuoteConvert',
         component: () => import('@/views/sales/quote-convert/index.vue'),
         meta: { title: '报价转化', group: '销售管理', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.2.1 报价创建（add-quote-approval-console：同 3.2.1 组件别名，group 项目研发）
+        path: '/m/11.2.1',
+        name: 'ProjectQuoteCreate',
+        component: () => import('@/views/sales/quote-create/index.vue'),
+        meta: { title: '报价创建', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.2.2 报价审批（add-quote-approval-console，spec sales-quote 报价审批台）
+        path: '/m/11.2.2',
+        name: 'QuoteApproval',
+        component: () => import('@/views/sales/quote-approval/index.vue'),
+        meta: { title: '报价审批', group: '项目研发',
+          perm: 'ROLE_SALES_MGR,ROLE_SALES_DIRECTOR,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.3.1 立项申请（add-project-initiation，spec project-initiation）
+        path: '/m/11.3.1',
+        name: 'PmProjectList',
+        component: () => import('@/views/pm/project/project-list.vue'),
+        meta: { title: '立项申请', group: '项目研发', perm: 'ROLE_PMO,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 11.3.2 任务分解（add-project-initiation：WBS 树 + 模板 Tab + 资源 Tab）
+        path: '/m/11.3.2',
+        name: 'PmWbsEdit',
+        component: () => import('@/views/pm/project/wbs-edit.vue'),
+        meta: { title: '任务分解', group: '项目研发', perm: 'ROLE_PMO,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 11.3.3 预算基线（add-project-initiation：预算编制 + 审批 + 变更）
+        path: '/m/11.3.3',
+        name: 'PmBudgetBaseline',
+        component: () => import('@/views/pm/project/budget-baseline.vue'),
+        meta: { title: '预算基线', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_PM,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.4.1 关键节点（add-milestone-management，spec milestone-management）
+        path: '/m/11.4.1',
+        name: 'PmMilestoneManage',
+        component: () => import('@/views/pm/milestone/milestone-manage.vue'),
+        meta: { title: '关键节点', group: '项目研发', perm: 'ROLE_PM,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.4.2 交付评审（add-milestone-management：提交/三态评审/L2 审批队列）
+        path: '/m/11.4.2',
+        name: 'PmMilestoneReview',
+        component: () => import('@/views/pm/milestone/milestone-review.vue'),
+        meta: { title: '交付评审', group: '项目研发', perm: 'ROLE_PM,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.4.3 进度更新（add-milestone-management：完成率看板+偏差分级+催办）
+        path: '/m/11.4.3',
+        name: 'PmProjectProgress',
+        component: () => import('@/views/pm/milestone/project-progress.vue'),
+        meta: { title: '进度更新', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.5.1 团队工时看板（add-timesheet-management：管理者视角，员工填报走 /my/timesheet）
+        path: '/m/11.5.1',
+        name: 'PmTeamHours',
+        component: () => import('@/views/pm/timesheet/team-hours.vue'),
+        meta: { title: '工时录入', group: '项目研发', perm: 'ROLE_PM,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.5.2 主管审核（add-timesheet-management：任务负责人/项目经理单头单审）
+        path: '/m/11.5.2',
+        name: 'PmTimesheetReview',
+        component: () => import('@/views/pm/timesheet/timesheet-review.vue'),
+        meta: { title: '主管审核', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_DEPT_HEAD,ROLE_ADMIN' }
+      },
+      {
+        // 11.5.3 工时归集（add-timesheet-management：四级汇总+预估对账）
+        path: '/m/11.5.3',
+        name: 'PmHoursCollect',
+        component: () => import('@/views/pm/timesheet/hours-collect.vue'),
+        meta: { title: '工时归集', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.5.4 偏差分析（add-timesheet-management：黄/红分级+已处理收口）
+        path: '/m/11.5.4',
+        name: 'PmHoursVariance',
+        component: () => import('@/views/pm/timesheet/hours-variance.vue'),
+        meta: { title: '偏差分析', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.6.1 成本归集（add-cost-collection-freeze：五类台账+领料/外协/差旅/分摊）
+        path: '/m/11.6.1',
+        name: 'PmCostCollect',
+        component: () => import('@/views/pm/cost/cost-collect.vue'),
+        meta: { title: '成本归集', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.6.2 偏差监控（add-cost-collection-freeze：双阈值 PV 线性+五分类）
+        path: '/m/11.6.2',
+        name: 'PmCostVariance',
+        component: () => import('@/views/pm/cost/cost-variance.vue'),
+        meta: { title: '偏差监控', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.6.3 超支冻结（add-cost-collection-freeze：冻结清单+超预算三级审批；不含普通 PM）
+        path: '/m/11.6.3',
+        name: 'PmCostFreeze',
+        component: () => import('@/views/pm/cost/cost-freeze.vue'),
+        meta: { title: '超支冻结', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN' }
+      },
+      {
+        // 11.7.1 变更申请（add-project-change：五类变更+影响分析+三级路由；倒签 L1）
+        path: '/m/11.7.1',
+        name: 'PmProjectChangeApply',
+        component: () => import('@/views/pm/project-change/project-change-apply.vue'),
+        meta: { title: '变更申请', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.7.2 变更审批（add-project-change：三态跟踪+基线版本历史+合同联动；不含普通 PM）
+        path: '/m/11.7.2',
+        name: 'PmProjectChangeApprove',
+        component: () => import('@/views/pm/project-change/project-change-approve.vue'),
+        meta: { title: '变更审批', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN' }
       },
       {
         // 3.3.1 信用检查（add-sales-lead-to-cash，spec customer-credit-control）
@@ -1735,6 +1933,396 @@ const routes = [
         component: () => import('@/views/fin/cost-accounting/index.vue'),
         meta: { title: '成本报表', group: '财务管理',
           perm: 'ROLE_COST_ACCOUNTANT,ROLE_FINANCE,ROLE_FINANCE_MGR,ROLE_FIN_ASSET,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.1.1 税码匹配 + 9.1.2 税额计算（change add-tax-calculation：同页双 tab 工作台，菜单驱动定 tab）
+        path: '/m/9.1.1',
+        name: 'TaxMatch',
+        component: () => import('@/views/fin/tax-calculation/index.vue'),
+        meta: { title: '税码匹配', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/9.1.2',
+        name: 'TaxCalc',
+        component: () => import('@/views/fin/tax-calculation/index.vue'),
+        meta: { title: '税额计算', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.1.3 合规校验（全域扫描报告页）
+        path: '/m/9.1.3',
+        name: 'TaxCompliance',
+        component: () => import('@/views/fin/tax-calculation/report.vue'),
+        meta: { title: '合规校验', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.2.1 销项开票（change add-invoice-management：销项台账税务视角+限额提示；
+        // 申请/开具链复用既有 sales/invoice-trigger 页面）
+        path: '/m/9.2.1',
+        name: 'SalesInvoiceLedger',
+        component: () => import('@/views/fin/invoice-management/sales-ledger.vue'),
+        meta: { title: '销项开票', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.2.2 进项收票（三单匹配→认证→批量进项凭证）
+        path: '/m/9.2.2',
+        name: 'InputInvoices',
+        component: () => import('@/views/fin/invoice-management/input-invoices.vue'),
+        meta: { title: '进项收票', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.2.3 数电发票（额度→请求队列→补开→勾稽）
+        path: '/m/9.2.3',
+        name: 'DigitalInvoices',
+        component: () => import('@/views/fin/invoice-management/digital-invoices.vue'),
+        meta: { title: '数电发票', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.2.4 发票交付（双路登记+重发+超期黄标）
+        path: '/m/9.2.4',
+        name: 'InvoiceDelivery',
+        component: () => import('@/views/fin/invoice-management/delivery.vue'),
+        meta: { title: '发票交付', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.3.1 真伪查验（change add-input-certification：接线 9.2.2 进项页——查验闸口工作面）
+        path: '/m/9.3.1',
+        name: 'InputInspect',
+        component: () => import('@/views/fin/invoice-management/input-invoices.vue'),
+        meta: { title: '真伪查验', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.3.2 认证抵扣（同页认证/凭证工作面）
+        path: '/m/9.3.2',
+        name: 'InputCertify',
+        component: () => import('@/views/fin/invoice-management/input-invoices.vue'),
+        meta: { title: '认证抵扣', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.4.1 红字冲销（change add-red-invoice-void：申请→审批→信息单→编号门禁→开红票）
+        path: '/m/9.4.1',
+        name: 'RedFlush',
+        component: () => import('@/views/fin/red-invoice-void/red-flush.vue'),
+        meta: { title: '红字冲销', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.4.2 发票作废（三条件 BR-4.14-24 + 审批执行）
+        path: '/m/9.4.2',
+        name: 'InvoiceVoid',
+        component: () => import('@/views/fin/red-invoice-void/invoice-void.vue'),
+        meta: { title: '发票作废', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.4.3 进项转出（直接/分摊两模式 + 转出凭证）
+        path: '/m/9.4.3',
+        name: 'InputTaxTransfer',
+        component: () => import('@/views/fin/red-invoice-void/input-tax-transfer.vue'),
+        meta: { title: '进项转出', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.5.1 增值申报（change add-tax-filing：汇总→勾稽→生成→三级审批→缴款 + 留抵退税入口）
+        path: '/m/9.5.1',
+        name: 'VatFiling',
+        component: () => import('@/views/fin/tax-filing/vat-filing.vue'),
+        meta: { title: '增值申报', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.5.2 所得申报（累计利润×税率+调整项，同审批缴款链）
+        path: '/m/9.5.2',
+        name: 'CitFiling',
+        component: () => import('@/views/fin/tax-filing/cit-filing.vue'),
+        meta: { title: '所得申报', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.5.3 出口退税（一票一档/单证/FOB 折算/状态跟踪/核销/分级预警）
+        path: '/m/9.5.3',
+        name: 'ExportRefund',
+        component: () => import('@/views/fin/tax-filing/export-refund.vue'),
+        meta: { title: '出口退税', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.5.4 申报归档（按期聚合申报表/栏次/回执/调整记录，≥10 年）
+        path: '/m/9.5.4',
+        name: 'TaxArchive',
+        component: () => import('@/views/fin/tax-filing/archive.vue'),
+        meta: { title: '申报归档', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.6.1 风险预警（8 类信号看板 + 证书 + 离线开票 + 税负率四 Tab）
+        path: '/m/9.6.1',
+        name: 'TaxRiskDashboard',
+        component: () => import('@/views/fin/tax-risk-control/risk-dashboard.vue'),
+        meta: { title: '风险预警', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.6.2 优惠管理（备案台账 + 到期预警/续期/冻结/终止，BR-4.14-05/06）
+        path: '/m/9.6.2',
+        name: 'TaxPreference',
+        component: () => import('@/views/fin/tax-risk-control/tax-preference.vue'),
+        meta: { title: '优惠管理', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 9.6.3 关联定价（关联方 + 三档文档台账 + 提醒 + 风险自评，S-4.14-08）
+        path: '/m/9.6.3',
+        name: 'TransferPricing',
+        component: () => import('@/views/fin/tax-risk-control/transfer-pricing.vue'),
+        meta: { title: '关联定价', group: '税务管理',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.1.1 建档登记（六步状态机，FR-4.7-1）
+        path: '/m/10.1.1',
+        name: 'ArchiveFiling',
+        component: () => import('@/views/hr/employee-archive/archive-filing.vue'),
+        meta: { title: '建档登记', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.1.2 信息维护（档案列表 + 变更日志 BR-4.7-07 + 试用期提醒）
+        path: '/m/10.1.2',
+        name: 'ArchiveList',
+        component: () => import('@/views/hr/employee-archive/archive-list.vue'),
+        meta: { title: '信息维护', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.7.1 入职管理（建档进度跟踪 + 试用期提醒）
+        path: '/m/10.7.1',
+        name: 'OnboardingTrack',
+        component: () => import('@/views/hr/employee-transfer/onboarding-track.vue'),
+        meta: { title: '入职管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.7.2 转正管理（评价/HR 审核/超期自动转正）
+        path: '/m/10.7.2',
+        name: 'ProbationManage',
+        component: () => import('@/views/hr/employee-transfer/probation-manage.vue'),
+        meta: { title: '转正管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.7.3 调岗管理（双人复核五要素比对 C-4.7-03）
+        path: '/m/10.7.3',
+        name: 'PostChange',
+        component: () => import('@/views/hr/employee-transfer/post-change.vue'),
+        meta: { title: '调岗管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.7.4 离职管理（四类交接 C-4.7-04 硬阻断 + 离场凭证）
+        path: '/m/10.7.4',
+        name: 'ExitManage',
+        component: () => import('@/views/hr/employee-transfer/exit-manage.vue'),
+        meta: { title: '离职管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.2.1 部门管理（树+主管/成本中心/合并/停用双阻断）
+        path: '/m/10.2.1',
+        name: 'DeptManage',
+        component: () => import('@/views/hr/org-management/dept-manage.vue'),
+        meta: { title: '部门管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.2.2 岗位管理（职级关联 + 说明书要点 + 带宽链）
+        path: '/m/10.2.2',
+        name: 'PositionManage',
+        component: () => import('@/views/hr/org-management/position-manage.vue'),
+        meta: { title: '岗位管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.2.3 汇报关系（防环/深度上限/变更留痕）
+        path: '/m/10.2.3',
+        name: 'ReportLine',
+        component: () => import('@/views/hr/org-management/report-line.vue'),
+        meta: { title: '汇报关系', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.2.4 职级管理（带宽挂职级，变更走调整单审批）
+        path: '/m/10.2.4',
+        name: 'GradeManage',
+        component: () => import('@/views/hr/org-management/grade-manage.vue'),
+        meta: { title: '职级管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.3.1 排班管理（班次库+到人到天日历+批量+复制上月）
+        path: '/m/10.3.1',
+        name: 'ScheduleManage',
+        component: () => import('@/views/hr/attendance/schedule-manage.vue'),
+        meta: { title: '排班管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.3.2 异常识别（今日打卡+CSV 导入+手动重跑+异常日报）
+        path: '/m/10.3.2',
+        name: 'ExceptionDetect',
+        component: () => import('@/views/hr/attendance/exception-detect.vue'),
+        meta: { title: '异常识别', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.3.3 考勤申诉（批量申诉 5 工作日期限+补卡申请）
+        path: '/m/10.3.3',
+        name: 'AppealManage',
+        component: () => import('@/views/hr/attendance/appeal-manage.vue'),
+        meta: { title: '考勤申诉', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.3.4 主管确认（批量表态+催办清单）
+        path: '/m/10.3.4',
+        name: 'MgrConfirm',
+        component: () => import('@/views/hr/attendance/mgr-confirm.vue'),
+        meta: { title: '主管确认', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.3.5 考勤终审（终审锁定+月度汇总+更正解锁+C-4.7-01 挂起标记）
+        path: '/m/10.3.5',
+        name: 'FinalizeManage',
+        component: () => import('@/views/hr/attendance/finalize-manage.vue'),
+        meta: { title: '考勤终审', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.4.1 加班申请（36h 拦截+补单+确认分流+试算器）
+        path: '/m/10.4.1',
+        name: 'OvertimeApply',
+        component: () => import('@/views/hr/attendance/overtime-apply.vue'),
+        meta: { title: '加班申请', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.4.2 调休额度（FEFO 批次+到期提醒+清零留痕）
+        path: '/m/10.4.2',
+        name: 'CompTime',
+        component: () => import('@/views/hr/attendance/comp-time.vue'),
+        meta: { title: '调休额度', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.4.3 加班工资（固化金额列表，21.75/8 基数）
+        path: '/m/10.4.3',
+        name: 'OvertimeWage',
+        component: () => import('@/views/hr/attendance/overtime-wage.vue'),
+        meta: { title: '加班工资', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.4.4 请假管理（余额池分组+请假单+假期类型规则）
+        path: '/m/10.4.4',
+        name: 'LeaveManage',
+        component: () => import('@/views/hr/attendance/leave-manage.vue'),
+        meta: { title: '请假管理', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.10.1 绩效方案（周期+等级系数映射，评分期内锁定）
+        path: '/m/10.10.1',
+        name: 'PerfPlan',
+        component: () => import('@/views/hr/performance/plan-manage.vue'),
+        meta: { title: '绩效方案', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.10.2 评分录入（分值→等级自动映射，DRAFT→SUBMITTED）
+        path: '/m/10.10.2',
+        name: 'PerfScoreEntry',
+        component: () => import('@/views/hr/performance/score-entry.vue'),
+        meta: { title: '评分录入', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.10.3 评分校准（自建状态机批量流转+等级调整留痕）
+        path: '/m/10.10.3',
+        name: 'PerfCalibrate',
+        component: () => import('@/views/hr/performance/score-calibrate.vue'),
+        meta: { title: '评分校准', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.10.4 绩效结果（确认快照，薪酬核算取数来源）
+        path: '/m/10.10.4',
+        name: 'PerfResult',
+        component: () => import('@/views/hr/performance/result-view.vue'),
+        meta: { title: '绩效结果', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.5.1 社保扣缴（属地政策表+封顶保底试算+7月基数提醒）
+        path: '/m/10.5.1',
+        name: 'SocialPolicy',
+        component: () => import('@/views/hr/payroll/social-policy.vue'),
+        meta: { title: '社保扣缴', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.5.2 个税计算（累计预扣法+税率表+专项附加+年终奖单独/并入）
+        path: '/m/10.5.2',
+        name: 'IitCalc',
+        component: () => import('@/views/hr/payroll/iit-calc.vue'),
+        meta: { title: '个税计算', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.5.3 薪资核算（数据准备/补扣项/核算引擎/负数波动标记）
+        path: '/m/10.5.3',
+        name: 'PayrollCalc',
+        component: () => import('@/views/hr/payroll/payroll-calc.vue'),
+        meta: { title: '薪资核算', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.5.4 核算审批（PayrollRun 锁定/薪酬更正 L2/工资条异议回复）
+        path: '/m/10.5.4',
+        name: 'PayrollApprove',
+        component: () => import('@/views/hr/payroll/payroll-approve.vue'),
+        meta: { title: '核算审批', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 10.6.1/10.6.2/10.6.3 薪酬发放三叶合一操作台（代发→付款登记→回单对账→差异→归档）
+        path: '/m/10.6.1',
+        name: 'PayDisbursement',
+        component: () => import('@/views/hr/payroll/disbursement.vue'),
+        meta: { title: '代发文件', group: '人力资源',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/10.6.2',
+        name: 'PayExecution',
+        component: () => import('@/views/hr/payroll/disbursement.vue'),
+        meta: { title: '发放执行', group: '人力资源', tab: '1',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/10.6.3',
+        name: 'PayReconcile',
+        component: () => import('@/views/hr/payroll/disbursement.vue'),
+        meta: { title: '回单对账', group: '人力资源', tab: '2',
+          perm: 'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
       },
       {
         // 8.10.3 成本报表（change add-cost-accounting：期间报表主区块 + 多期趋势构成双 Tab）

@@ -545,7 +545,7 @@ class RebateArInvoiceRulesUnitTest {
     // ================= 红冲余额 =================
 
     @Test
-    void redInvoiceCannotExceedRemainingBalance() {
+    void redInvoiceRedirectsToFlushApply() {
         InvoiceApplyDao applyDao = mock(InvoiceApplyDao.class);
         SalesInvoiceDao invoiceDao = mock(SalesInvoiceDao.class);
         RedInvoiceDao redDao = mock(RedInvoiceDao.class);
@@ -565,22 +565,26 @@ class RebateArInvoiceRulesUnitTest {
         origin.setRedAmount(BigDecimal.ZERO);
         origin.setArId("A1");
         when(invoiceDao.selectById("INV1")).thenReturn(origin);
-        when(redDao.selectNosByPrefix(anyString())).thenReturn(List.of());
-        when(redDao.insert(any(com.erp.entity.fin.RedInvoice.class))).thenReturn(1);
-        when(invoiceDao.updateById(any(com.erp.entity.fin.SalesInvoice.class))).thenReturn(1);
-        ArInvoice ar = ar("A1", "AR-1", "10000", "0");
-        when(finArDao.selectById("A1")).thenReturn(ar);
-        when(finArDao.updateById(any(ArInvoice.class))).thenReturn(1);
-        when(applyDao.selectList(any())).thenReturn(new ArrayList<>());
 
-        // 红冲 3000 → 原票/应收累计红冲回写
-        invoiceService.redInvoice("INV1", null, null, new BigDecimal("3000"), "退货红冲");
-        assertEquals(0, new BigDecimal("3000").compareTo(origin.getRedAmount()));
-        assertEquals(0, new BigDecimal("3000").compareTo(ar.getRedAmount()));
-
-        // 再红冲 8000 > 剩余 7000 → 422 封顶
+        // 一步直达已下线（add-red-invoice-void design D3）：无重定向服务 → 503 引导
         ServiceException e = assertThrows(ServiceException.class,
-                () -> invoiceService.redInvoice("INV1", null, null, new BigDecimal("8000"), "超额"));
-        assertTrue(e.getMessage().contains("可冲余额"), e.getMessage());
+                () -> invoiceService.redInvoice("INV1", null, null, new BigDecimal("3000"), "退货红冲"));
+        assertEquals(503, e.getCode());
+
+        // 注入重定向服务 → 委托红冲申请单（余额卡控由 RedFlushService.create 承担，
+        // 场景覆盖见 RedFlushVoidDbTest.amountOverRemainingBlocked）
+        com.erp.service.impl.fin.RedFlushServiceImpl flush = mock(
+                com.erp.service.impl.fin.RedFlushServiceImpl.class);
+        com.erp.entity.fin.RedInvoice view = new com.erp.entity.fin.RedInvoice();
+        view.setRedNo("待开具-FSAP01");
+        view.setStatus("PENDING");
+        when(flush.redirectLegacy(eq("INV1"), any(), any(), any(), any())).thenReturn(view);
+        org.springframework.test.util.ReflectionTestUtils.setField(invoiceService,
+                "redFlushService", flush);
+        com.erp.entity.fin.RedInvoice out = invoiceService.redInvoice("INV1", null, null,
+                new BigDecimal("3000"), "退货红冲");
+        assertEquals("PENDING", out.getStatus(), "旧接口返回申请单视图（待审批）");
+        org.mockito.Mockito.verify(flush).redirectLegacy(eq("INV1"), any(), any(),
+                org.mockito.ArgumentMatchers.eq(new BigDecimal("3000")), any());
     }
 }

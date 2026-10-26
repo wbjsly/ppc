@@ -75,7 +75,29 @@ public class GlBalanceServiceImpl implements GlBalanceService {
             bal.setDrTotal("DR".equals(direction) ? amount : BigDecimal.ZERO);
             bal.setCrTotal("CR".equals(direction) ? amount : BigDecimal.ZERO);
             bal.setCreateBy(SecurityUtils.getCurrentUserId());
-            balanceDao.insert(bal);
+            try {
+                balanceDao.insert(bal);
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                // 并发首写同一 (period,account,aux) 唯一键：一方 INSERT 成功、另一方回退为原子 UPDATE 累加
+                BigDecimal drAdd = "DR".equals(direction) ? amount : BigDecimal.ZERO;
+                BigDecimal crAdd = "CR".equals(direction) ? amount : BigDecimal.ZERO;
+                int updated = balanceDao.accumulate(period, accountCode,
+                        auxKey == null ? "" : auxKey, drAdd, crAdd,
+                        SecurityUtils.getCurrentUserId());
+                if (updated == 0) {
+                    // 竞争方被逻辑删除/已不存在：重插一次，仍撞键则再累加一次兜底
+                    try {
+                        balanceDao.insert(bal);
+                    } catch (org.springframework.dao.DataIntegrityViolationException e2) {
+                        if (balanceDao.accumulate(period, accountCode, auxKey == null ? "" : auxKey,
+                                drAdd, crAdd, SecurityUtils.getCurrentUserId()) == 0) {
+                            throw new ServiceException(500, "科目余额写入冲突且无法回退："
+                                    + period + "/" + accountCode + "/" + auxKey
+                                    + "（存在占用唯一键的逻辑删除行，需清理 erp_fin_balance）");
+                        }
+                    }
+                }
+            }
         } else {
             BigDecimal drAdd = "DR".equals(direction) ? amount : BigDecimal.ZERO;
             BigDecimal crAdd = "CR".equals(direction) ? amount : BigDecimal.ZERO;

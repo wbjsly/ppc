@@ -39,6 +39,12 @@
             <el-table-column prop="sourceChannel" label="来源" width="90">
               <template #default="{ row }">{{ channelName(row.sourceChannel) }}</template>
             </el-table-column>
+            <el-table-column prop="region" label="区域" width="80">
+              <template #default="{ row }">{{ row.region || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="industry" label="行业" width="80">
+              <template #default="{ row }">{{ row.industry || '-' }}</template>
+            </el-table-column>
             <el-table-column prop="score" label="评分" width="80">
               <template #default="{ row }">{{ row.score == null ? '-' : row.score }}</template>
             </el-table-column>
@@ -139,6 +145,12 @@
         </el-form-item>
         <el-form-item label="联系电话">
           <el-input v-model="form.contactPhone" maxlength="32" />
+        </el-form-item>
+        <el-form-item label="区域">
+          <el-input v-model="form.region" maxlength="64" placeholder="选填，自动分配规则维度" style="width: 200px;" />
+        </el-form-item>
+        <el-form-item label="行业">
+          <el-input v-model="form.industry" maxlength="64" placeholder="选填，自动分配规则维度" style="width: 200px;" />
         </el-form-item>
         <el-form-item label="需求描述">
           <el-input v-model="form.demandDesc" type="textarea" :rows="2" maxlength="1000" />

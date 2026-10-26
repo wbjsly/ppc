@@ -43,3 +43,10 @@ openspec/
 
 # Vite 运行时时间戳产物
 frontend/vite.config.js.timestamp-*
+
+# 运行时上传文件（用户附件，非代码）
+uploads/
+backend/uploads/
+
+# 前端构建备份目录（safe-delete shim 超时的 mv dist 产物）
+frontend/dist.old-*/

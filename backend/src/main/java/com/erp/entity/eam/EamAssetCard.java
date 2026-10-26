@@ -45,6 +45,14 @@ public class EamAssetCard extends BaseEntity {
     @TableField("STORAGE_LOCATION")
     private String storageLocation;
 
+    /** 持有人工号（154 加列，HR 离职交接联动） */
+    @TableField("HOLDER_EMP_NO")
+    private String holderEmpNo;
+
+    /** 持有人姓名 */
+    @TableField("HOLDER_NAME")
+    private String holderName;
+
     // ---- 折旧政策五字段（BR-4.13-10 锁定对象） ----
 
     @TableField("ASSET_COST")

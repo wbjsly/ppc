@@ -114,7 +114,7 @@ public class QuoteServiceImpl implements QuoteService {
 
     @Override
     public Page<SdQuote> page(long current, long size, String keyword, String status, String oppId) {
-        requireAny("查询报价", "ROLE_SALES", "ROLE_SALES_MGR");
+        requireAny("查询报价", "ROLE_SALES", "ROLE_SALES_MGR", "ROLE_SALES_DIRECTOR", "ROLE_FINANCE_MGR");
         LambdaQueryWrapper<SdQuote> qw = new LambdaQueryWrapper<SdQuote>()
                 .orderByDesc(SdQuote::getCreateDate);
         if (hasText(status)) {
@@ -135,13 +135,13 @@ public class QuoteServiceImpl implements QuoteService {
 
     @Override
     public SdQuote get(String id) {
-        requireAny("查看报价", "ROLE_SALES", "ROLE_SALES_MGR");
+        requireAny("查看报价", "ROLE_SALES", "ROLE_SALES_MGR", "ROLE_SALES_DIRECTOR", "ROLE_FINANCE_MGR");
         return require(id);
     }
 
     @Override
     public List<QuoteLine> lines(String quoteId) {
-        requireAny("查看报价行", "ROLE_SALES", "ROLE_SALES_MGR");
+        requireAny("查看报价行", "ROLE_SALES", "ROLE_SALES_MGR", "ROLE_SALES_DIRECTOR", "ROLE_FINANCE_MGR");
         require(quoteId);
         return lineDao.selectList(new LambdaQueryWrapper<QuoteLine>()
                 .eq(QuoteLine::getQuoteId, quoteId)
@@ -150,7 +150,7 @@ public class QuoteServiceImpl implements QuoteService {
 
     @Override
     public List<QuoteVersion> versions(String quoteId) {
-        requireAny("查看报价版本", "ROLE_SALES", "ROLE_SALES_MGR");
+        requireAny("查看报价版本", "ROLE_SALES", "ROLE_SALES_MGR", "ROLE_SALES_DIRECTOR", "ROLE_FINANCE_MGR");
         require(quoteId);
         return versionDao.selectList(new LambdaQueryWrapper<QuoteVersion>()
                 .eq(QuoteVersion::getQuoteId, quoteId)

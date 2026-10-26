@@ -1,0 +1,291 @@
+-- ====================================================================
+-- 154-employee-archive.sql — 人力资源：员工档案 + 入转调离（add-employee-archive）
+-- 1. 轻量部门/岗位（hr_dept / hr_position）
+-- 2. 员工主档 + 建档状态机 + 人事变动 + 离职 + 变更日志 + 提醒
+-- 3. EAM 资产卡片补持有人两列（离职交接联动）
+-- 4. SysParam + HR 角色 + M10-1/M10-7 菜单 PERM
+-- 幂等：可重复执行
+-- ====================================================================
+
+-- ---------- 1a. 部门 ----------
+CREATE TABLE IF NOT EXISTS hr_dept (
+    ID          VARCHAR(32)  NOT NULL,
+    DEPT_NO     VARCHAR(32)  NOT NULL COMMENT '部门编号 DEPT+流水',
+    NAME        VARCHAR(128) NOT NULL COMMENT '部门名称',
+    PARENT_ID   VARCHAR(32)  NULL COMMENT '上级部门 ID',
+    STATUS      VARCHAR(1)   NOT NULL DEFAULT '1' COMMENT '1 启用 / 0 停用',
+    CREATE_BY   VARCHAR(64)  NULL,
+    CREATE_DATE DATETIME     NULL,
+    UPDATE_BY   VARCHAR(64)  NULL,
+    UPDATE_DATE DATETIME     NULL,
+    DEL_FLAG    CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO      INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_DEPT_NO (DEPT_NO)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 轻量部门（M10-1 前置）';
+
+-- ---------- 1b. 岗位 ----------
+CREATE TABLE IF NOT EXISTS hr_position (
+    ID          VARCHAR(32)  NOT NULL,
+    POS_NO      VARCHAR(32)  NOT NULL COMMENT '岗位编号 POS+流水',
+    NAME        VARCHAR(128) NOT NULL COMMENT '岗位名称',
+    DEPT_ID     VARCHAR(32)  NOT NULL COMMENT '所属部门',
+    ROLES_JSON  VARCHAR(500) NULL COMMENT '岗位角色映射 JSON 数组（账号联动用）',
+    HEADCOUNT   INT          NULL COMMENT '编制数（空=不限，调岗满编校验）',
+    STATUS      VARCHAR(1)   NOT NULL DEFAULT '1' COMMENT '1 启用 / 0 停用',
+    CREATE_BY   VARCHAR(64)  NULL,
+    CREATE_DATE DATETIME     NULL,
+    UPDATE_BY   VARCHAR(64)  NULL,
+    UPDATE_DATE DATETIME     NULL,
+    DEL_FLAG    CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO      INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_POS_NO (POS_NO),
+    KEY IDX_HR_POS_DEPT (DEPT_ID, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='HR 轻量岗位（角色映射/编制）';
+
+-- ---------- 2a. 员工主档 ----------
+CREATE TABLE IF NOT EXISTS hr_employee (
+    ID               VARCHAR(32)  NOT NULL,
+    EMP_NO           VARCHAR(20)  NOT NULL COMMENT '工号 EMP+yyyy+4位流水（生成后锁定）',
+    NAME             VARCHAR(64)  NOT NULL,
+    ID_CARD_NO       VARCHAR(32)  NOT NULL COMMENT '身份证号（全库唯一，BR-4.7-09；生成后锁定 BR-4.7-07）',
+    GENDER           VARCHAR(8)   NULL,
+    BIRTH_DATE       DATE         NULL,
+    PHONE            VARCHAR(32)  NULL,
+    ADDRESS          VARCHAR(255) NULL,
+    EMERGENCY_CONTACT VARCHAR(128) NULL COMMENT '紧急联系人',
+    BANK_CARD_NO     VARCHAR(32)  NULL COMMENT '银行卡号（四要素人工核验留桩）',
+    EDUCATION        VARCHAR(32)  NULL COMMENT '学历学位',
+    WORK_HISTORY_JSON TEXT        NULL COMMENT '工作经历 JSON',
+    DEPT_ID          VARCHAR(32)  NULL COMMENT '所属部门',
+    POS_ID           VARCHAR(32)  NULL COMMENT '岗位',
+    COST_CENTER      VARCHAR(32)  NULL COMMENT '成本中心',
+    EMP_STATUS       VARCHAR(16)  NOT NULL DEFAULT 'PROBATION' COMMENT 'PROBATION 试用 / REGULAR 正式 / RESIGNED 离职',
+    HIRE_DATE        DATE         NULL COMMENT '入职日期',
+    PROBATION_END    DATE         NULL COMMENT '试用期截止日',
+    CONTRACT_NO      VARCHAR(64)  NULL COMMENT '合同编号',
+    CONTRACT_START   DATE         NULL,
+    CONTRACT_END     DATE         NULL,
+    SOCIAL_PLACE     VARCHAR(64)  NULL COMMENT '社保缴纳地（留桩）',
+    SOCIAL_TYPE      VARCHAR(32)  NULL COMMENT '参保类型（留桩）',
+    SOCIAL_DATE      DATE         NULL COMMENT '增员日期（留桩）',
+    USER_ID          VARCHAR(32)  NULL COMMENT '联动系统账号 ID',
+    REJOIN_OF        VARCHAR(32)  NULL COMMENT '二次入职：原主档 ID（BR-4.7-09）',
+    RESIGNED_DATE    DATE         NULL COMMENT '离职日期',
+    CREATE_BY        VARCHAR(64)  NULL,
+    CREATE_DATE      DATETIME     NULL,
+    UPDATE_BY        VARCHAR(64)  NULL,
+    UPDATE_DATE      DATETIME     NULL,
+    DEL_FLAG         CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO           INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_EMP_NO (EMP_NO),
+    UNIQUE KEY UK_HR_EMP_IDCARD (ID_CARD_NO),
+    KEY IDX_HR_EMP_STATUS (EMP_STATUS),
+    KEY IDX_HR_EMP_DEPT (DEPT_ID, POS_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='员工主档（全系统 SSoT，§4.7）';
+
+-- ---------- 2b. 建档六步状态机 ----------
+CREATE TABLE IF NOT EXISTS hr_onboarding (
+    ID             VARCHAR(32)  NOT NULL,
+    ONB_NO         VARCHAR(32)  NOT NULL COMMENT '建档单号 ONB+流水',
+    STEP           INT          NOT NULL DEFAULT 1 COMMENT '当前步骤 1~6',
+    STATUS         VARCHAR(16)  NOT NULL DEFAULT 'DRAFT' COMMENT 'IN_PROGRESS 推进 / RETURNED 退回 / DONE 完成',
+    EMP_ID         VARCHAR(32)  NULL COMMENT '第⑤步生成的主档 ID',
+    -- ①录用单接收
+    OFFER_NO       VARCHAR(64)  NULL COMMENT '录用审批单编号',
+    OFFER_APPROVED VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '录用单已审批通过 1/0（门禁）',
+    -- ②信息登记（人工核验留桩）
+    CANDIDATE_JSON TEXT         NULL COMMENT '候选人登记信息 JSON（姓名/证件/联系方式/银行卡/学历/经历）',
+    REALNAME_CHECK VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '实名认证人工核验 1/0',
+    REALNAME_BY    VARCHAR(64)  NULL,
+    REALNAME_AT    DATETIME     NULL,
+    BANK4_CHECK    VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '银行卡四要素人工核验 1/0',
+    -- ③证件核验（清单 JSON：证件类型/已提交/核验人/时间；离职证明必备 L1）
+    DOCS_JSON      TEXT         NULL,
+    DOCS_VERIFIED  VARCHAR(1)   NOT NULL DEFAULT '0',
+    -- ④合同签订
+    CONTRACT_JSON  TEXT         NULL COMMENT '合同编号/起止/签署日/试用期月数',
+    CONTRACT_OK    VARCHAR(1)   NOT NULL DEFAULT '0',
+    -- ⑥社保增员留桩
+    SOCIAL_JSON    TEXT         NULL COMMENT '缴纳地/参保类型/增员日期',
+    SOCIAL_DONE    VARCHAR(1)   NOT NULL DEFAULT '0',
+    CREATE_BY      VARCHAR(64)  NULL,
+    CREATE_DATE    DATETIME     NULL,
+    UPDATE_BY      VARCHAR(64)  NULL,
+    UPDATE_DATE    DATETIME     NULL,
+    DEL_FLAG       CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO         INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_ONB_NO (ONB_NO),
+    KEY IDX_HR_ONB_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='建档六步状态机（FR-4.7-1-1~6）';
+
+-- ---------- 2c. 人事变动（转正/调岗，含双人复核） ----------
+CREATE TABLE IF NOT EXISTS hr_transfer (
+    ID             VARCHAR(32)  NOT NULL,
+    TRF_NO         VARCHAR(32)  NOT NULL COMMENT '变动单号 TRF+流水',
+    TYPE           VARCHAR(16)  NOT NULL COMMENT 'PROBATION 转正 / POST 调岗',
+    EMP_ID         VARCHAR(32)  NOT NULL,
+    EMP_NAME       VARCHAR(64)  NOT NULL COMMENT '冗余便于列表',
+    -- 转正
+    ABILITY_SCORE  INT          NULL COMMENT '工作能力评分 1-5',
+    ATTITUDE_SCORE INT          NULL,
+    ATTITUDE_NOTE  VARCHAR(500) NULL COMMENT '综合评价',
+    PROPOSAL       VARCHAR(16)  NULL COMMENT '按期转正 REGULAR / 延期 EXTEND / 终止 TERMINATE',
+    EXTEND_MONTHS  INT          NULL COMMENT '延期月数（法定上限 L1 校验）',
+    -- 调岗
+    FROM_DEPT_ID   VARCHAR(32)  NULL,
+    FROM_POS_ID    VARCHAR(32)  NULL,
+    TO_DEPT_ID     VARCHAR(32)  NULL,
+    TO_POS_ID      VARCHAR(32)  NULL,
+    SALARY_ADVICE  VARCHAR(255) NULL COMMENT '薪酬调整建议',
+    EFFECTIVE_DATE DATE         NULL COMMENT '拟生效日期',
+    -- 通用
+    REASON         VARCHAR(500) NULL,
+    STATUS         VARCHAR(24)  NOT NULL DEFAULT 'DRAFT'
+        COMMENT 'DRAFT→DEPT_OUT_CONFIRMED→DEPT_IN_CONFIRMED→HR_REVIEWED→REVIEWING(双人复核)→REVIEW_DIFF(差异挂起)→APPROVING→EFFECTED/REJECTED/TERMINATED/AUTO_REGULAR',
+    APPR_ID        VARCHAR(32)  NULL COMMENT 'ApprovalEngine 实例',
+    -- 双人复核（C-4.7-03）：两人独立五要素 JSON + 意见 + 时间
+    REVIEW1_JSON   TEXT         NULL,
+    REVIEW1_BY     VARCHAR(64)  NULL,
+    REVIEW1_AT     DATETIME     NULL,
+    REVIEW2_JSON   TEXT         NULL,
+    REVIEW2_BY     VARCHAR(64)  NULL,
+    REVIEW2_AT     DATETIME     NULL,
+    REVIEW_DIFF_JSON TEXT       NULL COMMENT '差异项（不一致时）',
+    -- 账号联动待处理标记（失败降级）
+    LINK_PENDING   VARCHAR(1)   NOT NULL DEFAULT '0',
+    LINK_NOTE      VARCHAR(255) NULL,
+    CREATE_BY      VARCHAR(64)  NULL,
+    CREATE_DATE    DATETIME     NULL,
+    UPDATE_BY      VARCHAR(64)  NULL,
+    UPDATE_DATE    DATETIME     NULL,
+    DEL_FLAG       CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO         INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_TRF_NO (TRF_NO),
+    KEY IDX_HR_TRF_EMP (EMP_ID, TYPE, STATUS),
+    KEY IDX_HR_TRF_EFFECTIVE (EFFECTIVE_DATE, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人事变动：转正/调岗（双人复核 C-4.7-03）';
+
+-- ---------- 2d. 离职 ----------
+CREATE TABLE IF NOT EXISTS hr_exit (
+    ID             VARCHAR(32)  NOT NULL,
+    EXIT_NO        VARCHAR(32)  NOT NULL COMMENT '离职单号 EXT+流水',
+    EMP_ID         VARCHAR(32)  NOT NULL,
+    EMP_NAME       VARCHAR(64)  NOT NULL,
+    EMP_NO         VARCHAR(20)  NOT NULL,
+    QUIT_DATE      DATE         NOT NULL COMMENT '拟离职日期',
+    REASON         VARCHAR(500) NULL,
+    NOTICE_OK      VARCHAR(1)   NOT NULL DEFAULT '1' COMMENT '通知期满足 1（不满足 L4 提示留痕 0）',
+    STATUS         VARCHAR(24)  NOT NULL DEFAULT 'APPLYING'
+        COMMENT 'APPLYING→APPROVING→HANDOVER→SETTLED(结算+减员)→EXITED 已离场/REJECTED',
+    APPR_ID        VARCHAR(32)  NULL,
+    -- 交接四类（C-4.7-04 全齐才放行）
+    ASSET_DONE     VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '资产归还（EAM 卡片回写）',
+    ACCOUNT_DONE   VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '权限移交（账号禁用）',
+    DOC_DONE       VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '知识文档交接（手工+接收人）',
+    WORK_DONE      VARCHAR(1)   NOT NULL DEFAULT '0' COMMENT '在办工作交接（手工+接收人）',
+    HANDOVER_JSON  TEXT         NULL COMMENT '交接明细 JSON（资产卡片/账号/文档/工作项，含接收人与时间）',
+    -- 薪酬结算离线登记（薪酬模块不存在）
+    SETTLE_WAGE    DECIMAL(18,2) NULL COMMENT '当月工资',
+    SETTLE_ANNUAL  DECIMAL(18,2) NULL COMMENT '未休年假折算',
+    SETTLE_COMP    DECIMAL(18,2) NULL COMMENT '经济补偿金',
+    SETTLE_NONCOMP DECIMAL(18,2) NULL COMMENT '竞业限制补偿',
+    SETTLE_NOTE    VARCHAR(500) NULL,
+    SETTLED_BY     VARCHAR(64)  NULL,
+    SETTLED_AT     DATETIME     NULL,
+    -- 社保减员留桩
+    REDUCE_DATE    DATE         NULL,
+    REDUCE_NOTE    VARCHAR(255) NULL,
+    EXIT_CERT_NO   VARCHAR(32)  NULL COMMENT '离场凭证号 EXC+流水',
+    EXIT_CERT_AT   DATETIME     NULL,
+    CREATE_BY      VARCHAR(64)  NULL,
+    CREATE_DATE    DATETIME     NULL,
+    UPDATE_BY      VARCHAR(64)  NULL,
+    UPDATE_DATE    DATETIME     NULL,
+    DEL_FLAG       CHAR(1)      NOT NULL DEFAULT '0',
+    VER_NO         INT          NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_EXT_NO (EXIT_NO),
+    KEY IDX_HR_EXT_EMP (EMP_ID, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='离职管理（C-4.7-04 交接硬阻断）';
+
+-- ---------- 2e. 主档变更日志（不可删） ----------
+CREATE TABLE IF NOT EXISTS hr_change_log (
+    ID         VARCHAR(32) NOT NULL,
+    EMP_ID     VARCHAR(32) NOT NULL,
+    FIELD_NAME VARCHAR(64) NOT NULL COMMENT '字段中文名',
+    OLD_VALUE  VARCHAR(500) NULL,
+    NEW_VALUE  VARCHAR(500) NULL,
+    REASON     VARCHAR(500) NULL,
+    CHANGE_BY  VARCHAR(64) NOT NULL,
+    CHANGE_AT  DATETIME    NOT NULL,
+    PRIMARY KEY (ID),
+    KEY IDX_HR_LOG_EMP (EMP_ID, CHANGE_AT)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='主档变更日志（BR-4.7-07 留痕，不可删）';
+
+-- ---------- 2f. 提醒记录 ----------
+CREATE TABLE IF NOT EXISTS hr_remind (
+    ID           VARCHAR(32) NOT NULL,
+    REMIND_TYPE  VARCHAR(24) NOT NULL COMMENT 'PROBATION 转正提醒等',
+    EMP_ID       VARCHAR(32) NOT NULL,
+    EMP_NAME     VARCHAR(64) NULL,
+    REMIND_DATE  DATE        NOT NULL COMMENT '提醒日（同员工同日 UK 防重复轰炸）',
+    DETAIL       VARCHAR(255) NULL,
+    CREATE_BY    VARCHAR(64) NULL,
+    CREATE_DATE  DATETIME    NULL,
+    DEL_FLAG     CHAR(1)     NOT NULL DEFAULT '0',
+    VER_NO       INT         NOT NULL DEFAULT 0,
+    PRIMARY KEY (ID),
+    UNIQUE KEY UK_HR_REMIND_DAY (REMIND_TYPE, EMP_ID, REMIND_DATE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提醒记录（BR-4.7-08 转正 15 天）';
+
+-- ---------- 3. EAM 资产卡片补持有人两列（离职交接联动） ----------
+SET @col := (SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'erp_eam_asset_card'
+               AND COLUMN_NAME = 'HOLDER_EMP_NO');
+SET @sql := IF(@col = 0,
+    'ALTER TABLE erp_eam_asset_card ADD COLUMN HOLDER_EMP_NO VARCHAR(20) NULL COMMENT ''持有人工号（HR 离职交接联动）'' AFTER STORAGE_LOCATION, ADD COLUMN HOLDER_NAME VARCHAR(64) NULL COMMENT ''持有人姓名'' AFTER HOLDER_EMP_NO',
+    'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ---------- 4a. SysParam ----------
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-HR-EMP-PREFIX', 'HR_EMP_NO_PREFIX', 'EMP', 'STRING', 'HR',
+       '工号前缀（EMP+yyyy+4位流水）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'HR_EMP_NO_PREFIX');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-HR-PROB-REMIND', 'HR_PROBATION_REMIND_DAYS', '15', 'NUMBER', 'HR',
+       '试用期转正提前提醒天数（BR-4.7-08）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'HR_PROBATION_REMIND_DAYS');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-HR-NOTICE-REG', 'HR_EXIT_NOTICE_DAYS_REGULAR', '30', 'NUMBER', 'HR',
+       '正式员工离职通知期（天）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'HR_EXIT_NOTICE_DAYS_REGULAR');
+
+INSERT IGNORE INTO erp_sys_param (ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'PARAM-HR-NOTICE-PROB', 'HR_EXIT_NOTICE_DAYS_PROBATION', '3', 'NUMBER', 'HR',
+       '试用期员工离职通知期（天）', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_sys_param WHERE PARAM_KEY = 'HR_EXIT_NOTICE_DAYS_PROBATION');
+
+-- ---------- 4b. HR 角色 ----------
+INSERT IGNORE INTO erp_admin_role (ID, ROLE_CODE, ROLE_NAME, SORT_ORDER, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'role-hr', 'ROLE_HR', 'HR 专员', 60, '1', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_admin_role WHERE ROLE_CODE = 'ROLE_HR');
+
+INSERT IGNORE INTO erp_admin_role (ID, ROLE_CODE, ROLE_NAME, SORT_ORDER, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'role-hr-mgr', 'ROLE_HR_MGR', 'HR 经理', 61, '1', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_admin_role WHERE ROLE_CODE = 'ROLE_HR_MGR');
+
+-- ---------- 4c. M10-1/M10-7 菜单 PERM ----------
+UPDATE erp_admin_menu SET PERM='ROLE_HR,ROLE_HR_MGR,ROLE_ADMIN'
+ WHERE ID IN ('M10-1','M10-1-1','M10-1-2','M10-7','M10-7-1','M10-7-2','M10-7-3','M10-7-4')
+   AND (PERM IS NULL OR PERM='');

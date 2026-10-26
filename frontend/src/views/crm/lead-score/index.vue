@@ -122,7 +122,96 @@
           </el-table>
         </el-card>
       </el-tab-pane>
+      <!-- ==================== 分配规则（add-lead-auto-assign） ==================== -->
+      <el-tab-pane label="分配规则" name="assign">
+        <el-card style="margin-bottom: 12px;">
+          <template #header>
+            <div class="card-header">
+              <span style="font-weight: bold; font-size: 16px;">资深销售名单（A 级线索优先分配）</span>
+              <el-button type="primary" size="small" :loading="assignSaving" @click="saveSeniors">保存名单</el-button>
+            </div>
+          </template>
+          <el-alert type="info" :closable="false" show-icon style="margin-bottom: 10px;"
+            title="勾选即资深；名单为空时 A 级线索按全员「在手最少」回落并提示维护。" />
+          <el-select v-model="seniorIds" multiple filterable allow-create default-first-option
+            placeholder="输入销售账号后回车加入，可多选" style="width: 100%;">
+            <el-option v-for="a in seniorIds" :key="a" :label="a" :value="a" />
+          </el-select>
+        </el-card>
+
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span style="font-weight: bold; font-size: 16px;">分配规则（等级+区域/行业 → 目标销售集，优先级小者先命中）</span>
+              <el-button type="primary" :icon="Plus" @click="openRule()">新建规则</el-button>
+            </div>
+          </template>
+          <el-table :data="rules" v-loading="assignLoading" stripe>
+            <el-table-column prop="priority" label="优先级" width="80" />
+            <el-table-column prop="grade" label="等级" width="70">
+              <template #default="{ row }">
+                <el-tag :type="gradeType(row.grade)" size="small">{{ row.grade }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="区域" width="110">
+              <template #default="{ row }">{{ row.region || '通配' }}</template>
+            </el-table-column>
+            <el-table-column label="行业" width="110">
+              <template #default="{ row }">{{ row.industry || '通配' }}</template>
+            </el-table-column>
+            <el-table-column prop="targetEmpIds" label="目标销售集" min-width="180" show-overflow-tooltip />
+            <el-table-column label="启停" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.enabled === '1' ? 'success' : 'info'" size="small">
+                  {{ row.enabled === '1' ? '启用' : '停用' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openRule(row)">编辑</el-button>
+                <el-button link type="danger" @click="removeRule(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- 规则弹窗 -->
+    <el-dialog v-model="ruleVisible" :title="ruleForm.id ? '编辑分配规则' : '新建分配规则'" width="520px">
+      <el-form label-width="110px">
+        <el-form-item label="适用等级" required>
+          <el-radio-group v-model="ruleForm.grade">
+            <el-radio v-for="g in ['A','B','C']" :key="g" :value="g">{{ g }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="区域条件">
+          <el-input v-model="ruleForm.region" maxlength="64" placeholder="留空 = 通配" style="width: 220px;" />
+        </el-form-item>
+        <el-form-item label="行业条件">
+          <el-input v-model="ruleForm.industry" maxlength="64" placeholder="留空 = 通配" style="width: 220px;" />
+        </el-form-item>
+        <el-form-item label="目标销售集" required>
+          <el-select v-model="ruleTargets" multiple filterable allow-create default-first-option
+            placeholder="输入销售账号后回车，可多选" style="width: 100%;">
+            <el-option v-for="a in ruleTargets" :key="a" :label="a" :value="a" />
+          </el-select>
+          <div style="color: #909399; font-size: 12px;">目标集内在手线索最少者优先获得分配</div>
+        </el-form-item>
+        <el-form-item label="优先级">
+          <el-input-number v-model="ruleForm.priority" :min="1" :max="999" />
+          <span style="color: #909399; font-size: 12px; margin-left: 8px;">数字小者先匹配，首条命中生效</span>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="ruleForm.enabled" active-value="1" inactive-value="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignSaving" @click="submitRule">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 评分弹窗 -->
     <el-dialog v-model="scoreVisible" :title="`评分 — ${current.companyName || ''}`" width="520px">
@@ -192,7 +281,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { getLeadsApi, scoreLeadApi, getModelsApi, saveModelApi } from '@/api/crm/lead'
+import {
+  getLeadsApi, scoreLeadApi, getModelsApi, saveModelApi,
+  getSeniorsApi, saveSeniorsApi, getAssignRulesApi,
+  createAssignRuleApi, updateAssignRuleApi, deleteAssignRuleApi
+} from '@/api/crm/lead'
 
 const dims = [
   { k: 'need', label: '需求明确度', weight: 30 },
@@ -322,7 +415,76 @@ async function submitModel() {
   }
 }
 
-onMounted(() => { loadData(); loadCards(); loadModels() })
+// ---------- 自动分配配置（add-lead-auto-assign） ----------
+const assignLoading = ref(false)
+const assignSaving = ref(false)
+const seniorIds = ref([])
+const rules = ref([])
+const ruleVisible = ref(false)
+const ruleForm = ref({})
+const ruleTargets = ref([])
+
+async function loadAssign() {
+  assignLoading.value = true
+  try {
+    const [sr, rr] = await Promise.all([getSeniorsApi(), getAssignRulesApi()])
+    seniorIds.value = (sr.data || []).filter(p => p.isSenior === '1').map(p => p.empId)
+    rules.value = rr.data || []
+  } finally {
+    assignLoading.value = false
+  }
+}
+
+async function saveSeniors() {
+  assignSaving.value = true
+  try {
+    await saveSeniorsApi(seniorIds.value.map(id => ({ empId: id, empName: id, isSenior: '1' })))
+    ElMessage.success(`资深名单已保存（${seniorIds.value.length} 人）`)
+    loadAssign()
+  } finally {
+    assignSaving.value = false
+  }
+}
+
+function openRule(row) {
+  ruleForm.value = row
+    ? { id: row.id, grade: row.grade, region: row.region || '', industry: row.industry || '',
+        priority: row.priority, enabled: row.enabled }
+    : { id: null, grade: 'B', region: '', industry: '', priority: 100, enabled: '1' }
+  ruleTargets.value = row && row.targetEmpIds ? row.targetEmpIds.split(',').filter(Boolean) : []
+  ruleVisible.value = true
+}
+
+async function submitRule() {
+  if (!ruleTargets.value.length) { ElMessage.error('目标销售集必填'); return }
+  assignSaving.value = true
+  try {
+    const payload = { ...ruleForm.value, targetEmpIds: ruleTargets.value.join(',') }
+    if (payload.id) {
+      await updateAssignRuleApi(payload.id, payload)
+    } else {
+      await createAssignRuleApi(payload)
+    }
+    ElMessage.success('规则已保存')
+    ruleVisible.value = false
+    loadAssign()
+  } finally {
+    assignSaving.value = false
+  }
+}
+
+async function removeRule(row) {
+  assignSaving.value = true
+  try {
+    await deleteAssignRuleApi(row.id)
+    ElMessage.success('规则已删除')
+    loadAssign()
+  } finally {
+    assignSaving.value = false
+  }
+}
+
+onMounted(() => { loadData(); loadCards(); loadModels(); loadAssign() })
 </script>
 
 <style scoped>

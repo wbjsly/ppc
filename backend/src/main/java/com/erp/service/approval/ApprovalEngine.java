@@ -40,6 +40,15 @@ public interface ApprovalEngine {
     /** 按业务单据的审批日志（实例 + 节点按 SEQ 排序） */
     Map<String, Object> logs(String bizType, String bizId);
 
+    /**
+     * 按业务类型列审批实例（add-quote-approval-console：审批台已办页签/集中视图复用）。
+     *
+     * @param bizType 业务类型（必填）
+     * @param status  实例状态过滤（空 = 不限；PENDING/APPROVED/REJECTED/CANCELLED）
+     * @return 实例头 + 当前活跃节点摘要，按发起时间倒序
+     */
+    List<Map<String, Object>> listByBizType(String bizType, String status);
+
     /** 超时扫描：72h 提醒、7 天升级（幂等），返回处理条数 */
     int sweepTimeouts();
 }

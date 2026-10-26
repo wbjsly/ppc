@@ -1,0 +1,49 @@
+-- ============================================================================
+-- 149-tax-calculation.sql — 计税管理（M9-1，change add-tax-calculation）
+--   spec: tax-calculation（4.14 流程 1 计税：匹配/计算/台账/DRAFT 入账/合规报告）
+--   幂等：CREATE TABLE IF NOT EXISTS + INSERT ... WHERE NOT EXISTS + UPDATE 条件
+-- ============================================================================
+
+-- ---------- 1. 计税台账（D3 状态机 RECORDED→APPLYING→VOUCHED；凭证锚 SOURCE_TYPE='TAXCALC'） ----------
+CREATE TABLE IF NOT EXISTS erp_fin_tax_calc_ledger (
+    ID VARCHAR(64) NOT NULL,
+    TRX_TYPE VARCHAR(16) NOT NULL COMMENT '交易类型 SALES/PURCHASE',
+    SCOPE VARCHAR(16) NOT NULL COMMENT '适用范围（命中税码 SCOPE：DOMESTIC/EXPORT/EXEMPT）',
+    CALC_TYPE VARCHAR(16) NOT NULL COMMENT '计税方式 GENERAL/SIMPLE（命中税码 CALC_TYPE）',
+    RATE_KIND VARCHAR(16) COMMENT '税率种类（命中税码 RATE_KIND：STANDARD/LOW/ZERO）',
+    BUSINESS_DATE DATE NOT NULL COMMENT '业务发生日（BR-4.14-10 按此日取码，非录入日）',
+    AMOUNT DECIMAL(18,2) NOT NULL COMMENT '金额（GROSS_FLAG 决定含税/不含税口径）',
+    GROSS_FLAG CHAR(1) NOT NULL DEFAULT 'Y' COMMENT 'Y=含税金额（先价税分离）/N=不含税金额',
+    TAX_CODE VARCHAR(32) NOT NULL COMMENT '命中税码',
+    TAX_RATE DECIMAL(10,6) NOT NULL COMMENT '税率/征收率（快照，防主数据变更漂移）',
+    TAXABLE_BASE DECIMAL(18,2) NOT NULL COMMENT '计税基数（价税分离后不含税合计）',
+    TAX_AMOUNT DECIMAL(18,2) NOT NULL COMMENT '税额',
+    DEDUCTIBLE CHAR(1) NOT NULL DEFAULT 'Y' COMMENT 'Y=可抵扣/N=不得抵扣（SIMPLE 恒 N，BR-4.14-08）',
+    OVER_TOLERANCE CHAR(1) NOT NULL DEFAULT 'N' COMMENT 'Y=尾差超容差（L4 复核标记，BR-4.14-07）',
+    MULTI_CANDIDATE CHAR(1) NOT NULL DEFAULT 'N' COMMENT 'Y=多命中人工选定（L4 留痕）',
+    COUNTERPARTY VARCHAR(128) COMMENT '对手方（入账申请必填，补录）',
+    PERIOD VARCHAR(6) COMMENT '入账期间 YYYYMM（入账申请必填，补录；勾稽口径）',
+    SUMMARY VARCHAR(255) COMMENT '摘要（入账申请必填，补录）',
+    VOUCHER_ID VARCHAR(64) COMMENT '税务凭证（DRAFT→审核→过账；SALES→贷222102/PURCHASE可抵扣→借222101/SIMPLE→借费用）',
+    STATUS VARCHAR(16) NOT NULL DEFAULT 'RECORDED' COMMENT 'RECORDED=已留痕/APPLYING=入账申请/VOUCHED=已挂凭证',
+    REMARK VARCHAR(255),
+    CREATE_BY VARCHAR(64),
+    CREATE_DATE DATETIME,
+    UPDATE_BY VARCHAR(64),
+    UPDATE_DATE DATETIME,
+    VER_NO INT DEFAULT 0,
+    DEL_FLAG CHAR(1) DEFAULT '0',
+    PRIMARY KEY (ID),
+    KEY IDX_FIN_TAXCALC_STATUS (STATUS, TRX_TYPE),
+    KEY IDX_FIN_TAXCALC_PERIOD (PERIOD),
+    KEY IDX_FIN_TAXCALC_CODE (TAX_CODE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计税台账/手工计税入账申请（M9-1，spec tax-calculation）';
+
+-- ---------- 2. 简易计税不得抵扣入账科目（D4：借费用而非 222101） ----------
+INSERT IGNORE INTO erp_fin_account (ID, ACCOUNT_CODE, ACCOUNT_NAME, DIRECTION, CATEGORY, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT 'FIN-ACCT-660299', '660299', '管理费用-其他（简易计税不得抵扣）', 'DR', 'EXPENSE', 'ACTIVE', 'system', NOW(), '0', 0
+WHERE NOT EXISTS (SELECT 1 FROM erp_fin_account WHERE ACCOUNT_CODE = '660299');
+
+-- ---------- 3. M9-1 计税管理菜单 PERM（D6：ROLE_FINANCE 承担税务专员操作位） ----------
+UPDATE erp_admin_menu SET PERM='ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'
+ WHERE ID IN ('M9-1','M9-1-1','M9-1-2','M9-1-3') AND (PERM IS NULL OR PERM='');

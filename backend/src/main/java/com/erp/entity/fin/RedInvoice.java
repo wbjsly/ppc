@@ -40,4 +40,10 @@ public class RedInvoice extends BaseEntity {
     private String issueBy;
     private LocalDateTime issueAt;
     private String remark;
+    /** 红字信息表编号（M9-4 红冲申请链路回填，离线登记） */
+    private String infoSheetNo;
+    /** 信息表填开方 BUYER/SELLER（BR-4.14-25 按购方抵扣状态判定） */
+    private String infoSheetFiller;
+    /** 来源红冲申请单号（FSAP 前缀；旧退货直开链路为空） */
+    private String flushApplyNo;
 }

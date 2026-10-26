@@ -53,6 +53,14 @@ public class ApprovalController {
         return R.ok(toMap(engine.reject(taskId, reason)));
     }
 
+    /** 按业务类型列实例（add-quote-approval-console：审批台已办页签/集中视图复用） */
+    @Operation(summary = "按业务类型列审批实例", description = "实例头 + 当前活跃节点摘要，按发起时间倒序；status 可选")
+    @GetMapping("/history")
+    public R<List<Map<String, Object>>> history(@RequestParam(required = false) String bizType,
+                                                @RequestParam(required = false) String status) {
+        return R.ok(engine.listByBizType(bizType, status));
+    }
+
     /** 按业务单据的审批日志（实例 + 节点） */
     @Operation(summary = "审批日志")
     @GetMapping("/logs")

@@ -5,6 +5,7 @@ import com.erp.entity.fin.FinBalance;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,16 @@ public interface FinBalanceDao extends BaseMapper<FinBalance> {
     FinBalance selectByKey(@Param("period") String period,
                            @Param("accountCode") String accountCode,
                            @Param("auxKey") String auxKey);
+
+    /** 原子累加：并发首写撞唯一键时回退为 UPDATE（gl 并发过账兜底） */
+    @Update("UPDATE erp_fin_balance SET DR_TOTAL = DR_TOTAL + #{drAdd}, "
+            + "CR_TOTAL = CR_TOTAL + #{crAdd}, UPDATE_BY = #{updateBy}, "
+            + "VER_NO = VER_NO + 1, UPDATE_DATE = NOW() "
+            + "WHERE PERIOD=#{period} AND ACCOUNT_CODE=#{accountCode} AND AUX_KEY=#{auxKey} "
+            + "AND DEL_FLAG='0'")
+    int accumulate(@Param("period") String period, @Param("accountCode") String accountCode,
+                   @Param("auxKey") String auxKey, @Param("drAdd") java.math.BigDecimal drAdd,
+                   @Param("crAdd") java.math.BigDecimal crAdd, @Param("updateBy") String updateBy);
 
     /** 幂等 journal 判存：该凭证行是否已回写（防重放双计） */
     @Select("SELECT COUNT(*) FROM erp_fin_balance_journal WHERE VOUCHER_ID=#{voucherId} "

@@ -139,7 +139,7 @@ const logsData = ref({})
 const BIZ_NAMES = {
   StandardPublish: '标准发布', Exempt: '免检申请', Concession: '让步接收',
   NcrDisposition: 'NCR 处置', Capa: 'CAPA', Scar: 'SCAR',
-  CopqFinance: 'COPQ 财务确认', Return: '退货审批', StandardChange: '标准变更'
+  CopqFinance: 'COPQ 财务确认', Return: '退货审批', StandardChange: '标准变更', Quote: '报价审批'
 }
 
 function bizTypeName(t) { return BIZ_NAMES[t] || t }
@@ -147,6 +147,7 @@ function bizTagType(t) {
   if (t === 'Concession') return 'warning'
   if (t === 'StandardPublish' || t === 'StandardChange') return 'primary'
   if (t === 'Scar' || t === 'CopqFinance') return 'danger'
+  if (t === 'Quote') return 'warning'
   return 'info'
 }
 function statusName(s) {
