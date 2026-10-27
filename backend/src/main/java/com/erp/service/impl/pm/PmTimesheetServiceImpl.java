@@ -60,7 +60,7 @@ public class PmTimesheetServiceImpl implements PmTimesheetService {
     private final NoticeService noticeService;
     private final PmHoursCollectService collectService;
     private final PmChangeInterceptor changeInterceptor;
-
+    private final PmClosureGuard closureGuard;
     // ================================================================
     // 填报（FR-4.8-4-1 / BR-4.8-18）
     // ================================================================
@@ -144,6 +144,8 @@ public class PmTimesheetServiceImpl implements PmTimesheetService {
             PmWbs task = requireTask(wbsId);
             // 变更拦截（C-4.8-09，add-project-change）：按 WBS 精准拦，不误伤其他项目/任务
             changeInterceptor.assertNoPendingChange(task.getProjectId(), wbsId);
+            // 归档只读拦截（add-project-closure）：CLOSED 项目不可录入工时
+            closureGuard.assertWritable(task.getProjectId(), true);
             BigDecimal hours = dec(row.get("hours"));
             checkHalfStep(hours);
             PmTimesheetLine line = new PmTimesheetLine();

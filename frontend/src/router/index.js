@@ -753,6 +753,38 @@ const routes = [
           perm: 'ROLE_CS,ROLE_SERVICE_ENG,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN' }
       },
       {
+        // 11.12.1 结项检查（add-project-closure：发起/检查单/遗留；PM 发起，PMO 审批查看）
+        path: '/m/11.12.1',
+        name: 'PmClosureCheck',
+        component: () => import('@/views/pm/closure/closure-check.vue'),
+        meta: { title: '结项检查', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 11.12.2 成本结算（财务确认签字，FINANCE/FIN_MGR 可操作）
+        path: '/m/11.12.2',
+        name: 'PmClosureSettle',
+        component: () => import('@/views/pm/closure/closure-settle.vue'),
+        meta: { title: '成本结算', group: '项目研发',
+          perm: 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.12.3 文档归档（③⑥凭证 + 总结报告上传）
+        path: '/m/11.12.3',
+        name: 'PmClosureArchive',
+        component: () => import('@/views/pm/closure/closure-archive.vue'),
+        meta: { title: '文档归档', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 11.12.4 资源释放（归档快照只读，仅 PMO/ADMIN）
+        path: '/m/11.12.4',
+        name: 'PmResRelease',
+        component: () => import('@/views/pm/closure/res-release.vue'),
+        meta: { title: '资源释放', group: '项目研发',
+          perm: 'ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
         // 3.3.1 信用检查（add-sales-lead-to-cash，spec customer-credit-control）
         path: '/m/3.3.1',
         name: 'CreditCheck',

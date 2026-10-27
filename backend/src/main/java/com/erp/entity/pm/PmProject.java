@@ -24,6 +24,10 @@ public class PmProject extends BaseEntity {
     public static final String ST_DRAFT = "DRAFT";
     public static final String ST_APPROVING = "APPROVING";
     public static final String ST_ACTIVE = "ACTIVE";
+    /** 结项中（add-project-closure：变更发起被拦，工时/成本放行补录） */
+    public static final String ST_CLOSING = "CLOSING";
+    /** 已归档终态（五挂点只读拦截） */
+    public static final String ST_CLOSED = "CLOSED";
 
     /** 1=冻结（实际累计成本超预算基线，BR-4.8-21） */
     public static final String FREEZE_YES = "1";

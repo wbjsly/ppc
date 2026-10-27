@@ -45,6 +45,7 @@ public class PmBudgetServiceImpl implements PmBudgetService {
     private final PmWbsService wbsService;
     private final ApprovalEngine approvalEngine;
     private final com.erp.service.pm.PmIpAgreementService ipAgreementService;
+    private final PmClosureGuard closureGuard;
 
     @Override
     public Map<String, Object> lines(String projectId) {
@@ -149,6 +150,8 @@ public class PmBudgetServiceImpl implements PmBudgetService {
     @Transactional
     public Map<String, Object> submitBaseline(String projectId) {
         PmProject p = requireProject(projectId);
+        // 归档只读拦截（add-project-closure，五挂点之五）：CLOSED 项目给出明确归档提示
+        closureGuard.assertWritable(projectId, true);
         if (PmProject.ST_APPROVING.equals(p.getStatus())) {
             throw new ServiceException(422, "审批中不可重复提交");
         }

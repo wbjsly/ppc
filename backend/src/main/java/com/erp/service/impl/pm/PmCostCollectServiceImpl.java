@@ -35,6 +35,7 @@ public class PmCostCollectServiceImpl implements PmCostCollectService {
     private final PmCostCollectDao collectDao;
     private final HrPayAccountMappingDao mappingDao;
     private final GlVoucherService voucherService;
+    private final PmClosureGuard closureGuard;
 
     /** 类别 → 映射键对（借=DR，贷=CR） */
     private static final Map<String, String[]> TYPE_KEYS = Map.of(
@@ -57,6 +58,8 @@ public class PmCostCollectServiceImpl implements PmCostCollectService {
         if (projectId == null || projectId.isBlank()) {
             throw new ServiceException(422, "归集必须关联项目（BR-4.8-20）");
         }
+        // 归档只读拦截（add-project-closure）：CLOSED 项目不可追加成本
+        closureGuard.assertWritable(projectId, true);
         // 幂等：同来源已归集则跳过（防重复凭证）
         Long existing = collectDao.selectCount(new LambdaQueryWrapper<PmCostCollect>()
                 .eq(PmCostCollect::getSourceType, sourceType)

@@ -48,6 +48,7 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
     private final PmCostCollectService costCollectService;
     private final StockPostingEngine postingEngine;
     private final PmChangeInterceptor changeInterceptor;
+    private final PmClosureGuard closureGuard;
 
     @Override
     public List<Map<String, Object>> list(String projectId, String status) {
@@ -88,6 +89,8 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
     public Map<String, Object> save(Map<String, Object> payload, boolean submit) {
         String projectId = str(payload.get("projectId"));
         PmProject project = requireProject(projectId);
+        // 归档只读拦截（add-project-closure）：CLOSED 项目不可新增领料
+        closureGuard.assertWritable(projectId, true);
         // 冻结拦截（BR-4.8-21）
         if (PmProject.FREEZE_YES.equals(project.getFreezeFlag())) {
             throw new ServiceException(422, "项目已冻结（" + safe(project.getFreezeReason())

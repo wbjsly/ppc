@@ -54,13 +54,16 @@ public class PmProjectChangeServiceImpl implements PmProjectChangeService {
     private final PmBaselineVersionDao baselineVersionDao;
     private final ApprovalEngine approvalEngine;
     private final NoticeService noticeService;
+    private final PmClosureGuard closureGuard;
 
     @Override
     @Transactional
     public Map<String, Object> save(Map<String, Object> payload, boolean submit) {
         String projectId = str(payload.get("projectId"));
         PmProject p = requireProject(projectId);
-        // 仅 ACTIVE（基线已锁定并启动）项目可发起变更；结项态由结项域（11.12）后续接入
+        // 结项拦截（add-project-closure）：CLOSING/CLOSED 项目不可发起变更
+        closureGuard.assertWritable(projectId, false);
+        // 仅 ACTIVE（基线已锁定并启动）项目可发起变更
         if (!PmProject.ST_ACTIVE.equals(p.getStatus())) {
             throw new ServiceException(422, "仅执行中（ACTIVE）项目可发起变更");
         }

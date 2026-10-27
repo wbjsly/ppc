@@ -335,6 +335,10 @@ const EXTRA_PERM = {
   // M11-10 服务工单 11.10.1/11.10.2（change add-service-order：受理叶 CS/主管/销售经理，闭环叶加服务工程师）
   ...leaf(['M11-10', 'M11-10-1'], 'ROLE_CS,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN'),
   ...leaf(['M11-10-2'], 'ROLE_CS,ROLE_SERVICE_ENG,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN'),
+  // M11-12 结项归档 11.12.1~4（change add-project-closure：检查/文档=PMO,PM；结算加财务线；释放仅 PMO）
+  ...leaf(['M11-12', 'M11-12-1', 'M11-12-3'], 'ROLE_PMO,ROLE_PM,ROLE_ADMIN'),
+  ...leaf(['M11-12-2'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-12-4'], 'ROLE_PMO,ROLE_ADMIN'),
   // M10-10 绩效管理 10.10.1~10.10.4（change add-payroll-management）
   ...leaf(['M10-10', 'M10-10-1', 'M10-10-2', 'M10-10-3', 'M10-10-4'],
     'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),

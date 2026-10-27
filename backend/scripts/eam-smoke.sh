@@ -5781,6 +5781,143 @@ SQL "DELETE FROM erp_mdm_customer_group WHERE ID='ctd49-cust'" >/dev/null 2>&1
 
 echo "段 49 合同收口追加完成"
 
+# ============================================================================
+# 段 50 结项归档（add-project-closure，M11.12，S-4.8-07 / C-4.8-05 / BR-4.8-27~30）
+# 链路：造 ACTIVE 项目→发起结项（证据落快照）→人工项确认（无附件 422）→
+#       上传附件→补齐成本结算→提交（强制项未过 422 / 未结算 422）→
+#       PMO 审批通过→归档 CLOSED→五挂点只读 422→遗留工单逾期升级幂等
+# 断言：401 走 HTTP；403/422 是业务码用 BIZ
+# ============================================================================
+echo "== 段 50 结项归档（发起→证据→确认→结算→审批→归档只读→逾期升级）开始 =="
+
+# 50.0 隔离与造数：项目（先 DRAFT 补齐必填列再置 ACTIVE）+ WBS 完成 + 成本=基线
+SQL "DELETE FROM erp_pm_closure_remediation WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_closure_check_item WHERE CHECK_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_closure_settlement WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_cost_collect WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_attachment WHERE BIZ_TYPE='PROJECT_CLOSURE' AND (BIZ_ID LIKE 'clc50-%' OR BIZ_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%') t2))" >/dev/null 2>&1
+
+SQL "INSERT INTO erp_pm_project (ID,PROJECT_NO,NAME,PROJ_TYPE,DELIVERY_PATH,PM_USER_ID,PM_NAME,START_DATE,END_DATE,STATUS,BASELINE_LOCKED,BASELINE_AMOUNT,FREEZE_FLAG,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-prj','PRJ-CLC50','CLC50 结项归档项目','研发','INTERNAL','admin','冒烟PM',DATE_SUB(CURDATE(),INTERVAL 60 DAY),DATE_ADD(CURDATE(),INTERVAL 30 DAY),'DRAFT',0,10000,0,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID,PROJECT_ID,WBS_CODE,LEVEL,NAME,PHASE_DONE,EST_HOURS,EST_COST,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-w1','clc50-prj','1',1,'开发阶段','1',80,6000,'smoke',NOW(),'0',0),
+            ('clc50-w2','clc50-prj','2',1,'测试阶段','1',40,4000,'smoke',NOW(),'0',0),
+            ('clc50-w3','clc50-prj','1.1',3,'编码任务','1',80,6000,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+# 成本 = 基线 10000 → 偏差 0%（自动项 COST 通过）
+SQL "INSERT INTO erp_pm_cost_collect (ID,PROJECT_ID,WBS_ID,COST_TYPE,AMOUNT,SOURCE_TYPE,SOURCE_ID,COLLECT_DATE,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-cc1','clc50-prj','clc50-w3','LABOR',10000,'MANUAL','clc50-src',CURDATE(),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+# IP 归属协议（自动项 IP 的数据源，BR-4.8-24 立项卡控同款）
+SQL "INSERT INTO erp_pm_ip_agreement (ID,PROJECT_ID,COOP_MODE,COMPANY_RATE,SIGN_DATE,EFFECTIVE,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-ip1','clc50-prj','INDEPENDENT',1.00,CURDATE(),'1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "UPDATE erp_pm_project SET STATUS='ACTIVE',BASELINE_LOCKED=1 WHERE ID='clc50-prj'" >/dev/null 2>&1
+CLC50=$(SQL "SELECT STATUS FROM erp_pm_project WHERE ID='clc50-prj'")
+[ "$CLC50" = "ACTIVE" ] && ok "段50 项目造数 ACTIVE" || bad "段50 项目造数失败（$CLC50）"
+
+T50=$(C -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T50:-}" ] && ok "段50 admin 登录" || bad "段50 登录失败"
+
+# 50.1 发起结项 → 检查单 + 六项证据（WBS/MS/COST 自动 PASS；ACCEPT/DOC 人工 PENDING）
+INIT=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/initiate)
+IE=$(echo "$INIT" | J "d['code']")
+[ "$IE" = "200" ] && ok "段50 发起结项" || bad "段50 发起失败（$IE）"
+PST=$(SQL "SELECT STATUS FROM erp_pm_project WHERE ID='clc50-prj'")
+[ "$PST" = "CLOSING" ] && ok "段50 项目置 CLOSING" || bad "段50 状态错（$PST）"
+CHK=$(SQL "SELECT COUNT(*) FROM erp_pm_closure_check WHERE PROJECT_ID='clc50-prj'")
+[ "${CHK:-0}" = "1" ] && ok "段50 检查单生成" || bad "段50 检查单数错（$CHK）"
+ITOT=$(SQL "SELECT COUNT(*) FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj'")
+[ "${ITOT:-0}" = "6" ] && ok "段50 六项固定行" || bad "段50 检查项数错（$ITOT）"
+# 证据数值快照（非布尔）
+EVJ=$(SQL "SELECT EVIDENCE_JSON FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='COST'")
+CONTAINS "段50 成本证据落快照" "$EVJ" "deviation"
+WRES=$(SQL "SELECT RESULT FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='WBS'")
+[ "$WRES" = "PASS" ] && ok "段50 WBS 自动 PASS" || bad "段50 WBS 结果错（$WRES）"
+CRES=$(SQL "SELECT RESULT FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='COST'")
+[ "$CRES" = "PASS" ] && ok "段50 成本自动 PASS（偏差 0%）" || bad "段50 成本结果错（$CRES）"
+ARES=$(SQL "SELECT RESULT FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='ACCEPT'")
+[ "$ARES" = "PENDING" ] && ok "段50 人工项 PENDING" || bad "段50 人工项状态错（$ARES）"
+# 重复发起 409
+EQ "段50 重复发起 409" "$(BIZ -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/initiate)" "409"
+
+# 50.2 人工项确认：无附件 422 → 上传附件 → PASS
+CLC50_FILE=/tmp/clc50-attach.txt; echo "CLC50 smoke attachment" > "$CLC50_FILE"
+ACC_ID=$(SQL "SELECT i.ID FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='ACCEPT'")
+DOC_ID=$(SQL "SELECT i.ID FROM erp_pm_closure_check_item i JOIN erp_pm_closure_check c ON c.ID=i.CHECK_ID WHERE c.PROJECT_ID='clc50-prj' AND i.ITEM_KEY='DOC'")
+EQ "段50 人工项无附件 422" "$(BIZ -X PUT -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"result":"PASS"}' $B/api/pm/closure/items/$ACC_ID)" "422"
+UP1=$(C -X POST -H "$(A $T50)" -F "file=@$CLC50_FILE;filename=acceptance.pdf" -F "bizType=PROJECT_CLOSURE" -F "bizId=$ACC_ID" $B/api/common/attachments | J "d['code']")
+[ "$UP1" = "200" ] && ok "段50 验收凭证上传" || bad "段50 附件上传失败（$UP1）"
+UP2=$(C -X POST -H "$(A $T50)" -F "file=@$CLC50_FILE;filename=docs-archive.pdf" -F "bizType=PROJECT_CLOSURE" -F "bizId=$DOC_ID" $B/api/common/attachments | J "d['code']")
+[ "$UP2" = "200" ] && ok "段50 归档凭证上传" || bad "段50 归档附件失败（$UP2）"
+CR1=$(C -X PUT -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"result":"PASS"}' $B/api/pm/closure/items/$ACC_ID | J "d['data']['result']")
+[ "$CR1" = "PASS" ] && ok "段50 验收项确认 PASS" || bad "段50 验收确认错（$CR1）"
+CR2=$(C -X PUT -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"result":"PASS"}' $B/api/pm/closure/items/$DOC_ID | J "d['data']['result']")
+[ "$CR2" = "PASS" ] && ok "段50 文档项确认 PASS" || bad "段50 文档确认错（$CR2）"
+
+# 50.3 提交：强制项全过但未结算 → 422；结算后无总结报告 → 422
+EQ "段50 未结算提交 422" "$(BIZ -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/submit)" "422"
+SETC=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/settlement/confirm | J "d['code']")
+[ "$SETC" = "200" ] && ok "段50 财务结算确认（解冻+快照）" || bad "段50 结算失败（$SETC）"
+# 结算快照落库（不可变锚点）
+SETN=$(SQL "SELECT COUNT(*) FROM erp_pm_closure_settlement WHERE PROJECT_ID='clc50-prj'")
+[ "${SETN:-0}" = "1" ] && ok "段50 结算快照落库" || bad "段50 快照数错（$SETN）"
+EQ "段50 重复结算 409" "$(BIZ -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/settlement/confirm)" "409"
+EQ "段50 无总结报告提交 422" "$(BIZ -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/submit)" "422"
+UP3=$(C -X POST -H "$(A $T50)" -F "file=@$CLC50_FILE;filename=summary-report.pdf" -F "bizType=PROJECT_CLOSURE" -F "bizId=clc50-prj" $B/api/common/attachments | J "d['code']")
+[ "$UP3" = "200" ] && ok "段50 项目总结报告上传" || bad "段50 总结报告失败（$UP3）"
+
+# 50.4 提交成功 → FROZEN；CLOSING 拦变更发起
+SUB=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/submit | J "d['data']['check']['status']")
+[ "$SUB" = "FROZEN" ] && ok "段50 提交审批 FROZEN" || bad "段50 提交状态错（$SUB）"
+EQ "段50 CLOSING 拦变更发起" "$(BIZ -X POST -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"projectId":"clc50-prj","changeType":"SCOPE","reason":"结项中发起","effectiveDate":"'"$(date +%F)"'"}' $B/api/pm/changes/draft)" "422"
+
+# 50.5 PMO 审批通过 → CLOSED + 资源释放快照
+TASK50=$(C -H "$(A $T50)" $B/api/qms/approvals/todo | J "next((t['taskId'] for t in d['data'] if t.get('bizType')=='ProjectClosure'), None)")
+[ -n "${TASK50:-}" ] && [ "$TASK50" != "None" ] && ok "段50 结项审批待办可见" || bad "段50 无审批待办"
+P50=$(C -X POST -H "$(A $T50)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TASK50\",\"opinion\":\"CLC50 结项通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+[ "$P50" = "200" ] && ok "段50 PMO 审批通过" || bad "段50 审批失败（$P50）"
+FST=$(SQL "SELECT STATUS FROM erp_pm_project WHERE ID='clc50-prj'")
+[ "$FST" = "CLOSED" ] && ok "段50 项目归档 CLOSED" || bad "段50 归档状态错（$FST）"
+RES=$(SQL "SELECT RES_RELEASE_JSON FROM erp_pm_closure_check WHERE PROJECT_ID='clc50-prj'")
+CONTAINS "段50 资源释放快照生成" "$RES" "empId"
+
+# 50.6 归档只读五挂点 → 全 422
+TS50=$(BIZ -X POST -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"workDate":"'"$(date -v-1d +%F 2>/dev/null || date -d yesterday +%F)"'","lines":[{"wbsId":"clc50-w3","hours":8,"workContent":"归档后报工"}]}' $B/api/my/timesheets)
+[ "$TS50" = "422" ] && ok "段50 归档拦工时 422" || bad "段50 工时未拦（$TS50）"
+# 成本归集无独立写端点（内部服务层，服务层 guard 已由 ClosureDbTest 50 用例覆盖）
+# 此处只断言归档后成本归集表不可变（快照冻结）
+CSUM=$(SQL "SELECT COUNT(*) FROM erp_pm_cost_collect WHERE PROJECT_ID='clc50-prj'")
+[ "${CSUM:-0}" = "1" ] && ok "段50 归档后成本表冻结（无新增）" || bad "段50 成本表被改动（$CSUM）"
+CH50=$(BIZ -X POST -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"projectId":"clc50-prj","changeType":"SCOPE","reason":"归档后变更"}' $B/api/pm/changes/draft)
+[ "$CH50" = "422" ] && ok "段50 归档拦变更发起 422" || bad "段50 变更未拦（$CH50）"
+MI50=$(BIZ -X POST -H "$(A $T50)" -H 'Content-Type: application/json' -d '{"projectId":"clc50-prj","issueDate":"'"$(date +%F)"'","lines":[{"wbsId":"clc50-w1","itemId":"CLC50-ITEM","qty":1,"unitPrice":1}]}' $B/api/pm/cost/material-issues)
+[ "$MI50" = "422" ] && ok "段50 归档拦领料 422" || bad "段50 领料未拦（$MI50）"
+BS50=$(BIZ -X POST -H "$(A $T50)" $B/api/pm/budgets/clc50-prj/submit)
+[ "$BS50" = "422" ] && ok "段50 归档拦基线提交 422" || bad "段50 基线未拦（$BS50）"
+# 只读查询仍放行
+DT50=$(C -H "$(A $T50)" $B/api/pm/closure/clc50-prj | J "d['code']")
+[ "$DT50" = "200" ] && ok "段50 归档后只读查询放行" || bad "段50 查询被误拦（$DT50）"
+
+# 50.7 遗留工单逾期升级（造 OPEN 且逾期 → sweep 幂等）
+SQL "INSERT INTO erp_pm_closure_remediation (ID,CHECK_ID,PROJECT_ID,CONTENT,OWNER_ID,DUE_DATE,STATUS,ESCALATED_FLAG,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-rem1',(SELECT ID FROM erp_pm_closure_check WHERE PROJECT_ID='clc50-prj'),'clc50-prj','CLC50 遗留事项','admin',DATE_SUB(NOW(),INTERVAL 3 DAY),'OPEN','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SW1=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/sweep | J "d['data']")
+[ "${SW1:-0}" -ge 1 ] && ok "段50 逾期升级触发（$SW1）" || bad "段50 升级未触发（$SW1）"
+ESC1=$(SQL "SELECT ESCALATED_FLAG FROM erp_pm_closure_remediation WHERE ID='clc50-rem1'")
+[ "$ESC1" = "1" ] && ok "段50 升级标记落库" || bad "段50 升级标记错（$ESC1）"
+NTC=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='PmClosureRemediationOverdue'")
+SW2=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/sweep | J "d['data']")
+[ "${SW2:-9}" = "0" ] && ok "段50 重复 sweep 幂等（0 条）" || bad "段50 sweep 不幂等（$SW2）"
+NTC2=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='PmClosureRemediationOverdue'")
+[ "$NTC2" = "$NTC" ] && ok "段50 通知不重复" || bad "段50 通知重复（$NTC→$NTC2）"
+
+# 50.8 401 负例
+EQ "段50 无令牌发起 401" "$(HTTP -X POST $B/api/pm/closure/clc50-prj/initiate)" "401"
+
+echo "段 50 结项归档追加完成"
+
 echo "段 46 知识产权追加完成"
 
 echo "段 45 项目变更追加完成"

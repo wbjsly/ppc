@@ -356,6 +356,8 @@ public class SecurityConfig {
                 // 单据级角色校验在服务层；同须置于 /api/pm/** 兜底前
                 .antMatchers("/api/pm/trial/**")
                 .hasAnyRole("ADMIN", "PMO", "PM", "RD_LEAD", "FINANCE", "FIN_MGR")
+                .antMatchers("/api/pm/closure/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR")
                 .antMatchers("/api/pm/ip/**")
                 .hasAnyRole("ADMIN", "PMO", "PM", "LEGAL", "RD_LEAD", "FIN_MGR")
                 // 服务工单（add-service-order）：客服/服务工程师/服务主管/销售经理，
