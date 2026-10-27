@@ -307,6 +307,12 @@ class CostCollectionDbTest {
         jdbc.update("DELETE FROM erp_fin_voucher_line WHERE VOUCHER_ID IN "
                 + "(SELECT ID FROM (SELECT ID FROM erp_fin_voucher WHERE SOURCE_TYPE='PROJECT_COST') t)");
         jdbc.update("DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='PROJECT_COST'");
+        // 过账会写科目余额行（1801 暂估等），删凭证不清余额会让 erp_fin_balance 残留，
+        // 进而污染 AmortPlanDbTest 的 cumulativeBalance（PERIOD <= 期间）累计基线，
+        // 使 yearEndClearedGreen / deferredRecon 断言随运行顺序漂移。按来源人清理。
+        jdbc.update("DELETE FROM erp_fin_balance_journal WHERE VOUCHER_ID NOT IN "
+                + "(SELECT ID FROM erp_fin_voucher)");
+        jdbc.update("DELETE FROM erp_fin_balance WHERE CREATE_BY = 'ccf-emp'");
         jdbc.update("DELETE FROM erp_inv_stock WHERE ITEM_CODE='CCF-ITEM-1'");
         jdbc.update("DELETE FROM erp_inv_batch WHERE ITEM_CODE='CCF-ITEM-1'");
         jdbc.update("DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'ccf-%'");

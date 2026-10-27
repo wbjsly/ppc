@@ -43,6 +43,10 @@ class WaveAdjustDbTest {
     @BeforeEach
     void setUp() {
         purge();
+        // 本测试第一道断言依赖「角色除发起人外无他人」，必须让角色成员空间自包含：
+        // 暂存并摘除真实成员（历史冒烟/种子残留 4 名仓库主管会让「无他人」永不成立），
+        // 只留本测试账号 wh-smoke。tearDown 还原。
+        stashWarehouseRoleMembers();
         // 发起人 tester（不在用户表 → 排除后剩 wh-smoke，第一道通过）
         as("tester", "ROLE_WAREHOUSE");
 
@@ -71,7 +75,56 @@ class WaveAdjustDbTest {
     @AfterEach
     void tearDown() {
         purge();
+        restoreWarehouseRoleMembers();
         SecurityContextHolder.clearContext();
+    }
+
+    /**
+     * 摘除 ROLE_WAREHOUSE 的真实成员并暂存其 user_role 关联行，使本测试期间该角色
+     * 只剩本测试插入的 wh-smoke。真实成员是历史冒烟/种子残留（osmkwh/tp_wh/triwh/vmiwh 等），
+     * 若不摘除，第一道「除发起人外无他人」恒不成立。关联行暂存于成员表，tearDown 原样回插。
+     */
+    private void stashWarehouseRoleMembers() {
+        // 暂存并摘除全部真实 ROLE_WAREHOUSE 成员，再置入本测试自有账号 waj-other 作为
+        // 唯一「他人」，使角色成员空间完全自包含、可由用例按需控制。
+        // - 用普通表暂存（临时表跨 JdbcTemplate 语句可能换连接而丢失），先清残留保证幂等可重跑。
+        // - 真实成员（历史冒烟/种子残留 osmkwh/tp_wh/triwh/vmiwh 等）此前让第一道
+        //   「除发起人外无他人」永不成立，是 selfSignBlockedTwoGuards 长期豁免的根因。
+        jdbc.update("DROP TABLE IF EXISTS tmp_waj_wh_role");
+        jdbc.update("CREATE TABLE tmp_waj_wh_role LIKE erp_admin_user_role");
+        jdbc.update("INSERT INTO tmp_waj_wh_role "
+                + "SELECT ur.* FROM erp_admin_user_role ur "
+                + "JOIN erp_admin_role r ON r.ID = ur.ROLE_ID "
+                + "WHERE r.ROLE_CODE = 'ROLE_WAREHOUSE' "
+                + "AND ur.USER_ID NOT IN ('wh-smoke','waj-other')");
+        jdbc.update("DELETE ur FROM erp_admin_user_role ur "
+                + "JOIN erp_admin_role r ON r.ID = ur.ROLE_ID "
+                + "WHERE r.ROLE_CODE = 'ROLE_WAREHOUSE' "
+                + "AND ur.USER_ID NOT IN ('wh-smoke','waj-other')");
+
+        // waj-other = 「他人」：另 3 个用例以 tester 发起时靠它通过第一道，
+        // 并由 selfSignBlockedTwoGuards 在用例内删除以构造「无他人」第一道。
+        insertOtherInspector();
+    }
+
+    /** 置入本测试自有「他人」账号 waj-other（ROLE_WAREHOUSE 唯一非发起成员） */
+    private void insertOtherInspector() {
+        String whRoleId = jdbc.queryForObject(
+                "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_WAREHOUSE'", String.class);
+        jdbc.update("INSERT IGNORE INTO erp_admin_user (ID, USERNAME, PASSWORD, NICK_NAME, "
+                + "STATUS, CREATE_BY, DEL_FLAG, VER_NO) VALUES ('waj-other','waj-other','x',"
+                + "'改批他人','1','junit','0',0)");
+        jdbc.update("INSERT IGNORE INTO erp_admin_user_role (ID, USER_ID, ROLE_ID) VALUES "
+                + "('waj-ur-other','waj-other',?)", whRoleId);
+    }
+
+    /** 还原 setUp 摘除的真实 ROLE_WAREHOUSE 成员，避免污染其他测试 */
+    private void restoreWarehouseRoleMembers() {
+        jdbc.update("INSERT IGNORE INTO erp_admin_user_role "
+                + "SELECT * FROM tmp_waj_wh_role");
+        jdbc.update("DROP TABLE IF EXISTS tmp_waj_wh_role");
+        jdbc.update("DELETE FROM erp_admin_user_role WHERE USER_ID = 'waj-other'");
+        jdbc.update("DELETE FROM erp_admin_user WHERE ID = 'waj-other'");
     }
 
     @Test
@@ -131,14 +184,17 @@ class WaveAdjustDbTest {
 
     @Test
     void selfSignBlockedTwoGuards() {
-        // 第一道：wh-smoke（角色唯一真实成员）发起 → 排除自己后无他人 → 422
+        // 第一道：先删掉 setUp 置入的「他人」waj-other，使 wh-smoke 成角色唯一成员，
+        // 其发起 → 排除自己后无他人 → 422（否则残留成员会让「无他人」永不成立）
+        jdbc.update("DELETE FROM erp_admin_user_role WHERE USER_ID = 'waj-other'");
         as("wh-smoke", "ROLE_WAREHOUSE");
         ServiceException ex1 = assertThrows(ServiceException.class,
                 () -> waveService.adjust(waveId, lineId, "BATCH", "WAJ-B2", "同人第一道"));
         assertEquals(422, ex1.getCode());
         assertTrue(String.valueOf(ex1.getMessage()).contains("同人"), "第一道提示禁同人闭环");
 
-        // 第二道：tester 发起（第一道过：角色有 wh-smoke 他人），tester 自签 → 422
+        // 恢复「他人」，第二道：tester 发起（第一道过：角色有 waj-other 他人），tester 自签 → 422
+        insertOtherInspector();
         as("tester", "ROLE_WAREHOUSE");
         Map<String, Object> res = waveService.adjust(waveId, lineId, "BATCH", "WAJ-B2",
                 "同人第二道");

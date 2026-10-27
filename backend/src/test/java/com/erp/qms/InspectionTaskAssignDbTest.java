@@ -64,9 +64,20 @@ class InspectionTaskAssignDbTest {
     }
 
     private void purge() {
-        jdbc.update("DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'QMS_LOT_%' AND BIZ_ID LIKE 'lot-asg-%'");
-        jdbc.update("DELETE FROM erp_qms_lot_item WHERE LOT_ID LIKE 'lot-asg-%'");
+        // 关键：按 INSPECTOR_ID 清（不能只按 ID LIKE 'lot-asg-%'）——
+        // createManual 建的批 ID 是服务生成的 UUID，不带测试前缀，曾在此泄漏成
+        // insp-a/insp-b 的孤儿批（累积数十条、OVERDUE_FLAG=0 全部计入负载），
+        // 使负载对比失真、分派断言随库状态飘移（flaky）。测试账号复用固定 ID，
+        // 故按账号清才是真隔离。
+        jdbc.update("DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'QMS_LOT_%' "
+                + "AND BIZ_ID IN (SELECT ID FROM (SELECT ID FROM erp_qms_inspection_lot "
+                + "WHERE INSPECTOR_ID IN ('insp-a','insp-b')) t)");
+        jdbc.update("DELETE FROM erp_qms_lot_item WHERE LOT_ID IN "
+                + "(SELECT ID FROM (SELECT ID FROM erp_qms_inspection_lot "
+                + "WHERE INSPECTOR_ID IN ('insp-a','insp-b')) t)");
+        jdbc.update("DELETE FROM erp_qms_inspection_lot WHERE INSPECTOR_ID IN ('insp-a','insp-b')");
         jdbc.update("DELETE FROM erp_qms_inspection_lot WHERE ID LIKE 'lot-asg-%'");
+        jdbc.update("DELETE FROM erp_qms_standard_applicability WHERE MATERIAL_CODE='ASG-ITEM'");
         jdbc.update("DELETE FROM erp_qms_characteristic WHERE ID='chr-asg-1'");
         jdbc.update("DELETE FROM erp_qms_standard_applicability WHERE ID='sap-asg-1'");
         jdbc.update("DELETE FROM erp_qms_standard_version WHERE ID='sv-asg-1'");
@@ -76,6 +87,14 @@ class InspectionTaskAssignDbTest {
         jdbc.update("UPDATE erp_admin_user u SET u.STATUS='1' WHERE u.ID IN "
                 + "(SELECT ur.USER_ID FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID "
                 + "WHERE r.ROLE_CODE='ROLE_INSPECTOR')");
+    }
+
+    /** 归零两名测试质检员的在手负载，使负载对比只取决于本用例 seed 的批 */
+    private void resetLoad() {
+        jdbc.update("DELETE FROM erp_qms_lot_item WHERE LOT_ID IN "
+                + "(SELECT ID FROM (SELECT ID FROM erp_qms_inspection_lot "
+                + "WHERE INSPECTOR_ID IN ('insp-a','insp-b')) t)");
+        jdbc.update("DELETE FROM erp_qms_inspection_lot WHERE INSPECTOR_ID IN ('insp-a','insp-b')");
     }
 
     private void insertInspector(String userId, String nick, String roleId) {
@@ -99,6 +118,8 @@ class InspectionTaskAssignDbTest {
 
     @Test
     void assignmentPicksLeastLoadedInspector() {
+        // 显式归零两人在手负载（seed 只认本用例的批），断言不再受库中历史残留影响
+        resetLoad();
         // insp-a 在手 3 批、insp-b 在手 1 批 → 建批应分给 b
         seedLot("lot-asg-a1", "insp-a", "PENDING", LocalDateTime.now().plusHours(10));
         seedLot("lot-asg-a2", "insp-a", "INPUTTING", LocalDateTime.now().plusHours(10));
@@ -117,6 +138,8 @@ class InspectionTaskAssignDbTest {
 
     @Test
     void overdueSweepFlagsNotifiesAndReassignsOnce() {
+        // 显式归零：改派目标断言（空闲者 insp-b）同样依赖两人负载
+        resetLoad();
         // insp-a 有一个超时批（无改派记录）；insp-b 空闲
         String lotId = seedLot("lot-asg-od1", "insp-a", "PENDING", LocalDateTime.now().minusHours(2));
         int handled = lotService.sweepOverdue();

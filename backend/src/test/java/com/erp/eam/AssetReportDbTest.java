@@ -218,11 +218,16 @@ class AssetReportDbTest {
 
     @Test
     void policyZeroAmount() {
-        Map<String, Object> page = reportService.changeEvents(1, 100, "2000-01-01", "2099-12-31", "POLICY", null, null);
+        // 日期区间收紧到只覆盖本测试造数（2026-05~09）：changeEvents(1,100) 是分页查询，
+        // 冒烟残留的 POLICY/IMPAIRMENT 行（CREATE_BY='user-admin'，日期落在冒烟当天）会把
+        // RPT 造数挤出前 100 条窗口，导致事后按 SOURCE_NO 过滤恒得 0（随冒烟累积而漂移）。
+        // 收紧区间后残留自然落在区间外，结果集只含本测试数据。
+        Map<String, Object> page = reportService.changeEvents(1, 100, "2000-01-01", "2026-09-30", "POLICY", null, null);
+        // 只看本测试造的 RPT- 前缀事件，避免对全表总数做脆弱断言。
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = ((List<Map<String, Object>>) page.get("records")).stream()
                 .filter(r -> String.valueOf(r.get("SOURCE_NO")).startsWith("RPT-")).toList();
-        assertEquals(1, rows.size());
+        assertEquals(1, rows.size(), "RPT- 政策变更事件数");
         assertEquals(0, BigDecimal.ZERO.compareTo((BigDecimal) rows.get(0).get("AMOUNT_DELTA")),
                 "政策变更零金额");
         assertTrue(String.valueOf(rows.get(0).get("REMARK")).contains("10年→12年"), "年限变动说明");

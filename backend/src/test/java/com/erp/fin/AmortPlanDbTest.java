@@ -66,6 +66,12 @@ class AmortPlanDbTest {
         jdbc.update("DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE IN ('PREPAY','AMORT','DEFER','PSETTLE')");
         jdbc.update("DELETE FROM erp_fin_balance WHERE PERIOD LIKE '2099%' AND ACCOUNT_CODE IN "
                 + "('2251','1801','1002','2202','660202','660203','660204','660205','660206')");
+        // 自保：clearance 的累计基线取「PERIOD <= YEAR_END」全期间，其他测试过账残留的
+        // 2251/1801 余额行（如 CostCollectionDbTest 的 1801 暂估）会让 yearEndClearedGreen /
+        // deferredRecon 断言随运行顺序漂移。按本科目整批清零，使基线确定。
+        jdbc.update("DELETE FROM erp_fin_balance WHERE ACCOUNT_CODE IN ('2251','1801')");
+        jdbc.update("DELETE FROM erp_fin_balance_journal WHERE VOUCHER_ID NOT IN "
+                + "(SELECT ID FROM erp_fin_voucher)");
         jdbc.update("DELETE FROM erp_fin_amort_plan WHERE CREATE_BY = 'junit'");
         jdbc.update("DELETE FROM erp_fin_prepaid_doc WHERE CREATE_BY = 'junit'");
         jdbc.update("DELETE FROM erp_fin_deferred_doc WHERE CREATE_BY = 'junit'");
