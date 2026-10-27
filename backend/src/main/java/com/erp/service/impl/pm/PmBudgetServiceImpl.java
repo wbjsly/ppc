@@ -44,6 +44,7 @@ public class PmBudgetServiceImpl implements PmBudgetService {
     private final PmRateService rateService;
     private final PmWbsService wbsService;
     private final ApprovalEngine approvalEngine;
+    private final com.erp.service.pm.PmIpAgreementService ipAgreementService;
 
     @Override
     public Map<String, Object> lines(String projectId) {
@@ -158,6 +159,10 @@ public class PmBudgetServiceImpl implements PmBudgetService {
         List<String> wbsErrors = wbsService.validateForBaseline(projectId);
         if (!wbsErrors.isEmpty()) {
             throw new ServiceException(422, String.join("；", wbsErrors));
+        }
+        // IP 归属协议卡控（BR-4.8-24 / C-4.8-08，add-ip-management）：无协议项目不可启动
+        if (ipAgreementService.effectiveOf(projectId) == null) {
+            throw new ServiceException(422, "IP 归属协议缺失，请法务补充协议后再立项（BR-4.8-24）");
         }
         // 重算全部预算行 + 合计校验（BR-4.8-11）
         BigDecimal total = recomputeAllAndSum(projectId, p);

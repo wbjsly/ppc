@@ -27,9 +27,9 @@ public interface MaterialIssueService {
      */
     Map<String, Object> createMaintIssue(Map<String, Object> payload);
 
-    /** 分页（类型/状态/工单号/关键字筛选） */
+    /** 分页（类型/状态/工单号/服务工单号/关键字筛选） */
     Page<Map<String, Object>> page(long current, long size, String issueType, String status,
-                                   String workOrderNo, String keyword);
+                                   String workOrderNo, String keyword, String serviceOrderNo);
 
     /** 详情（头 + 行） */
     Map<String, Object> detail(String id);

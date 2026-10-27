@@ -129,6 +129,16 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         List<MaterialIssueLine> plan = fifoPlan(head, requested(payload));
         int no = 1;
         for (MaterialIssueLine l : plan) {
+            // 售后领料行单价（add-service-order：同 MAINT 口径取 STANDARD_COST，
+            // 服务成本 = 行金额汇总累加工单，spec material-issue ADDED）
+            if (MaterialIssue.TYPE_AFTER_SALE.equals(head.getIssueType())
+                    && (l.getUnitPrice() == null || l.getUnitPrice().signum() == 0)) {
+                BigDecimal std = standardCostOf(l.getItemCode());
+                if (std != null) {
+                    l.setUnitPrice(std);
+                    l.setAmount(std.multiply(l.getQty()));
+                }
+            }
             l.setIssueId(head.getId());
             l.setLineNo(no++);
             lineDao.insert(l);
@@ -198,12 +208,15 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
 
     @Override
     public Page<Map<String, Object>> page(long current, long size, String issueType,
-                                          String status, String workOrderNo, String keyword) {
+                                          String status, String workOrderNo, String keyword,
+                                          String serviceOrderNo) {
         Page<MaterialIssue> p = issueDao.selectPage(new Page<>(current, size),
                 new LambdaQueryWrapper<MaterialIssue>()
                         .eq(hasText(issueType), MaterialIssue::getIssueType, issueType)
                         .eq(hasText(status), MaterialIssue::getStatus, status)
                         .eq(hasText(workOrderNo), MaterialIssue::getWorkOrderNo, workOrderNo)
+                        // 售后领料按工单号反查（add-service-order，spec material-issue ADDED）
+                        .eq(hasText(serviceOrderNo), MaterialIssue::getServiceOrderNo, serviceOrderNo)
                         .and(hasText(keyword), w -> w
                                 .like(MaterialIssue::getIssueNo, keyword.trim())
                                 .or().like(MaterialIssue::getPurpose, keyword.trim())
@@ -217,6 +230,7 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             row.put("issueNo", h.getIssueNo());
             row.put("issueType", h.getIssueType());
             row.put("workOrderNo", h.getWorkOrderNo());
+            row.put("serviceOrderNo", h.getServiceOrderNo());
             row.put("dept", h.getDept());
             row.put("purpose", h.getPurpose());
             row.put("status", h.getStatus());
@@ -297,6 +311,11 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         if (MaterialIssue.TYPE_VMI.equals(h.getIssueType())) {
             // 低于最低水位补货建议扫描（BR-4.2-8-1 / design D4，领用后即时触发）
             alertService.scanReplenish();
+        }
+        // 售后领料过账联动（add-service-order，spec material-issue ADDED）：
+        // 行金额累加工单服务成本（同事务，过账成功才累加）
+        if (MaterialIssue.TYPE_AFTER_SALE.equals(h.getIssueType())) {
+            accumulateServiceCost(h, lines);
         }
         // 过账成功联动：任务 DONE → COMPLETED（无任务跳过）
         pickTaskService.markCompleted("MATERIAL_OUT", h.getIssueNo());
@@ -388,6 +407,27 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
         el.qty = qty;
         stockPostingEngine.post(com.erp.service.inv.StockPostingEngine.Request.of(
                 "VMI_TRANSFER_IN", "MATERIAL_ISSUE", docNo, List.of(el)));
+    }
+
+    /** 售后领料行金额累加工单服务成本（add-service-order，同事务；无金额行不累加） */
+    private void accumulateServiceCost(MaterialIssue h, List<MaterialIssueLine> lines) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (MaterialIssueLine l : lines) {
+            if (l.getAmount() != null) {
+                total = total.add(l.getAmount());
+            }
+        }
+        if (total.signum() == 0) {
+            return;
+        }
+        int upd = maintJdbc.update(
+                "UPDATE erp_pm_service_order SET MATERIAL_COST = COALESCE(MATERIAL_COST,0) + ?, "
+                        + "UPDATE_DATE = NOW() WHERE ORDER_NO = ? AND DEL_FLAG = '0'",
+                total, h.getServiceOrderNo());
+        if (upd == 0) {
+            throw new ServiceException(422, "服务工单不存在：" + h.getServiceOrderNo());
+        }
+        log.info("售后领料 {} 过账，服务成本 +{} 挂工单 {}", h.getIssueNo(), total, h.getServiceOrderNo());
     }
 
     // ---------- 试产备料三挂点（change add-trial-production-management，FR-4.5-8-4） ----------
@@ -843,8 +883,9 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
     private MaterialIssue fromPayload(Map<String, Object> payload, MaterialIssue h) {
         String type = payload.get("issueType") == null ? null
                 : String.valueOf(payload.get("issueType")).trim();
-        if (!MaterialIssue.TYPE_OWN.equals(type) && !MaterialIssue.TYPE_VMI.equals(type)) {
-            throw new ServiceException(422, "issueType 须为 OWN 或 VMI");
+        if (!MaterialIssue.TYPE_OWN.equals(type) && !MaterialIssue.TYPE_VMI.equals(type)
+                && !MaterialIssue.TYPE_AFTER_SALE.equals(type)) {
+            throw new ServiceException(422, "issueType 须为 OWN 或 VMI 或 AFTER_SALE");
         }
         h.setIssueType(type);
         String wo = payload.get("workOrderNo") == null ? null
@@ -853,6 +894,18 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             throw new ServiceException(422, "工单号必填（BR-4.2-37 逐笔记录）");
         }
         h.setWorkOrderNo(wo);
+        // 售后领料（add-service-order，spec material-issue ADDED）：头必填服务工单号且须存在
+        String soNo = payload.get("serviceOrderNo") == null ? null
+                : String.valueOf(payload.get("serviceOrderNo")).trim();
+        if (MaterialIssue.TYPE_AFTER_SALE.equals(type)) {
+            if (!hasText(soNo)) {
+                throw new ServiceException(422, "售后领料须关联服务工单（serviceOrderNo）");
+            }
+            requireServiceOrder(soNo);
+            h.setServiceOrderNo(soNo);
+        } else if (hasText(soNo)) {
+            h.setServiceOrderNo(soNo);
+        }
         h.setDept(payload.get("dept") == null ? null : String.valueOf(payload.get("dept")));
         h.setPurpose(payload.get("purpose") == null ? null : String.valueOf(payload.get("purpose")));
         String supplierId = payload.get("supplierId") == null ? null
@@ -865,6 +918,16 @@ public class MaterialIssueServiceImpl implements MaterialIssueService {
             h.setSupplierName(supplierNameOf(supplierId));
         }
         return h;
+    }
+
+    /** 售后领料关联工单存在性校验（只读查 pm 域表，零跨域写） */
+    private void requireServiceOrder(String serviceOrderNo) {
+        Integer c = maintJdbc.queryForObject(
+                "SELECT COUNT(*) FROM erp_pm_service_order WHERE ORDER_NO = ? AND DEL_FLAG = '0'",
+                Integer.class, serviceOrderNo);
+        if (c == null || c == 0) {
+            throw new ServiceException(422, "服务工单不存在：" + serviceOrderNo);
+        }
     }
 
     private String supplierNameOf(String supplierId) {

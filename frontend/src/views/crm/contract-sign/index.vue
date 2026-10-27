@@ -124,6 +124,8 @@
             <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
             <el-button v-if="canEdit" size="small" type="primary"
                        @click="doSubmit">提交（差异超 10% 走 L2）</el-button>
+            <el-button v-if="canTerminate" size="small" type="danger"
+                       @click="openTerminate">终止合同</el-button>
           </div>
         </div>
 
@@ -162,6 +164,36 @@
         </div>
       </template>
     </el-drawer>
+
+    <!-- 终止合同（软终止，S-4.8-08） -->
+    <el-dialog v-model="terminateVisible" title="终止合同（软终止）" width="520px">
+      <el-alert type="warning" :closable="false" show-icon class="mb12"
+                title="终止后：不可新增 SO 关联与收款期次；名下存量单据照常走完（不可逆终态）" />
+      <el-form label-width="90px" size="small">
+        <el-form-item label="终止原因" required>
+          <el-input v-model="terminateForm.reason" type="textarea" :rows="3"
+                    placeholder="必填（空则 422），将写入 TERMINATE_REASON 并审计留痕" />
+        </el-form-item>
+      </el-form>
+      <el-alert v-if="terminateForm.l4Warning" type="warning" :closable="false" show-icon
+                :title="terminateForm.l4Warning">
+        <template #default>
+          <el-table :data="terminateForm.openSos" size="small" border>
+            <el-table-column prop="soNo" label="未关闭 SO" />
+            <el-table-column prop="status" label="状态" width="140" />
+            <el-table-column label="金额" width="120" align="right">
+              <template #default="{ row }">¥{{ fmt(row.totalAmount) }}</template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </el-alert>
+      <template #footer>
+        <el-button @click="terminateVisible = false">取消</el-button>
+        <el-button type="danger" :loading="saving" @click="doTerminate">
+          {{ terminateForm.l4Warning ? '确认终止（存量走完）' : '确认终止' }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新建（商机带出 / 手工） -->
     <el-dialog v-model="createVisible" title="新建合同草稿" width="560px">
@@ -239,7 +271,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   getContractsApi, getContractDetailApi, createContractApi, updateContractApi,
-  submitContractApi, legalReviewApi
+  submitContractApi, legalReviewApi, terminateContractApi
 } from '@/api/crm/contract'
 import { getOpportunitiesApi } from '@/api/crm/opportunity'
 import { getGroupPageApi } from '@/api/mdm/customer'
@@ -261,6 +293,8 @@ const allTodos = ref([])
 const opinions = ref({})
 const createVisible = ref(false)
 const editVisible = ref(false)
+const terminateVisible = ref(false)
+const terminateForm = reactive({ reason: '', l4Warning: '', openSos: [] })
 
 const createForm = reactive({
   oppId: '', customerId: '', title: '', amount: 0, oppAmount: null,
@@ -273,6 +307,8 @@ const needL2 = computed(() => current.value && current.value.diffRate != null
   && Math.abs(Number(current.value.diffRate)) > 0.1)
 const canEdit = computed(() => current.value
   && ['DRAFT', 'REJECTED'].includes(current.value.status))
+const canTerminate = computed(() => current.value
+  && ['SIGNED', 'CHANGED'].includes(current.value.status))
 const stepActive = computed(() => ({
   DRAFT: 0, REJECTED: 0, APPROVING: 1, LEGAL_REVIEW: 2, SIGNED: 3
 })[current.value ? current.value.status : 'DRAFT'] ?? 0)
@@ -417,6 +453,38 @@ async function doLegal(pass) {
   legalForm.opinion = ''
   openDetail({ id: current.value.id })
   load()
+}
+
+function openTerminate() {
+  terminateForm.reason = ''
+  terminateForm.l4Warning = ''
+  terminateForm.openSos = []
+  terminateVisible.value = true
+}
+
+async function doTerminate() {
+  if (!terminateForm.reason.trim()) return ElMessage.warning('终止原因必填')
+  saving.value = true
+  try {
+    const res = await terminateContractApi(current.value.id, {
+      reason: terminateForm.reason.trim(),
+      // 有未关闭 SO 警告时首次请求不带 force，二次确认后带 force 落库
+      force: !!terminateForm.l4Warning
+    })
+    const d = res.data || {}
+    if (d.l4Warning) {
+      terminateForm.l4Warning = d.l4Warning
+      terminateForm.openSos = d.openSos || []
+      ElMessage.warning('存在未关闭 SO，请确认后再次点击「确认终止」')
+      return
+    }
+    ElMessage.success('合同已终止（存量单据照常走完）')
+    terminateVisible.value = false
+    openDetail({ id: current.value.id })
+    load()
+  } finally {
+    saving.value = false
+  }
 }
 
 async function doPass(t) {

@@ -125,6 +125,9 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
         issue.setProjectId(projectId);
         issue.setIssueDate(LocalDate.parse(str(payload.get("issueDate"))));
         issue.setRemark(str(payload.get("remark")));
+        // 试制标识（add-rnd-material，BR-4.8-37 分账基础）
+        issue.setTrialFlag("1".equals(str(payload.get("trialFlag"))) ? "1" : "0");
+        issue.setTrialPurpose(str(payload.get("trialPurpose")));
         BigDecimal total = BigDecimal.ZERO;
         int i = 0;
         for (Object raw : list) {
@@ -140,6 +143,11 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
             if (wbs == null || "1".equals(wbs.getDelFlag())
                     || (wbs.getLevel() != null && wbs.getLevel() != PmWbs.LV_TASK)) {
                 throw new ServiceException(422, "第 " + i + " 行 WBS 必须为任务级节点");
+            }
+            // C-4.8-12（add-rnd-material）：试制领料须关联 TRIAL 任务，否则 L1 硬阻断
+            if ("1".equals(issue.getTrialFlag()) && !PmWbs.TYPE_TRIAL.equals(wbs.getTaskType())) {
+                throw new ServiceException(422,
+                        "试制领料须关联试制类（TRIAL）WBS 任务（C-4.8-12），第 " + i + " 行任务类型为 " + wbs.getTaskType());
             }
             // 变更拦截（C-4.8-09，add-project-change）：提交时按 WBS 精准拦，草稿不拦
             if (submit) {
@@ -223,6 +231,10 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
         PmMatIssue issue = require(id);
         if (!PmMatIssue.ST_SUBMITTED.equals(issue.getStatus())) {
             throw new ServiceException(422, "仅已提交领料单可审核");
+        }
+        // 试制领料审核人限研发负责人/管理员（add-rnd-material，FR-4.8-10-2 服务层单据级校验）
+        if ("1".equals(issue.getTrialFlag()) && !hasAnyRole("RD_LEAD", "ADMIN")) {
+            throw new ServiceException(403, "试制领料单仅研发负责人或管理员可审核");
         }
         boolean approved = Boolean.parseBoolean(str(payload.get("approved")));
         String opinion = str(payload.get("opinion"));
@@ -308,6 +320,25 @@ public class PmMaterialIssueServiceImpl implements PmMaterialIssueService {
         } catch (Exception e) {
             return "system";
         }
+    }
+
+    /** 服务层角色校验（add-rnd-material：试制单审核人限 RD_LEAD/ADMIN） */
+    private static boolean hasAnyRole(String... wanted) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        java.util.List<String> roles = new java.util.ArrayList<>();
+        auth.getAuthorities().forEach(a -> roles.add(a.getAuthority()));
+        for (String w : wanted) {
+            for (String r : roles) {
+                if (("ROLE_" + w).equalsIgnoreCase(r)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static String safe(String s) {

@@ -689,6 +689,70 @@ const routes = [
           perm: 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN' }
       },
       {
+        // 11.8.1 成果登记（add-ip-management：登记+工时提取+确认/异议；研发负责人把关）
+        path: '/m/11.8.1',
+        name: 'PmAchievementRegister',
+        component: () => import('@/views/pm/ip/achievement-register.vue'),
+        meta: { title: '成果登记', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.8.2 权属判定（add-ip-management：协议维护+判定记录；法务维护协议）
+        path: '/m/11.8.2',
+        name: 'PmOwnershipJudge',
+        component: () => import('@/views/pm/ip/ownership-judge.vue'),
+        meta: { title: '权属判定', group: '项目研发',
+          perm: 'ROLE_RD_LEAD,ROLE_LEGAL,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.8.3 冲突仲裁（add-ip-management：双入口+主张+意见+裁决；法务线）
+        path: '/m/11.8.3',
+        name: 'PmIpArbitration',
+        component: () => import('@/views/pm/ip/arbitration.vue'),
+        meta: { title: '冲突仲裁', group: '项目研发',
+          perm: 'ROLE_LEGAL,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.8.4 资产建档（add-ip-management：档案台账+申请状态+历史；含财务视角）
+        path: '/m/11.8.4',
+        name: 'PmIpAsset',
+        component: () => import('@/views/pm/ip/ip-asset.vue'),
+        meta: { title: '资产建档', group: '项目研发',
+          perm: 'ROLE_RD_LEAD,ROLE_LEGAL,ROLE_PMO,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.9.1 领用管理（add-rnd-material：试制领料+消耗确认+样品台账+退料）
+        path: '/m/11.9.1',
+        name: 'PmTrialManage',
+        component: () => import('@/views/pm/trial/trial-manage.vue'),
+        meta: { title: '领用管理', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 11.9.2 试制成本（add-rnd-material：TRIAL 任务聚合+预算比对；含财务视角）
+        path: '/m/11.9.2',
+        name: 'PmTrialCost',
+        component: () => import('@/views/pm/trial/trial-cost.vue'),
+        meta: { title: '试制成本', group: '项目研发',
+          perm: 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.10.1 投诉受理（add-service-order：登记/定级/派单；客服+服务主管+销售经理）
+        path: '/m/11.10.1',
+        name: 'PmComplaintAccept',
+        component: () => import('@/views/pm/service/complaint-accept.vue'),
+        meta: { title: '投诉受理', group: '项目研发',
+          perm: 'ROLE_CS,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.10.2 工单闭环（add-service-order：处理/确认/回访/改进任务；含服务工程师）
+        path: '/m/11.10.2',
+        name: 'PmOrderClose',
+        component: () => import('@/views/pm/service/order-close.vue'),
+        meta: { title: '工单闭环', group: '项目研发',
+          perm: 'ROLE_CS,ROLE_SERVICE_ENG,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
         // 3.3.1 信用检查（add-sales-lead-to-cash，spec customer-credit-control）
         path: '/m/3.3.1',
         name: 'CreditCheck',

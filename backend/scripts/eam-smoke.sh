@@ -5123,6 +5123,666 @@ SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='PmProjectChange' AND BIZ_ID LIKE
 SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-pc-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-pc-%'" >/dev/null 2>&1
 
+echo "== 段 46 知识产权开始 =="
+TODAY=$(date +%F)
+
+# 46.0 隔离与造数：项目（独立研发 ACTIVE）+ 三层 WBS + DRAFT 立项项目 + 三账号
+SQL "DELETE FROM erp_pm_ip_asset_status_log WHERE ASSET_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_ip_asset WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_asset WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_claim WHERE ARB_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_ip_arbitration WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t2)) t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_arbitration WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_achievement_member WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'PmIp%' AND BIZ_ID LIKE 'smk-ip%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+for U in pm:PM legal:LEGAL rd:RD_LEAD; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk-ip-$S','smk-ip-$S',PASSWORD,'冒烟IP-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk-ip-ur-$S','smk-ip-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+# ACTIVE 独立研发项目（无合同→独立；无协议→L4 例外）+ 阶段/任务
+SQL "INSERT INTO erp_pm_project (ID, NAME, PROJ_TYPE, DELIVERY_PATH, INTERNAL_FORM_NO, PM_USER_ID, START_DATE, END_DATE, STATUS, BASELINE_LOCKED, BASELINE_AMOUNT, FENPLAN_RATE, FREEZE_FLAG, START_NOTIFIED, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-prj','SMKIP 知产项目','研发','INTERNAL','NS-SMKIP','smk-ip-pm',DATE_SUB(CURDATE(), INTERVAL 10 DAY),DATE_ADD(CURDATE(), INTERVAL 30 DAY),'ACTIVE','1',1000,0.10,'0','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-phase','smk-ip-prj','W1IP',1,'SMKIP 阶段','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, PARENT_ID, OWNER_USER_ID, OWNER_GRADE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-task','smk-ip-prj','W2IP',3,'SMKIP 任务','smk-ip-phase','smk-ip-pm','MID','smoke',NOW(),'0',0)" >/dev/null 2>&1
+# DRAFT 立项项目（三层 WBS+预算）用于 BR-24 立项卡控
+SQL "INSERT INTO erp_pm_project (ID, NAME, PROJ_TYPE, DELIVERY_PATH, INTERNAL_FORM_NO, PM_USER_ID, START_DATE, END_DATE, STATUS, BASELINE_LOCKED, BASELINE_AMOUNT, FENPLAN_RATE, FREEZE_FLAG, START_NOTIFIED, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-draft','SMKIP 立项卡控','研发','INTERNAL','NS-SMKIPD','smk-ip-pm',CURDATE(),DATE_ADD(CURDATE(), INTERVAL 60 DAY),'DRAFT','0',0,0.10,'0','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-dphase','smk-ip-draft','W1D',1,'SMKIPD 阶段','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, PARENT_ID, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-dpkg','smk-ip-draft','W2D',2,'SMKIPD 工作包','smk-ip-dphase','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, PARENT_ID, OWNER_USER_ID, OWNER_GRADE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-dtask','smk-ip-draft','W3D',3,'SMKIPD 任务','smk-ip-dpkg','smk-ip-pm','MID','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_budget_line (ID, PROJECT_ID, WBS_ID, LABOR, MATERIAL, SUBCONTRACT, TRAVEL, OTHER, INDIRECT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-dbl','smk-ip-draft','smk-ip-dtask',1000,0,0,0,0,0,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+TIPM=$(C -H 'Content-Type: application/json' -d '{"username":"smk-ip-pm","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TILG=$(C -H 'Content-Type: application/json' -d '{"username":"smk-ip-legal","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TIRD=$(C -H 'Content-Type: application/json' -d '{"username":"smk-ip-rd","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TIPM:-}" ] && [ "$TIPM" != "None" ] && [ -n "${TILG:-}" ] && [ "$TILG" != "None" ] && ok "段46 PM/法务/研发负责人 登录" || bad "登录失败"
+
+# 46.1 401 矩阵
+EQ "段46 GET agreements 401" "$(HTTP $B/api/pm/ip/agreements)" "401"
+EQ "段46 GET achievements 401" "$(HTTP $B/api/pm/ip/achievements)" "401"
+EQ "段46 GET assets 401" "$(HTTP $B/api/pm/ip/assets)" "401"
+
+# 46.2 协议：合作比例合计≠100% L1 → 合法保存 → 后签覆盖
+CB1=$(BIZ -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","coopMode":"COOP","companyRate":60,"partnerRate":30,"partnerName":"SMKIP 合作方","signDate":"'$TODAY'"}' $B/api/pm/ip/agreements)
+[ "$CB1" = "422" ] && ok "段46 合作比例≠100% L1 阻断（BR-25）" || bad "比例未拦（$CB1）"
+AG1=$(C -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","coopMode":"INDEP","signDate":"'$TODAY'"}' $B/api/pm/ip/agreements | J "d['data']['id']")
+[ -n "${AG1:-}" ] && [ "$AG1" != "None" ] && ok "段46 独立研发协议保存" || bad "协议保存失败"
+# 非法务维护 → 403
+RB1=$(BIZ -X POST -H "Authorization: Bearer $TIPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","coopMode":"INDEP","signDate":"'$TODAY'"}' $B/api/pm/ip/agreements)
+[ "$RB1" = "403" ] && ok "段46 协议维护限法务（403）" || bad "角色未限（$RB1）"
+
+# 46.3 立项卡控（BR-24/C-08）：DRAFT 项目无协议 → submitBaseline 422
+SB1=$(BIZ -X POST -H "Authorization: Bearer $TIPM" $B/api/pm/budgets/smk-ip-draft/submit)
+[ "$SB1" = "422" ] && ok "段46 立项无协议卡控（BR-24）" || bad "立项未卡（$SB1）"
+SBMSG=$(C -X POST -H "Authorization: Bearer $TIPM" $B/api/pm/budgets/smk-ip-draft/submit | J "d['message']")
+case "$SBMSG" in *IP*归属*协议*) ok "段46 立项卡控提示 IP 协议缺失" ;; *) bad "提示不符（$SBMSG）" ;; esac
+
+# 46.4 成果登记：WBS L1 硬阻断 → 独立缺协议 L4 放行判公司 100%
+# 先删协议验证 L4 例外（独立研发）
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID='smk-ip-prj'" >/dev/null 2>&1
+WB1=$(BIZ -X POST -H "Authorization: Bearer $TIPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","wbsId":"","type":"PATENT","name":"SMKIP 无WBS","description":"SMKIP 无 WBS 关联的成果描述（20 字以上）","completeDate":"'$TODAY'"}' $B/api/pm/ip/achievements)
+[ "$WB1" = "422" ] && ok "段46 成果未关联 WBS L1（C-07）" || bad "WBS 未拦（$WB1）"
+AR1=$(C -X POST -H "Authorization: Bearer $TIPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","wbsId":"smk-ip-task","type":"PATENT","name":"SMKIP 一种发明专利","description":"SMKIP 独立研发缺协议 L4 例外测试成果描述","completeDate":"'$TODAY'","action":"SUBMIT","members":[{"empId":"smk-ip-pm","empName":"冒烟PM","hours":40}]}' \
+  $B/api/pm/ip/achievements)
+PATID=$(echo "$AR1" | J "d['data']['id']")
+OWN1=$(echo "$AR1" | J "d['data']['ownershipResult']")
+L4W=$(echo "$AR1" | J "d['data'].get('l4Warning')")
+[ -n "${PATID:-}" ] && [ "$PATID" != "None" ] && ok "段46 独立缺协议 L4 放行登记" || bad "登记失败"
+[ "$OWN1" = '{"company":100}' ] && ok "段46 独立研发判公司 100%" || bad "判定错（$OWN1）"
+case "$L4W" in *协议*) ok "段46 L4 提示补签协议" ;; *) bad "L4 缺失（$L4W）" ;; esac
+MEMC=$(SQL "SELECT COUNT(*) FROM erp_pm_achievement_member WHERE ACHIEVE_ID='$PATID'")
+[ "${MEMC:-0}" = "1" ] && ok "段46 参与人快照落库" || bad "快照缺失（$MEMC）"
+
+# 46.5 合作项目缺协议 L1 阻断（另建合作项目验证）
+SQL "INSERT INTO erp_pm_project (ID, NAME, PROJ_TYPE, DELIVERY_PATH, INTERNAL_FORM_NO, CONTRACT_ID, CONTRACT_NO, PM_USER_ID, START_DATE, END_DATE, STATUS, BASELINE_LOCKED, BASELINE_AMOUNT, FENPLAN_RATE, FREEZE_FLAG, START_NOTIFIED, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-coop','SMKIP 合作项目','研发','INTERNAL','NS-SMKIPC','smk-ip-c1','CT-SMKIPC','smk-ip-pm',DATE_SUB(CURDATE(), INTERVAL 5 DAY),DATE_ADD(CURDATE(), INTERVAL 40 DAY),'ACTIVE','1',500,0.10,'0','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-cphase','smk-ip-coop','W1C',1,'SMKIPC 阶段','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, PARENT_ID, OWNER_USER_ID, OWNER_GRADE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-ip-ctask','smk-ip-coop','W2C',3,'SMKIPC 任务','smk-ip-cphase','smk-ip-pm','MID','smoke',NOW(),'0',0)" >/dev/null 2>&1
+CB2=$(BIZ -X POST -H "Authorization: Bearer $TIPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-coop","wbsId":"smk-ip-ctask","type":"PATENT","name":"SMKIPC 合作成果","description":"SMKIPC 合作研发缺协议应 L1 阻断的成果描述","completeDate":"'$TODAY'"}' $B/api/pm/ip/achievements)
+[ "$CB2" = "422" ] && ok "段46 合作缺协议 L1 阻断" || bad "合作未拦（$CB2）"
+
+# 46.6 确认 → 自动建档（专利 20 年）→ CONFIRMED 禁改
+CF1=$(C -X PUT -H "Authorization: Bearer $TIRD" -H 'Content-Type: application/json' -d '{}' $B/api/pm/ip/achievements/$PATID/confirm | J "d['data']['status']")
+[ "$CF1" = "CONFIRMED" ] && ok "段46 研发负责人确认→CONFIRMED" || bad "确认失败（$CF1）"
+ASTCNT=$(SQL "SELECT COUNT(*) FROM erp_pm_ip_asset WHERE ACHIEVE_ID='$PATID'")
+[ "${ASTCNT:-0}" = "1" ] && ok "段46 确认即建档（一成果一档）" || bad "建档失败（$ASTCNT）"
+EXP=$(SQL "SELECT CAST(PROTECT_EXPIRE_DATE AS CHAR) FROM erp_pm_ip_asset WHERE ACHIEVE_ID='$PATID'")
+EXPED=$(date -v+20y +%F 2>/dev/null || date -d '+20 year' +%F)
+[ "$EXP" = "$EXPED" ] && ok "段46 专利保护期=完成日+20年" || bad "保护期错（$EXP vs $EXPED）"
+ED1=$(BIZ -X POST -H "Authorization: Bearer $TIPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-ip-prj","wbsId":"smk-ip-task","type":"PATENT","name":"SMKIP 改已确认","description":"SMKIP 尝试修改已确认成果应 422 的描述","completeDate":"'$TODAY'","id":"'$PATID'"}' $B/api/pm/ip/achievements)
+[ "$ED1" = "422" ] && ok "段46 已确认成果禁改（BR-26）" || bad "禁改未拦（$ED1）"
+
+# 46.7 仲裁全流转：独立申请 → 防重 409 → 主张 → 意见 → 确认 → 裁决回写重确认
+AR2=$(C -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"achieveId":"'$PATID'"}' $B/api/pm/ip/arbitrations | J "d['data']['id']")
+[ -n "${AR2:-}" ] && [ "$AR2" != "None" ] && ok "段46 法务独立申请仲裁" || bad "仲裁创建失败"
+DUP=$(BIZ -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"achieveId":"'$PATID'"}' $B/api/pm/ip/arbitrations)
+[ "$DUP" = "409" ] && ok "段46 同成果在途仲裁防重（409）" || bad "防重未拦（$DUP)"
+C -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"claimant":"PARTY_A","claimantName":"SMKIP 公司","claimRate":50,"evidence":"SMKIP 公司独立开发依据"}' $B/api/pm/ip/arbitrations/$AR2/claims >/dev/null
+C -X POST -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"claimant":"PARTY_B","claimantName":"SMKIP 员工","claimRate":50,"evidence":"SMKIP 员工实质贡献依据"}' $B/api/pm/ip/arbitrations/$AR2/claims >/dev/null
+CLC=$(SQL "SELECT COUNT(*) FROM erp_pm_ip_claim WHERE ARB_ID='$AR2'")
+[ "${CLC:-0}" = "2" ] && ok "段46 双方主张留痕（2 条）" || bad "主张缺失（$CLC）"
+OP1=$(C -X PUT -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"opinion":"SMKIP 按贡献各半裁决"}' $B/api/pm/ip/arbitrations/$AR2/opinion | J "d['data']['status']")
+[ "$OP1" = "OPINION_ISSUED" ] && ok "段46 法务出具意见" || bad "意见失败（$OP1）"
+PC1=$(C -X PUT -H "Authorization: Bearer $TIRD" -H 'Content-Type: application/json' \
+  -d '{"action":"ACCEPT"}' $B/api/pm/ip/arbitrations/$AR2/confirm | J "d['data']['status']")
+[ "$PC1" = "PARTY_CONFIRMED" ] && ok "段46 双方确认接受" || bad "确认失败（$PC1)"
+AJ1=$(C -X PUT -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"adjudicateResult":"{\"company\":50,\"partner\":50}"}' $B/api/pm/ip/arbitrations/$AR2/adjudicate | J "d['data']['status']")
+[ "$AJ1" = "ADJUDICATED" ] && ok "段46 裁决回写" || bad "裁决失败（$AJ1）"
+OWN2=$(SQL "SELECT OWNERSHIP_RESULT FROM erp_pm_achievement WHERE ID='$PATID'")
+[ "$OWN2" = '{"company":50,"partner":50}' ] && ok "段46 成果权属被覆盖" || bad "覆盖失败（$OWN2)"
+ST2=$(SQL "SELECT STATUS FROM erp_pm_achievement WHERE ID='$PATID'")
+[ "$ST2" = "PENDING_CONFIRM" ] && ok "段46 裁决后回待确认重确认" || bad "状态错（$ST2）"
+
+# 46.8 资产申请状态更新 + 历史留痕
+ASTID=$(SQL "SELECT ID FROM erp_pm_ip_asset WHERE ACHIEVE_ID='$PATID'")
+C -X PUT -H "Authorization: Bearer $TILG" -H 'Content-Type: application/json' \
+  -d '{"applyStatus":"SUBMITTED","remark":"SMKIP 已递交专利局"}' $B/api/pm/ip/assets/$ASTID/apply-status >/dev/null
+APST=$(SQL "SELECT APPLY_STATUS FROM erp_pm_ip_asset WHERE ID='$ASTID'")
+[ "$APST" = "SUBMITTED" ] && ok "段46 申请状态更新为已递交" || bad "状态错（$APST)"
+LOGC=$(SQL "SELECT COUNT(*) FROM erp_pm_ip_asset_status_log WHERE ASSET_ID='$ASTID' AND TO_STATUS='SUBMITTED'")
+[ "${LOGC:-0}" -ge 1 ] && ok "段46 申请状态历史留痕" || bad "历史缺失（$LOGC)"
+
+# 46.9 清理
+SQL "DELETE FROM erp_pm_ip_asset_status_log WHERE ASSET_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_ip_asset WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_asset WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_claim WHERE ARB_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_ip_arbitration WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t2)) t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_arbitration WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_achievement_member WHERE ACHIEVE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_achievement WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'PmIp%' AND BIZ_ID LIKE 'smk-ip%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-ip-%'" >/dev/null 2>&1
+
+echo "== 段 47 研发物料试制开始 =="
+TODAY=$(date +%F)
+
+# 47.0 隔离与造数：项目 + 阶段 + TRIAL/DEV 任务 + 库存 + 两账号
+SQL "DELETE FROM erp_pm_sample_ledger WHERE ISSUE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_consumption_line WHERE CONSUMPTION_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_return_line WHERE RETURN_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_return WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_return WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_mat_issue_line WHERE ISSUE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_mat_issue WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_mat_issue WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_cost_collect WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='PROJECT_COST' AND (SOURCE_DOC_NO LIKE '%TRLR%' OR SOURCE_DOC_NO LIKE '%smk-trl%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_project WHERE ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_stock WHERE ITEM_CODE='SMKTRL-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-trl-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-trl-%'" >/dev/null 2>&1
+for U in pm:PM rd:RD_LEAD; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk-trl-$S','smk-trl-$S',PASSWORD,'冒烟试制-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk-trl-ur-$S','smk-trl-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+SQL "INSERT INTO erp_pm_project (ID, NAME, PROJ_TYPE, DELIVERY_PATH, INTERNAL_FORM_NO, PM_USER_ID, START_DATE, END_DATE, STATUS, BASELINE_LOCKED, BASELINE_AMOUNT, FENPLAN_RATE, FREEZE_FLAG, START_NOTIFIED, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-trl-prj','SMKTRL 试制项目','研发','INTERNAL','NS-SMKTRL','smk-trl-pm',DATE_SUB(CURDATE(), INTERVAL 10 DAY),DATE_ADD(CURDATE(), INTERVAL 30 DAY),'ACTIVE','1',1000,0.10,'0','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-trl-phase','smk-trl-prj','W1TRL',1,'SMKTRL 阶段','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_wbs (ID, PROJECT_ID, WBS_CODE, LEVEL, NAME, PARENT_ID, OWNER_USER_ID, OWNER_GRADE, TASK_TYPE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-trl-task','smk-trl-prj','W2TRIAL',3,'SMKTRL 试制任务','smk-trl-phase','smk-trl-rd','MID','TRIAL','smoke',NOW(),'0',0),
+            ('smk-trl-dev','smk-trl-prj','W2DEV',3,'SMKTRL 开发任务','smk-trl-phase','smk-trl-pm','MID','DEV','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_budget_line (ID, PROJECT_ID, WBS_ID, LABOR, MATERIAL, SUBCONTRACT, TRAVEL, OTHER, INDIRECT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-trl-bl','smk-trl-prj','smk-trl-task',0,500,0,0,0,0,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_inv_stock (ID, WAREHOUSE_CODE, ITEM_CODE, ITEM_NAME, BATCH_NO, BIN_CODE, QTY, AVAILABLE_QTY, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-trl-stock','WH-02','SMKTRL-ITEM','SMKTRL 物料','SMKTRL-B1','',100,100,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+TTPM=$(C -H 'Content-Type: application/json' -d '{"username":"smk-trl-pm","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TTRD=$(C -H 'Content-Type: application/json' -d '{"username":"smk-trl-rd","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TTPM:-}" ] && [ "$TTPM" != "None" ] && [ -n "${TTRD:-}" ] && [ "$TTRD" != "None" ] && ok "段47 PM/研发负责人 登录" || bad "登录失败"
+
+# 47.1 401 矩阵
+EQ "段47 GET consumptions 401" "$(HTTP $B/api/pm/trial/consumptions)" "401"
+EQ "段47 GET costs 401" "$(HTTP "$B/api/pm/trial/costs/summary?projectId=smk-trl-prj")" "401"
+
+# 47.2 试制领料：关联 DEV 任务 L1（C-4.8-12）→ 关联 TRIAL 任务扣库存
+DV=$(BIZ -X POST -H "Authorization: Bearer $TTPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-trl-prj","issueDate":"'$TODAY'","trialFlag":"1","lines":[{"wbsId":"smk-trl-dev","itemId":"SMKTRL-ITEM","warehouseCode":"WH-02","batchNo":"SMKTRL-B1","qty":5,"unitPrice":25}]}' \
+  $B/api/pm/cost/material-issues/submit)
+[ "$DV" = "422" ] && ok "段47 试制领料关联 DEV 任务 L1（C-12）" || bad "未拦（$DV）"
+IS1=$(C -X POST -H "Authorization: Bearer $TTPM" -H 'Content-Type: application/json' \
+  -d '{"projectId":"smk-trl-prj","issueDate":"'$TODAY'","trialFlag":"1","trialPurpose":"SMKTRL 样件验证","lines":[{"wbsId":"smk-trl-task","itemId":"SMKTRL-ITEM","warehouseCode":"WH-02","batchNo":"SMKTRL-B1","qty":10,"unitPrice":25}]}' \
+  $B/api/pm/cost/material-issues/submit | J "d['data']['id']")
+[ -n "${IS1:-}" ] && [ "$IS1" != "None" ] && ok "段47 试制领料提交（TRIAL 任务）" || bad "领料失败"
+AV1=$(SQL "SELECT CAST(AVAILABLE_QTY AS CHAR) FROM erp_inv_stock WHERE ITEM_CODE='SMKTRL-ITEM'")
+[ "${AV1%%.*}" = "90" ] && ok "段47 库存扣减 100→90" || bad "库存未扣（$AV1）"
+
+# 47.3 审核：PM 审核 403 → 研发负责人通过归集
+PMRV=$(BIZ -X POST -H "Authorization: Bearer $TTPM" -H 'Content-Type: application/json' -d '{"approved":true}' $B/api/pm/cost/material-issues/$IS1/review)
+[ "$PMRV" = "403" ] && ok "段47 试制单 PM 审核 403（限研发负责人）" || bad "权限未限（$PMRV）"
+C -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' -d '{"approved":true}' $B/api/pm/cost/material-issues/$IS1/review >/dev/null
+CC1=$(SQL "SELECT COUNT(*) FROM erp_pm_cost_collect WHERE PROJECT_ID='smk-trl-prj' AND COST_TYPE='MATERIAL'")
+[ "${CC1:-0}" = "1" ] && ok "段47 试制领料归集材料成本" || bad "归集失败（$CC1）"
+
+# 47.4 消耗确认：防重 409 → 实耗 8 结余 2 + 样品台账批次关联 + 差异 L4
+CN1=$(C -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' \
+  -d '{"issueId":"'$IS1'","lines":[{"itemId":"SMKTRL-ITEM","actualQty":8,"deviationNote":""}],"samples":[{"name":"SMKTRL 样品","itemId":"SMKTRL-ITEM","qty":1,"destination":"CUSTOMER"}]}' \
+  $B/api/pm/trial/consumptions)
+SUR=$(echo "$CN1" | J "d['data']['totalSurplus']")
+[ "${SUR%%.*}" = "2" ] && ok "段47 消耗确认结余 2（10-8）" || bad "结余错（$SUR）"
+SLC=$(SQL "SELECT COUNT(*) FROM erp_pm_sample_ledger WHERE ISSUE_ID='$IS1' AND BATCH_NO='SMKTRL-B1'")
+[ "${SLC:-0}" = "1" ] && ok "段47 样品台账批次关联（BR-39）" || bad "台账缺失（$SLC）"
+DUP=$(BIZ -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' \
+  -d '{"issueId":"'$IS1'","lines":[{"itemId":"SMKTRL-ITEM","actualQty":8}]}' $B/api/pm/trial/consumptions)
+[ "$DUP" = "409" ] && ok "段47 消耗确认防重（409）" || bad "防重未拦（$DUP)"
+
+# 47.5 结余退库：跨项目批次 L1 → 结余超限 422 → REUSABLE 入库+冲减
+XB=$(BIZ -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' \
+  -d '{"issueId":"'$IS1'","lines":[{"itemId":"SMKTRL-ITEM","batchNo":"FOREIGN-B","returnQty":1,"qcResult":"REUSABLE"}]}' \
+  $B/api/pm/trial/returns/submit)
+[ "$XB" = "422" ] && ok "段47 跨项目批次 L1（BR-04）" || bad "跨项目未拦（$XB）"
+XS=$(BIZ -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' \
+  -d '{"issueId":"'$IS1'","lines":[{"itemId":"SMKTRL-ITEM","batchNo":"SMKTRL-B1","returnQty":5,"qcResult":"REUSABLE"}]}' \
+  $B/api/pm/trial/returns/submit)
+[ "$XS" = "422" ] && ok "段47 退库超结余 422" || bad "超结余未拦（$XS）"
+RT1=$(C -X POST -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' \
+  -d '{"issueId":"'$IS1'","lines":[{"itemId":"SMKTRL-ITEM","batchNo":"SMKTRL-B1","returnQty":2,"qcResult":"REUSABLE"}]}' \
+  $B/api/pm/trial/returns/submit | J "d['data']['id']")
+C -X PUT -H "Authorization: Bearer $TTRD" -H 'Content-Type: application/json' -d '{"approved":true}' $B/api/pm/trial/returns/$RT1/review >/dev/null
+AV2=$(SQL "SELECT CAST(AVAILABLE_QTY AS CHAR) FROM erp_inv_stock WHERE ITEM_CODE='SMKTRL-ITEM'")
+[ "${AV2%%.*}" = "92" ] && ok "段47 REUSABLE 入库 90→92" || bad "入库错（$AV2)"
+NEG=$(SQL "SELECT CAST(SUM(AMOUNT) AS CHAR) FROM erp_pm_cost_collect WHERE SOURCE_TYPE='TRIAL_RETURN' AND PROJECT_ID='smk-trl-prj'")
+[ "${NEG%%.*}" = "-50" ] && ok "段47 冲减成本 -50（2×25）" || bad "冲减错（$NEG）"
+
+# 47.6 试制成本聚合
+SUM=$(C -H "Authorization: Bearer $TTPM" "$B/api/pm/trial/costs/summary?projectId=smk-trl-prj")
+MAT=$(echo "$SUM" | J "d['data']['material']")
+BDT=$(echo "$SUM" | J "d['data']['budget']")
+[ "${MAT%%.*}" = "200" ] && ok "段47 试制材料聚合 200（250 领-50 退）" || bad "材料聚合错（$MAT)"
+[ "${BDT%%.*}" = "500" ] && ok "段47 试制预算比对 500" || bad "预算错（$BDT）"
+
+# 47.7 清理
+SQL "DELETE FROM erp_pm_sample_ledger WHERE ISSUE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_consumption_line WHERE CONSUMPTION_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_consumption WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_return_line WHERE RETURN_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_trial_return WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_trial_return WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_mat_issue_line WHERE ISSUE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_mat_issue WHERE PROJECT_ID='smk-trl-prj') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_mat_issue WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_cost_collect WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='PROJECT_COST' AND (SOURCE_DOC_NO LIKE '%TRLR%' OR SOURCE_DOC_NO LIKE '%smk-trl%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_project WHERE ID='smk-trl-prj'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_stock WHERE ITEM_CODE='SMKTRL-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-trl-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-trl-%'" >/dev/null 2>&1
+
+echo "段 47 研发物料试制追加完成"
+
+echo "== 段 48 服务工单开始 =="
+
+# 48.0 隔离与造数：客户 + 四账号（客服/工程师/主管/仓管）+ 物料库存 + NCR
+SQL "DELETE FROM erp_pm_service_process_record WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_confirm_token WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_sla_log WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_survey WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_improve_task WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'PmService%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_material_issue_line WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_material_issue WHERE WORK_ORDER_NO LIKE 'WO-SMKSO%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_stock WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_batch WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_qms_ncr WHERE ID='smk-so-ncr'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_item WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-so-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-so-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_customer_group WHERE ID='smk-so-cust'" >/dev/null 2>&1
+SQL "INSERT INTO erp_mdm_customer_group (ID, CUSTOMER_CODE, CUSTOMER_NAME, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-so-cust','SMKSO-CUST','SMKSO 冒烟客户','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+for U in cs:CS eng:SERVICE_ENG eng2:SERVICE_ENG mgr:SERVICE_MGR wh:WAREHOUSE; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk-so-$S','smk-so-$S',PASSWORD,'冒烟工单-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk-so-ur-$S','smk-so-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+SQL "INSERT INTO erp_mdm_item (ID, ITEM_CODE, ITEM_NAME, CATEGORY_CODE, BASE_UNIT, MATERIAL_GROUP, PURCHASE_TYPE, STORAGE_CONDITION, BATCH_FLAG, STANDARD_COST, STATUS, CREATE_BY)
+     VALUES ('smk-so-it','SMKSO-ITEM','SMKSO 售后物料','0001','PC','STRUCT','BUY','NORMAL','1',25,'1','smoke')" >/dev/null 2>&1
+SQL "INSERT INTO erp_inv_stock (ID, WAREHOUSE_CODE, ITEM_CODE, ITEM_NAME, BATCH_NO, BIN_CODE, QTY, AVAILABLE_QTY, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-so-stock','WH-MAIN','SMKSO-ITEM','SMKSO 售后物料','SMKSO-B1','',100,100,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_inv_batch (ID, BATCH_NO, ITEM_CODE, ITEM_NAME, PRODUCTION_DATE, EXPIRY_DATE, EXPIRY_LOCK_FLAG, STATUS, CREATE_BY)
+     VALUES ('smk-so-lg','SMKSO-B1','SMKSO-ITEM','SMKSO 售后物料','2026-09-01','2027-06-30','0','1','smoke')" >/dev/null 2>&1
+SQL "INSERT INTO erp_qms_ncr (ID, NCR_NO, ITEM_CODE, QTY, SEVERITY, CTQ_FLAG, REGULATORY_FLAG, FREEZE_SCOPE, FROZEN_FLAG, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk-so-ncr','SMKSO-NCR-001','SMKSO-ITEM',1,'Major','0','0','NONE','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+TCS=$(C -H 'Content-Type: application/json' -d '{"username":"smk-so-cs","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TENG=$(C -H 'Content-Type: application/json' -d '{"username":"smk-so-eng","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TMGR=$(C -H 'Content-Type: application/json' -d '{"username":"smk-so-mgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TWH=$(C -H 'Content-Type: application/json' -d '{"username":"smk-so-wh","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TCS:-}" ] && [ "$TCS" != "None" ] && [ -n "${TENG:-}" ] && [ "$TENG" != "None" ] \
+  && [ -n "${TMGR:-}" ] && [ "$TMGR" != "None" ] && [ -n "${TWH:-}" ] && [ "$TWH" != "None" ] \
+  && ok "段48 客服/工程师/主管/仓管 登录" || bad "段48 登录失败"
+
+# 48.1 401 矩阵 + 匿名 token 端点放行
+EQ "段48 GET orders 401" "$(HTTP $B/api/pm/service-orders)" "401"
+EQ "段48 POST orders 401" "$(HTTP -X POST $B/api/pm/service-orders)" "401"
+BT=$(BIZ "$B/api/public/service-orders/confirm/bogus-token")
+[ "$BT" = "404" ] && ok "段48 匿名 token 端点放行（无效 token 业务 404）" || bad "段48 匿名端点异常（$BT）"
+
+# 48.2 登记 L1 阻断与自动定级
+NC=$(BIZ -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"no-such-cust","complaintType":"OTHER","impactLevel":"NORMAL","description":"x"}' \
+  $B/api/pm/service-orders)
+[ "$NC" = "422" ] && ok "段48 客户不存在 422" || bad "段48 客户校验未拦（$NC）"
+ND=$(BIZ -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"smk-so-cust","complaintType":"OTHER","impactLevel":"NORMAL","description":""}' \
+  $B/api/pm/service-orders)
+[ "$ND" = "422" ] && ok "段48 描述必填 422" || bad "段48 描述校验未拦（$ND）"
+# A 单：一级（影响生产）
+OA=$(C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"smk-so-cust","customerName":"SMKSO 冒烟客户","complaintType":"PRODUCT_QUALITY","impactLevel":"PRODUCTION","description":"SMKSO 产线停机重大质量事故"}' \
+  $B/api/pm/service-orders)
+OID=$(echo "$OA" | J "d['data']['id']")
+ONO=$(echo "$OA" | J "d['data']['orderNo']")
+LVA=$(echo "$OA" | J "d['data']['level']")
+[ "$LVA" = "1" ] && ok "段48 影响生产自动定级 L1" || bad "段48 L1 定级错（$LVA）"
+NSM=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE TARGET_ROLE='ROLE_SALES_MGR' AND BIZ_TYPE='PmServiceOrder' AND TITLE LIKE '%一级投诉%'")
+[ "${NSM:-0}" -ge 1 ] && ok "段48 一级投诉通知销售经理" || bad "段48 一级通知缺失（$NSM）"
+# B 单：一般 → L3；C 单：严重 → L2（后用于驳回链）
+OB=$(C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"smk-so-cust","customerName":"SMKSO 冒烟客户","complaintType":"SERVICE_ATTITUDE","impactLevel":"NORMAL","description":"SMKSO 服务态度一般投诉"}' \
+  $B/api/pm/service-orders)
+OBID=$(echo "$OB" | J "d['data']['id']")
+LB=$(echo "$OB" | J "d['data']['level']")
+[ "$LB" = "3" ] && ok "段48 一般投诉自动定级 L3" || bad "段48 L3 定级错（$LB）"
+OC=$(C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"smk-so-cust","customerName":"SMKSO 冒烟客户","complaintType":"FUNCTION_DEFECT","impactLevel":"CORE","description":"SMKSO 核心功能不可用缺陷"}' \
+  $B/api/pm/service-orders)
+OCID=$(echo "$OC" | J "d['data']['id']")
+LC=$(echo "$OC" | J "d['data']['level']")
+[ "$LC" = "2" ] && ok "段48 核心功能不可用定级 L2" || bad "段48 L2 定级错（$LC）"
+# SLA 起点=登记时间（响应截止 = 登记 + 2h，±60s 容差）
+DEAD=$(SQL "SELECT TIMESTAMPDIFF(SECOND, CREATE_DATE, RESP_DEADLINE) FROM erp_pm_service_order WHERE ID='$OID'")
+[ "$DEAD" -ge 7140 ] && [ "$DEAD" -le 7260 ] && ok "段48 L1 响应截止=登记+2h（BR-48-03）" || bad "段48 响应截止错（$DEAD）"
+
+# 48.3 定级调整：无理由 422 → 有理由留痕
+NR=$(BIZ -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"level":3}' $B/api/pm/service-orders/$OCID/level)
+[ "$NR" = "422" ] && ok "段48 定级调整无理由 422" || bad "段48 理由校验未拦（$NR）"
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"level":3,"reason":"SMKSO 功能缺陷实际影响有限，降为三级"}' $B/api/pm/service-orders/$OCID/level >/dev/null
+LV2=$(SQL "SELECT LEVEL FROM erp_pm_service_order WHERE ID='$OCID'")
+[ "$LV2" = "3" ] && ok "段48 定级调整生效" || bad "段48 调整未生效（$LV2）"
+TRL=$(SQL "SELECT COUNT(*) FROM erp_pm_service_process_record WHERE ORDER_ID='$OCID' AND CONTENT LIKE '%L2 → L3%'")
+[ "${TRL:-0}" -ge 1 ] && ok "段48 定级调整 Before/After 留痕（L5）" || bad "段48 留痕缺失（$TRL）"
+
+# 48.4 派单：工程师 403 → 客服派单 → 改派留痕 → 待指派升级主管
+DP=$(BIZ -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"engineerId":"smk-so-eng"}' $B/api/pm/service-orders/$OID/dispatch)
+[ "$DP" = "403" ] && ok "段48 工程师无派单权 403" || bad "段48 派单权限未拦（$DP）"
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"engineerId":"smk-so-eng","engineerName":"冒烟工单-eng"}' $B/api/pm/service-orders/$OID/dispatch >/dev/null
+ST1=$(SQL "SELECT STATUS FROM erp_pm_service_order WHERE ID='$OID'")
+[ "$ST1" = "DISPATCHED" ] && ok "段48 派单后状态 DISPATCHED" || bad "段48 派单状态错（$ST1）"
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"engineerId":"smk-so-mgr","engineerName":"冒烟工单-mgr"}' $B/api/pm/service-orders/$OID/dispatch >/dev/null
+RSG=$(SQL "SELECT COUNT(*) FROM erp_pm_service_process_record WHERE ORDER_ID='$OID' AND CONTENT LIKE '%改派%'")
+[ "${RSG:-0}" -ge 1 ] && ok "段48 改派留痕" || bad "段48 改派留痕缺失"
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' -d '{}' \
+  $B/api/pm/service-orders/$OCID/dispatch >/dev/null
+DNT=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE TARGET_ROLE='ROLE_SERVICE_MGR' AND BIZ_TYPE='PmServiceOrderDispatch'")
+[ "${DNT:-0}" -ge 1 ] && ok "段48 待指派升级服务主管" || bad "段48 待指派通知缺失"
+# 负载推荐：A→mgr、B→eng、C→eng（eng 在手 2，mgr 在手 1，eng2 在手 0）→ 推荐应为 eng2
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"engineerId":"smk-so-eng","engineerName":"冒烟工单-eng"}' $B/api/pm/service-orders/$OCID/dispatch >/dev/null
+REC=$(C -H "Authorization: Bearer $TCS" $B/api/pm/service-orders/engineers/recommend | J "d['data']['recommended']['userId']")
+[ "$REC" = "smk-so-eng2" ] && ok "段48 负载推荐最少在手优先" || bad "段48 推荐错（$REC）"
+
+# 48.5 受理与处理记录
+AC=$(C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/accept | J "d['data']['respondedAt']")
+[ -n "$AC" ] && [ "$AC" != "None" ] && ok "段48 受理记响应时间" || bad "段48 受理无响应时间"
+C -X POST -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"content":"SMKSO 现场排查：更换电源模块后恢复"}' $B/api/pm/service-orders/$OID/records >/dev/null
+PRC=$(SQL "SELECT COUNT(*) FROM erp_pm_service_process_record WHERE ORDER_ID='$OID'")
+[ "${PRC:-0}" -ge 3 ] && ok "段48 处理记录仅追加（≥登记+受理+处理）" || bad "段48 记录数错（$PRC）"
+# 根因未填不可提交关闭
+SRC=$(BIZ -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/submit-confirm)
+[ "$SRC" = "422" ] && ok "段48 根因未填不可提交关闭" || bad "段48 根因卡控未拦（$SRC）"
+# 设计缺陷抄送研发
+C -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"rootCause":"DESIGN"}' $B/api/pm/service-orders/$OBID/root-cause >/dev/null
+RDL=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE TARGET_ROLE='ROLE_RD_LEAD' AND BIZ_TYPE='PmServiceOrderDesign'")
+[ "${RDL:-0}" -ge 1 ] && ok "段48 设计缺陷抄送研发负责人" || bad "段48 设计缺陷通知缺失"
+
+# 48.6 NCR 卡控（BR-48-36）：质量类无 NCR 不可标根治 → 无效 NCR 422 → 关联后放行
+MC=$(BIZ -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/cured)
+[ "$MC" = "422" ] && ok "段48 质量类无 NCR 不可标根治" || bad "段48 NCR 卡控未拦（$MC）"
+BC=$(BIZ -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"ncrNo":"NCR-BOGUS-999"}' $B/api/pm/service-orders/$OID/ncr)
+[ "$BC" = "422" ] && ok "段48 无效 NCR 422" || bad "段48 NCR 校验未拦（$BC）"
+C -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"ncrNo":"SMKSO-NCR-001"}' $B/api/pm/service-orders/$OID/ncr >/dev/null
+C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/cured >/dev/null
+CUR=$(SQL "SELECT ROOT_CURED FROM erp_pm_service_order WHERE ID='$OID'")
+[ "$CUR" = "1" ] && ok "段48 关联 NCR 后可标根治" || bad "段48 根治未生效（$CUR）"
+
+# 48.7 售后领料：缺工单号 422 → 无效工单 422 → 创建+过账扣库存+成本累加+反查
+NSO=$(BIZ -X POST -H "Authorization: Bearer $TWH" -H 'Content-Type: application/json' \
+  -d '{"issueType":"AFTER_SALE","workOrderNo":"WO-SMKSO-1","lines":[{"itemCode":"SMKSO-ITEM","qty":10}]}' \
+  $B/api/inv/issues)
+[ "$NSO" = "422" ] && ok "段48 售后领料缺工单号 422" || bad "段48 工单号校验未拦（$NSO）"
+BNO=$(BIZ -X POST -H "Authorization: Bearer $TWH" -H 'Content-Type: application/json' \
+  -d '{"issueType":"AFTER_SALE","workOrderNo":"WO-SMKSO-1","serviceOrderNo":"SO-BOGUS-1","lines":[{"itemCode":"SMKSO-ITEM","qty":10}]}' \
+  $B/api/inv/issues)
+[ "$BNO" = "422" ] && ok "段48 售后领料工单不存在 422" || bad "段48 工单存在性未拦（$BNO）"
+ASI=$(C -X POST -H "Authorization: Bearer $TWH" -H 'Content-Type: application/json' \
+  -d '{"issueType":"AFTER_SALE","workOrderNo":"WO-SMKSO-1","serviceOrderNo":"'$ONO'","purpose":"SMKSO 换件","lines":[{"itemCode":"SMKSO-ITEM","qty":10}]}' \
+  $B/api/inv/issues | J "d['data']['issue']['id']")
+[ -n "$ASI" ] && [ "$ASI" != "None" ] && ok "段48 售后领料单创建" || bad "段48 领料单创建失败"
+C -X POST -H "Authorization: Bearer $TWH" $B/api/inv/issues/$ASI/postings >/dev/null
+AV3=$(SQL "SELECT CAST(AVAILABLE_QTY AS CHAR) FROM erp_inv_stock WHERE ITEM_CODE='SMKSO-ITEM'")
+[ "${AV3%%.*}" = "90" ] && ok "段48 售后领料过账扣库存 100→90" || bad "段48 扣库存错（$AV3）"
+MCT=$(SQL "SELECT CAST(MATERIAL_COST AS CHAR) FROM erp_pm_service_order WHERE ORDER_NO='$ONO'")
+[ "${MCT%%.*}" = "250" ] && ok "段48 服务成本累加 250（10×25）" || bad "段48 成本累加错（$MCT）"
+ISQ=$(C -H "Authorization: Bearer $TWH" "$B/api/inv/issues?issueType=AFTER_SALE&serviceOrderNo=$ONO" | J "d['data']['total']")
+[ "${ISQ:-0}" -ge 1 ] && ok "段48 按工单号反查售后领料" || bad "段48 反查空（$ISQ）"
+
+# 48.8 确认双通道：驳回重计时+2 次升级 → token 一次性 → 代录关闭
+C -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"rootCause":"MANUFACTURE"}' $B/api/pm/service-orders/$OID/root-cause >/dev/null
+SQL "UPDATE erp_pm_service_order SET RESOLVE_DEADLINE=DATE_ADD(NOW(), INTERVAL 10 HOUR) WHERE ID='$OID'" >/dev/null 2>&1
+C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/submit-confirm >/dev/null
+RJ1=$(C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"result":"REJECTED","note":"SMKSO 问题未彻底解决"}' $B/api/pm/service-orders/$OID/agent-confirm | J "d['data']['status']")
+[ "$RJ1" = "PROCESSING" ] && ok "段48 驳回退回处理（重计时）" || bad "段48 驳回状态错（$RJ1）"
+RDD=$(SQL "SELECT TIMESTAMPDIFF(SECOND, NOW(), RESOLVE_DEADLINE) FROM erp_pm_service_order WHERE ID='$OID'")
+# A 单为 L1（解决时限 24h），驳回重计时 = 驳回时刻 + 24h（±60s 容差）
+[ "$RDD" -ge 85800 ] && [ "$RDD" -le 87000 ] && ok "段48 驳回重计时（≈now+24h，L1 口径）" || bad "段48 重计时错（$RDD）"
+C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/submit-confirm >/dev/null
+RJ2=$(C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"result":"REJECTED"}' $B/api/pm/service-orders/$OID/agent-confirm | J "d['data']['escalateStage']")
+[ "$RJ2" = "1" ] && ok "段48 驳回 2 次升级服务主管" || bad "段48 驳回升级错（$RJ2）"
+C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/submit-confirm >/dev/null
+LNK=$(C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OID/confirm-link | J "d['data']['token']")
+[ -n "$LNK" ] && [ "$LNK" != "None" ] && ok "段48 生成确认链接" || bad "段48 链接生成失败"
+TKV=$(BIZ "$B/api/public/service-orders/confirm/$LNK")
+[ "$TKV" = "200" ] && ok "段48 匿名 token 取摘要" || bad "段48 token 摘要异常（$TKV）"
+TKC=$(C -X POST -H 'Content-Type: application/json' -d '{"result":"RESOLVED"}' \
+  $B/api/public/service-orders/confirm/$LNK | J "d['data']['status']")
+[ "$TKC" = "CLOSED" ] && ok "段48 客户经链接确认关闭" || bad "段48 链接确认错（$TKC）"
+CV=$(SQL "SELECT CONFIRMED_VIA FROM erp_pm_service_order WHERE ID='$OID'")
+[ "$CV" = "LINK" ] && ok "段48 confirmed_via=LINK" || bad "段48 via 错（$CV）"
+TK2=$(BIZ -X POST -H 'Content-Type: application/json' -d '{"result":"RESOLVED"}' \
+  $B/api/public/service-orders/confirm/$LNK)
+[ "$TK2" = "422" ] && ok "段48 token 一次性（二次 422）" || bad "段48 token 复用未拦（$TK2）"
+
+# 48.9 回访 2 分 → 改进任务 → 逾期升级销售经理
+SV=$(C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"score":2,"suggestion":"SMKSO 响应仍偏慢"}' $B/api/pm/service-orders/$OID/survey)
+ITID=$(echo "$SV" | J "d['data']['improveTask']['id']")
+[ -n "$ITID" ] && [ "$ITID" != "None" ] && ok "段48 低分自动生成改进任务（BR-48-06）" || bad "段48 改进任务未生成"
+SV2=$(BIZ -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"score":5}' $B/api/pm/service-orders/$OID/survey)
+[ "$SV2" = "409" ] && ok "段48 回访防重（409）" || bad "段48 回访防重未拦（$SV2）"
+SQL "UPDATE erp_pm_service_improve_task SET DUE_DATE=DATE_SUB(NOW(), INTERVAL 1 DAY) WHERE ID='$ITID'" >/dev/null 2>&1
+C -X POST -H "Authorization: Bearer $TADM" $B/api/pm/service-orders/sweep >/dev/null
+ESC=$(SQL "SELECT ESCALATED_SALES FROM erp_pm_service_improve_task WHERE ID='$ITID'")
+[ "$ESC" = "1" ] && ok "段48 改进逾期升级销售经理" || bad "段48 逾期升级错（$ESC）"
+STS=$(C -H "Authorization: Bearer $TCS" "$B/api/pm/service-orders/surveys/stats")
+BCN=$(echo "$STS" | J "len([r for r in d['data']['byCustomer'] if r['customerId']=='smk-so-cust'])")
+[ "${BCN:-0}" -ge 1 ] && ok "段48 回访统计按客户维度" || bad "段48 统计维度缺失"
+
+# 48.10 挂起暂停计时 + SLA 升级幂等 + 默认关闭
+C -X POST -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"reason":"SMKSO 客户信息缺失"}' $B/api/pm/service-orders/$OCID/suspend >/dev/null
+SFL=$(SQL "SELECT SUSPENDED_FLAG FROM erp_pm_service_order WHERE ID='$OCID'")
+[ "$SFL" = "1" ] && ok "段48 挂起置位（SLA 暂停）" || bad "段48 挂起未生效"
+SQL "UPDATE erp_pm_service_order SET SUSPEND_AT=DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE ID='$OCID'" >/dev/null 2>&1
+C -X POST -H "Authorization: Bearer $TCS" $B/api/pm/service-orders/$OCID/resume >/dev/null
+SHR=$(SQL "SELECT CAST(SUSPEND_HOURS AS CHAR) FROM erp_pm_service_order WHERE ID='$OCID'")
+SHRINT=${SHR%%.*}
+[ "${SHRINT:-0}" -ge 1 ] && ok "段48 恢复累计挂起时长≈2h" || bad "段48 挂起累计错（$SHR）"
+# C 单响应超时 → 第一档升级主管（幂等：重复 sweep 不新增）
+SQL "UPDATE erp_pm_service_order SET RESP_DEADLINE=DATE_SUB(NOW(), INTERVAL 1 HOUR) WHERE ID='$OCID'" >/dev/null 2>&1
+C -X POST -H "Authorization: Bearer $TADM" $B/api/pm/service-orders/sweep >/dev/null
+ES1=$(SQL "SELECT ESCALATE_STAGE FROM erp_pm_service_order WHERE ID='$OCID'")
+LGN1=$(SQL "SELECT COUNT(*) FROM erp_pm_service_sla_log WHERE ORDER_ID='$OCID' AND EVENT='ESCALATE'")
+C -X POST -H "Authorization: Bearer $TADM" $B/api/pm/service-orders/sweep >/dev/null
+LGN2=$(SQL "SELECT COUNT(*) FROM erp_pm_service_sla_log WHERE ORDER_ID='$OCID' AND EVENT='ESCALATE'")
+[ "$ES1" = "1" ] && [ "$LGN1" = "$LGN2" ] && ok "段48 SLA 超时升级+重复扫描幂等" || bad "段48 升级幂等错（stage=$ES1 logs=$LGN1/$LGN2）"
+# B 单：先派单（submit-confirm 要求 DISPATCHED/PROCESSING）→ 提交确认 10 天前 → sweep → 2 次提醒 + 默认关闭
+C -X PUT -H "Authorization: Bearer $TCS" -H 'Content-Type: application/json' \
+  -d '{"engineerId":"smk-so-eng","engineerName":"冒烟工单-eng"}' $B/api/pm/service-orders/$OBID/dispatch >/dev/null
+C -X PUT -H "Authorization: Bearer $TENG" -H 'Content-Type: application/json' \
+  -d '{"rootCause":"EXTERNAL"}' $B/api/pm/service-orders/$OBID/root-cause >/dev/null
+C -X POST -H "Authorization: Bearer $TENG" $B/api/pm/service-orders/$OBID/submit-confirm >/dev/null
+SQL "UPDATE erp_pm_service_order SET CONFIRM_SUBMIT_AT=DATE_SUB(NOW(), INTERVAL 10 DAY) WHERE ID='$OBID'" >/dev/null 2>&1
+C -X POST -H "Authorization: Bearer $TADM" $B/api/pm/service-orders/sweep >/dev/null
+OBST=$(SQL "SELECT STATUS FROM erp_pm_service_order WHERE ID='$OBID'")
+OBDF=$(SQL "SELECT CLOSE_DEFAULT_FLAG FROM erp_pm_service_order WHERE ID='$OBID'")
+OBVR=$(SQL "SELECT CONFIRMED_VIA FROM erp_pm_service_order WHERE ID='$OBID'")
+RMN=$(SQL "SELECT COUNT(*) FROM erp_pm_service_sla_log WHERE ORDER_ID='$OBID' AND EVENT='REMIND_CONFIRM'")
+[ "$OBST" = "CLOSED" ] && [ "$OBDF" = "1" ] && [ "$OBVR" = "DEFAULT" ] && [ "$RMN" = "2" ] \
+  && ok "段48 默认关闭（2 提醒+标注默认关闭）" || bad "段48 默认关闭错（$OBST/$OBDF/$OBVR/remind=$RMN）"
+
+# 48.11 清理
+SQL "DELETE FROM erp_pm_service_process_record WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_confirm_token WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_sla_log WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_survey WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_improve_task WHERE ORDER_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_service_order WHERE CUSTOMER_ID='smk-so-cust'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'PmService%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_material_issue_line WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_material_issue WHERE WORK_ORDER_NO LIKE 'WO-SMKSO%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_stock WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_batch WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_qms_ncr WHERE ID='smk-so-ncr'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_item WHERE ITEM_CODE='SMKSO-ITEM'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk-so-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk-so-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_customer_group WHERE ID='smk-so-cust'" >/dev/null 2>&1
+
+echo "段 48 服务工单追加完成"
+
+echo "== 段 49 合同收口（终止+交付跟踪）开始 =="
+
+# 49.0 隔离与造数：客户 + 账号（销售/销售经理）+ 合同三态 + SO 三态 + 发货 + 应收 + 期次
+SQL "DELETE FROM erp_crm_contract_version WHERE CONTRACT_ID IN (SELECT ID FROM (SELECT ID FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_contract_plan WHERE CONTRACT_ID IN (SELECT ID FROM (SELECT ID FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_shipment_line WHERE SO_NO LIKE 'SO-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_shipment WHERE SHIP_NO LIKE 'SHP-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_fin_ar_invoice WHERE SO_NO LIKE 'SO-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_so WHERE CONTRACT_NO LIKE 'CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'ctd49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'ctd49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_customer_group WHERE ID='ctd49-cust'" >/dev/null 2>&1
+SQL "INSERT INTO erp_mdm_customer_group (ID, CUSTOMER_CODE, CUSTOMER_NAME, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-cust','CTD49-CUST','CTD49 收口客户','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+for U in sales:SALES mgr:SALES_MGR; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'ctd49-$S','ctd49-$S',PASSWORD,'冒烟收口-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ctd49-ur-$S','ctd49-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+# 合同 A：SIGNED 无 SO（正常终止路径）；合同 B：SIGNED 有未关闭 SO + 期次 + 发货应收（交付聚合+警告路径）
+SQL "INSERT INTO erp_crm_contract (ID, CONTRACT_NO, CUSTOMER_ID, CUSTOMER_NAME, TITLE, AMOUNT, STATUS, VERSION_NO, SO_COUNT, START_DATE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-ca','CTD49-A','ctd49-cust','CTD49 收口客户','CTD49 合同A',100000,'SIGNED',1,0,'2026-01-01','smoke',NOW(),'0',0),
+            ('ctd49-cb','CTD49-B','ctd49-cust','CTD49 收口客户','CTD49 合同B',100000,'SIGNED',1,2,'2026-01-01','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_sd_so (ID, SO_NO, CONTRACT_ID, CONTRACT_NO, CUSTOMER_ID, TOTAL_AMOUNT, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-so-a','SO-CTD49-A','ctd49-cb','CTD49-B','ctd49-cust',30000,'SHIPPED','smoke',NOW(),'0',0),
+            ('ctd49-so-b','SO-CTD49-B','ctd49-cb','CTD49-B','ctd49-cust',20000,'CONFIRMED','smoke',NOW(),'0',0),
+            ('ctd49-so-c','SO-CTD49-C','ctd49-cb','CTD49-B','ctd49-cust',10000,'CONFIRMED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "UPDATE erp_crm_contract SET SO_COUNT=3 WHERE ID='ctd49-cb'" >/dev/null 2>&1
+SQL "INSERT INTO erp_sd_shipment (ID, SHIP_NO, SHIP_TYPE, CUSTOMER_ID, STATUS, TOTAL_AMT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-ship','SHP-CTD49-1','STANDARD','ctd49-cust','SHIPPED',30000,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_sd_shipment_line (ID, SHIP_ID, LINE_NO, SO_ID, SO_NO, SO_LINE_ID, ITEM_CODE, ITEM_NAME, QTY, UNIT_PRICE, AMOUNT, LINE_STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-shipl','ctd49-ship',1,'ctd49-so-a','SO-CTD49-A','ctd49-sl1','CTD49-ITEM','CTD49 物料',1,30000,30000,'SHIPPED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_fin_ar_invoice (ID, AR_NO, CUSTOMER_ID, SO_ID, SO_NO, INVOICE_DATE, DUE_DATE, AMOUNT, PAID_AMOUNT, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-ar1','AR-CTD49-1','ctd49-cust','ctd49-so-a','SO-CTD49-A','2026-03-31',DATE_ADD('2026-03-31', INTERVAL 30 DAY),30000,30000,'CONFIRMED','smoke',NOW(),'0',0),
+            ('ctd49-ar2','AR-CTD49-2','ctd49-cust','ctd49-so-a','SO-CTD49-A','2026-04-01',DATE_ADD('2026-04-01', INTERVAL 30 DAY),5000,0,'CONFIRMED','smoke',NOW(),'0',0),
+            ('ctd49-ar3','AR-CTD49-3','ctd49-cust','ctd49-so-a','SO-CTD49-A','2026-07-01',DATE_ADD('2026-07-01', INTERVAL 30 DAY),2000,0,'CONFIRMED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_crm_contract_plan (ID, CONTRACT_ID, CONTRACT_NO, PERIOD_NO, PLAN_AMOUNT, DUE_DATE, PAID_AMOUNT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('ctd49-p1','ctd49-cb','CTD49-B',1,50000,'2026-03-31',30000,'smoke',NOW(),'0',0),
+            ('ctd49-p2','ctd49-cb','CTD49-B',2,50000,'2026-06-30',0,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+TCSLS=$(C -H 'Content-Type: application/json' -d '{"username":"ctd49-sales","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TCSM=$(C -H 'Content-Type: application/json' -d '{"username":"ctd49-mgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TCSLS:-}" ] && [ "$TCSLS" != "None" ] && [ -n "${TCSM:-}" ] && [ "$TCSM" != "None" ] \
+  && ok "段49 销售/销售经理 登录" || bad "段49 登录失败"
+
+# 49.1 终止：非 MGR 403 → 原因空 422 → 未关闭 SO 警告（不落库）→ force 落库
+TF=$(BIZ -X POST -H "Authorization: Bearer $TCSLS" -H 'Content-Type: application/json' \
+  -d '{"reason":"测试"}' $B/api/crm/contracts/ctd49-ca/terminate)
+[ "$TF" = "403" ] && ok "段49 销售无终止权 403" || bad "段49 终止权限未拦（$TF）"
+TR=$(BIZ -X POST -H "Authorization: Bearer $TCSM" -H 'Content-Type: application/json' \
+  -d '{}' $B/api/crm/contracts/ctd49-ca/terminate)
+[ "$TR" = "422" ] && ok "段49 终止原因空 422" || bad "段49 原因校验未拦（$TR）"
+TS=$(C -X POST -H "Authorization: Bearer $TCSM" -H 'Content-Type: application/json' \
+  -d '{"reason":"CTD49 合同B客户中止","force":false}' $B/api/crm/contracts/ctd49-cb/terminate | J "d['data']['l4Warning'] is not None")
+[ "$TS" = "True" ] && ok "段49 未关闭 SO 返回 L4 警告" || bad "段49 警告未返回（$TS）"
+TST=$(SQL "SELECT STATUS FROM erp_crm_contract WHERE ID='ctd49-cb'")
+[ "$TST" = "SIGNED" ] && ok "段49 警告态不落库" || bad "段49 误落库（$TST）"
+C -X POST -H "Authorization: Bearer $TCSM" -H 'Content-Type: application/json' \
+  -d '{"reason":"CTD49 客户中止","force":true}' $B/api/crm/contracts/ctd49-cb/terminate >/dev/null
+TT=$(SQL "SELECT STATUS FROM erp_crm_contract WHERE ID='ctd49-cb'")
+TCB=$(SQL "SELECT CLOSED_BY FROM erp_crm_contract WHERE ID='ctd49-cb'")
+[ "$TT" = "TERMINATED" ] && [ -n "$TCB" ] && ok "段49 force 终止落库（TERMINATED+CLOSED_BY）" || bad "段49 落库错（$TT/$TCB）"
+# 终止后新增 SO 422（存量 SO 状态不变）
+NSS=$(BIZ -X POST -H "Authorization: Bearer $TCSLS" -H 'Content-Type: application/json' \
+  -d '{"customerId":"ctd49-cust","contractId":"ctd49-cb","orderType":"STANDARD","lines":[{"itemCode":"CTD49-ITEM","qty":1,"unitPrice":1}]}' \
+  $B/api/sd/so)
+[ "$NSS" = "422" ] && ok "段49 终止后新增 SO 422" || bad "段49 新增 SO 未拦（$NSS）"
+SST=$(SQL "SELECT STATUS FROM erp_sd_so WHERE ID='ctd49-so-a'")
+[ "$SST" = "SHIPPED" ] && ok "段49 存量 SO 照常（SHIPPED 不变）" || bad "段49 存量被误动（$SST）"
+# 终止后新增期次 422
+NPL=$(BIZ -X POST -H "Authorization: Bearer $TCSM" -H 'Content-Type: application/json' \
+  -d '{"plans":[{"periodNo":3,"planAmount":1000,"dueDate":"2026-12-31"}]}' \
+  $B/api/crm/contracts/ctd49-cb/plans)
+[ "$NPL" = "422" ] && ok "段49 终止后新增期次 422" || bad "段49 期次未拦（$NPL）"
+
+# 49.2 交付执行聚合 + 期次软映射（用合同 A 之外再造一单：合同 B 已终止但交付只读仍可查）
+DP=$(C -H "Authorization: Bearer $TCSM" $B/api/crm/contracts/ctd49-cb/delivery-progress)
+SRN=$(echo "$DP" | J "len(d['data']['soRows'])")
+[ "${SRN:-0}" = "3" ] && ok "段49 交付执行 3 张 SO 行" || bad "段49 SO 行数错（$SRN）"
+TSH=$(echo "$DP" | J "d['data']['summary']['totalShipped']")
+[ "${TSH%%.*}" = "30000" ] && ok "段49 累计发货 30000" || bad "段49 发货汇总错（$TSH）"
+DRP=$(echo "$DP" | J "d['data']['summary']['deliveryRatePct']")
+[ "${DRP%%.*}" = "30" ] && ok "段49 交付完成率 30%" || bad "段49 完成率错（$DRP）"
+W1=$(echo "$DP" | J "len([a for a in d['data']['plans'][0]['windowAr'] if a['AR_NO']=='AR-CTD49-1'])")
+[ "${W1:-0}" = "1" ] && ok "段49 窗口右闭：3/31 落第 1 期" || bad "段49 第 1 期窗口错（$W1）"
+W2=$(echo "$DP" | J "len([a for a in d['data']['plans'][1]['windowAr'] if a['AR_NO']=='AR-CTD49-2'])")
+[ "${W2:-0}" = "1" ] && ok "段49 窗口左开：4/1 落第 2 期" || bad "段49 第 2 期窗口错（$W2）"
+UNW=$(echo "$DP" | J "float(d['data']['unwindowedAmount'])")
+[ "${UNW%%.*}" = "2000" ] && ok "段49 未落窗应收 2000 单列" || bad "段49 未落窗错（$UNW）"
+
+# 49.3 合同 A 正常终止（无 SO 无警告一次落库）
+TA=$(C -X POST -H "Authorization: Bearer $TCSM" -H 'Content-Type: application/json' \
+  -d '{"reason":"CTD49 合同A到期收口"}' $B/api/crm/contracts/ctd49-ca/terminate | J "d['data']['contract']['status']")
+[ "$TA" = "TERMINATED" ] && ok "段49 无 SO 合同直接终止" || bad "段49 直接终止错（$TA）"
+# 审计留痕：版本历史含 TERMINATE
+TVL=$(SQL "SELECT COUNT(*) FROM erp_crm_contract_version WHERE CONTRACT_ID='ctd49-ca' AND OP_TYPE='TERMINATE'")
+[ "${TVL:-0}" -ge 1 ] && ok "段49 终止写版本留痕" || bad "段49 版本留痕缺失"
+
+# 49.4 清理
+SQL "DELETE FROM erp_crm_contract_version WHERE CONTRACT_ID IN (SELECT ID FROM (SELECT ID FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_contract_plan WHERE CONTRACT_ID IN (SELECT ID FROM (SELECT ID FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_shipment_line WHERE SO_NO LIKE 'SO-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_shipment WHERE SHIP_NO LIKE 'SHP-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_fin_ar_invoice WHERE SO_NO LIKE 'SO-CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sd_so WHERE CONTRACT_NO LIKE 'CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_contract WHERE CONTRACT_NO LIKE 'CTD49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'ctd49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'ctd49-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_customer_group WHERE ID='ctd49-cust'" >/dev/null 2>&1
+
+echo "段 49 合同收口追加完成"
+
+echo "段 46 知识产权追加完成"
+
 echo "段 45 项目变更追加完成"
 
 echo "段 44 预算管控追加完成"

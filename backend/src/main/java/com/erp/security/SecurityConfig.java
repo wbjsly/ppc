@@ -347,11 +347,27 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/pm/cost/material-issues/**",
                         "/api/pm/cost/subcontracts/**", "/api/pm/cost/travels/**",
                         "/api/pm/cost/allocs/**", "/api/pm/cost/alerts/**")
-                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR")
+                .hasAnyRole("ADMIN", "PMO", "PM", "FINANCE", "FIN_MGR", "RD_LEAD")
                 // 项目立项（add-project-initiation）：PMO/PM/ADMIN 全域；模板与产能维护
                 // 写端点另在方法级 @PreAuthorize 限 PMO/ADMIN；PM 数据范围在服务层过滤
+                // 知识产权（add-ip-management）：四叶含法务/研发负责人/财务视角，
+                // 单据级角色校验在服务层；同须置于 /api/pm/** 兜底前
+                // 研发物料试制（add-rnd-material）：消耗确认/退料/成本，含研发负责人，
+                // 单据级角色校验在服务层；同须置于 /api/pm/** 兜底前
+                .antMatchers("/api/pm/trial/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "RD_LEAD", "FINANCE", "FIN_MGR")
+                .antMatchers("/api/pm/ip/**")
+                .hasAnyRole("ADMIN", "PMO", "PM", "LEGAL", "RD_LEAD", "FIN_MGR")
+                // 服务工单（add-service-order）：客服/服务工程师/服务主管/销售经理，
+                // 单据级角色校验在服务层；同须置于 /api/pm/** 兜底前
+                .antMatchers("/api/pm/service-orders/**")
+                .hasAnyRole("ADMIN", "PMO", "CS", "SERVICE_ENG", "SERVICE_MGR", "SALES_MGR")
                 .antMatchers("/api/pm/**")
                 .hasAnyRole("ADMIN", "PMO", "PM")
+
+                // 服务工单客户确认免密链接（add-service-order design D6）：
+                // token 一次性+过期校验在服务层，匿名放行仅此两个动作
+                .antMatchers("/api/public/service-orders/**").permitAll()
 
                 .antMatchers("/api/portal/**").hasRole("SUPPLIER")
                 // 采购分析（add-procurement-analysis design D10）：菜单同口径四角色，

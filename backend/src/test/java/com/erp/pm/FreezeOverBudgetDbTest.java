@@ -185,11 +185,11 @@ class FreezeOverBudgetDbTest {
                 "基线 1000 + 追加 500 = 1500，实际=" + baseline);
         assertEquals("APPROVED", jdbc.queryForObject(
                 "SELECT STATUS FROM erp_pm_over_budget WHERE ID=?", String.class, applyId));
-        // 预算变更留痕
+        // 预算变更留痕（CHANGE_NO=OBB+申请单号，申请单号含当天日期 → 按前缀查避免硬编码日期跨天失效）
         Integer trace = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM erp_pm_budget_change WHERE PROJECT_ID=? AND CHANGE_NO=?",
-                Integer.class, projectId, "OBBOBB20261026001");
-        assertTrue(trace >= 1, "追加预算写 budget_change 留痕（CHANGE_NO=OB+申请单号）");
+                "SELECT COUNT(*) FROM erp_pm_budget_change WHERE PROJECT_ID=? AND CHANGE_NO LIKE 'OBB%'",
+                Integer.class, projectId);
+        assertTrue(trace >= 1, "追加预算写 budget_change 留痕（CHANGE_NO=OBB+申请单号）");
     }
 
     @Test

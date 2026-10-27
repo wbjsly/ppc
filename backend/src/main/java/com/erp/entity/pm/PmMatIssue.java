@@ -29,4 +29,9 @@ public class PmMatIssue extends BaseEntity {
     private String rejectReason;
     /** 会计凭证回写 */
     private String voucherId;
+
+    /** 1=研发试制（BR-4.8-37 与量产分账，须关联 TRIAL 任务；add-rnd-material） */
+    private String trialFlag;
+    /** 试制用途说明 */
+    private String trialPurpose;
 }

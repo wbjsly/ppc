@@ -321,6 +321,20 @@ const EXTRA_PERM = {
   // M11-6 预算管控 11.6.1~11.6.3（change add-cost-collection-freeze：归集/分析含财务线，冻结叶不含普通 PM）
   ...leaf(['M11-6', 'M11-6-1', 'M11-6-2'], 'ROLE_PM,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
   ...leaf(['M11-6-3'], 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN'),
+  // M11-7 项目变更 11.7.1/11.7.2（change add-project-change：申请叶 PM，审批叶 PMO/财务/分管领导）
+  ...leaf(['M11-7', 'M11-7-1'], 'ROLE_PM,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-7-2'], 'ROLE_PMO,ROLE_FINANCE,ROLE_EXEC,ROLE_ADMIN'),
+  // M11-8 知识产权 11.8.1~11.8.4（change add-ip-management：四叶差异化，仲裁叶仅法务线）
+  ...leaf(['M11-8', 'M11-8-1'], 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-8-2'], 'ROLE_RD_LEAD,ROLE_LEGAL,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-8-3'], 'ROLE_LEGAL,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-8-4'], 'ROLE_RD_LEAD,ROLE_LEGAL,ROLE_PMO,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-9 研发物料 11.9.1/11.9.2（change add-rnd-material：领用叶 PM/RD_LEAD，成本叶加财务线）
+  ...leaf(['M11-9', 'M11-9-1'], 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_ADMIN'),
+  ...leaf(['M11-9-2'], 'ROLE_PM,ROLE_RD_LEAD,ROLE_PMO,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),
+  // M11-10 服务工单 11.10.1/11.10.2（change add-service-order：受理叶 CS/主管/销售经理，闭环叶加服务工程师）
+  ...leaf(['M11-10', 'M11-10-1'], 'ROLE_CS,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN'),
+  ...leaf(['M11-10-2'], 'ROLE_CS,ROLE_SERVICE_ENG,ROLE_SERVICE_MGR,ROLE_SALES_MGR,ROLE_ADMIN'),
   // M10-10 绩效管理 10.10.1~10.10.4（change add-payroll-management）
   ...leaf(['M10-10', 'M10-10-1', 'M10-10-2', 'M10-10-3', 'M10-10-4'],
     'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),

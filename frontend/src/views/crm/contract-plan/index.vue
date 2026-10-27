@@ -33,6 +33,41 @@
               class="mb12"
               :title="`收款计划合计 ¥${fmt(adjust.planSum)} 与合同金额 ¥${fmt(adjust.contractAmount)} 不符（差额 ¥${fmt(adjust.diff)}）—— 请调整期次（14.6 变更后常见）`" />
 
+    <!-- 交付执行（S-4.8-08 交付跟踪，只读聚合） -->
+    <el-card v-if="delivery" shadow="never" class="mb12">
+      <template #header>
+        <div class="card-head">
+          <b>交付执行（口径：已发货额 / 合同额）</b>
+          <div class="hint">
+            合同额 ¥{{ fmt(deliverySummary.contractAmount) }}
+            ｜ 累计开票 ¥{{ fmt(deliverySummary.totalInvoiced) }}
+            ｜ 累计核销 ¥{{ fmt(deliverySummary.totalWrittenOff) }}
+            ｜ 未落窗应收 ¥{{ fmt(delivery.unwindowedAmount) }}
+          </div>
+        </div>
+      </template>
+      <el-progress :percentage="Math.min(100, Math.round(Number(deliverySummary.deliveryRatePct || 0)))"
+                   :stroke-width="14" class="mb12" />
+      <el-table :data="delivery.soRows" size="small" border>
+        <el-table-column prop="soNo" label="SO 单号" width="160" />
+        <el-table-column prop="status" label="状态" width="130" />
+        <el-table-column label="订单额" width="120" align="right">
+          <template #default="{ row }">¥{{ fmt(row.orderAmount) }}</template>
+        </el-table-column>
+        <el-table-column label="已发货" width="120" align="right">
+          <template #default="{ row }">¥{{ fmt(row.shippedAmount) }}</template>
+        </el-table-column>
+        <el-table-column label="已开票" width="120" align="right">
+          <template #default="{ row }">¥{{ fmt(row.invoicedAmount) }}</template>
+        </el-table-column>
+        <el-table-column label="已核销" align="right">
+          <template #default="{ row }">¥{{ fmt(row.writtenOffAmount) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!delivery.soRows.length" description="该合同名下暂无 SO"
+                :image-size="50" />
+    </el-card>
+
     <el-row :gutter="12">
       <!-- 计划维护 -->
       <el-col :span="11">
@@ -93,7 +128,35 @@
           <template #header>
             <b>计划达成对比（实时口径，超期标红）</b>
           </template>
-          <el-table :data="progressRows" size="small" border>
+          <el-table :data="progressRows" size="small" border
+                    :row-key="r => 'p' + r.periodNo"
+                    :expand-row-keys="expandedPeriods"
+                    @expand-change="(row, rows) => (expandedPeriods.value = rows)">
+            <el-table-column type="expand">
+              <template #default="{ row }">
+                <!-- 期次软映射明细（读取时窗口匹配，不落关联字段） -->
+                <div style="padding: 8px 16px;">
+                  <div class="hint mb8">
+                    窗口应收（按入账日落窗，左开右闭）：合计 ¥{{ fmt(row.windowAmount) }}
+                    ｜ 已核销 ¥{{ fmt(row.windowWrittenOff) }}
+                  </div>
+                  <el-table v-if="(row.windowAr || []).length" :data="row.windowAr"
+                            size="small" border>
+                    <el-table-column prop="AR_NO" label="应收单号" width="180" />
+                    <el-table-column prop="BOOKING_DATE" label="入账日" width="110" />
+                    <el-table-column label="开票额" width="110" align="right">
+                      <template #default="{ row: ar }">¥{{ fmt(ar.AMOUNT) }}</template>
+                    </el-table-column>
+                    <el-table-column label="核销额" width="110" align="right">
+                      <template #default="{ row: ar }">¥{{ fmt(ar.PAID_AMOUNT) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="STATUS" label="状态" width="100" />
+                    <el-table-column prop="soNo" label="来源 SO" />
+                  </el-table>
+                  <div v-else class="hint">该期窗口内暂无应收</div>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column prop="periodNo" label="期" width="50" align="center" />
             <el-table-column label="计划金额" width="110" align="right">
               <template #default="{ row }">¥{{ fmt(row.planAmount) }}</template>
@@ -205,7 +268,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getContractsApi, getContractDetailApi, savePlansApi, getProgressApi
+  getContractsApi, getContractDetailApi, savePlansApi, getProgressApi,
+  getDeliveryProgressApi
 } from '@/api/crm/contract'
 import { getArPageApi, manualWriteoffApi } from '@/api/fin/ar'
 
@@ -220,6 +284,10 @@ const saving = ref(false)
 const writeoffVisible = ref(false)
 const writeoffRow = ref(null)
 const writeoffForm = ref({ amount: 0, payDate: new Date().toISOString().slice(0, 10), remark: '' })
+const delivery = ref(null)
+const expandedPeriods = ref([])
+
+const deliverySummary = computed(() => (delivery.value && delivery.value.summary) || {})
 
 const planSum = computed(() =>
   planRows.value.reduce((s, r) => s + Number(r.planAmount || 0), 0))
@@ -255,6 +323,19 @@ async function loadProgress() {
   const p = (await getProgressApi(contractId.value)).data || {}
   progressRows.value = p.planProgress || []
   adjust.value = p.planAdjust || null
+  // 交付执行聚合 + 期次软映射（S-4.8-08，add-contract-close-delivery）
+  try {
+    const dp = (await getDeliveryProgressApi(contractId.value)).data || {}
+    delivery.value = dp
+    // 期次窗口明细并入达成对比行（同 periodNo）
+    progressRows.value = progressRows.value.map(r => {
+      const matched = (dp.plans || []).find(x => x.periodNo === r.periodNo) || {}
+      return { ...r, windowAr: matched.windowAr || [], windowAmount: matched.windowAmount,
+        windowWrittenOff: matched.windowWrittenOff }
+    })
+  } catch (e) {
+    delivery.value = null
+  }
   loadArs()
 }
 

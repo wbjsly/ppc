@@ -51,14 +51,15 @@ class DocTypeDbTest {
     @Test
     void seedHasAllKnownTypes() {
         List<InvDocType> all = service.list();
-        // 104 种子 13 类 + 迁移 115 RECALL_IN + 迁移 126 外协发料/余料退回两类（add-outsourcing-processing）
-        assertEquals(16, all.size(),
-                "迁移 104 种子 = 7 已建域 + 6 预注册 + 115 RECALL_IN + 126 OS_MAT_OUT/IN");
+        // 104 种子 13 类 + 迁移 115 RECALL_IN + 迁移 126 外协发料/余料退回两类 + 迁移 174 试制退料入库
+        // + 迁移 175 售后领料（add-service-order）
+        assertEquals(18, all.size(),
+                "迁移 104 种子 = 7 已建域 + 6 预注册 + 115 RECALL_IN + 126 OS_MAT_OUT/IN + 174 TRIAL_RETURN_IN + 175 AFTER_SALE");
         List<String> codes = all.stream().map(InvDocType::getTypeCode).toList();
         for (String expect : List.of("PURCHASE_IN", "SALES_OUT", "QUALITY_RETURN_OUT",
                 "OTHER_RETURN_OUT", "SALES_RETURN_IN", "MATERIAL_OUT", "VMI_TRANSFER_IN",
                 "WIP_IN", "SCRAP_OUT", "TRANSFER_IN", "TRANSFER_OUT", "ADJUST_IN", "ADJUST_OUT",
-                "RECALL_IN", "OS_MAT_OUT", "OS_MAT_IN")) {
+                "RECALL_IN", "OS_MAT_OUT", "OS_MAT_IN", "TRIAL_RETURN_IN", "AFTER_SALE")) {
             assertTrue(codes.contains(expect), "缺少类型 " + expect);
         }
         // 方向与分配默认正确

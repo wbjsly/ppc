@@ -57,6 +57,10 @@ class BudgetApprovalDbTest {
                 "deliveryPath", "INTERNAL", "internalFormNo", "IF-TAB",
                 "pmUserId", "tab-junit", "startDate", "2026-11-01", "endDate", "2027-05-31"));
         projectId = p.getId();
+        // IP 归属协议卡控（BR-4.8-24，add-ip-management）：立项须有生效协议，直插一条独立研发协议
+        jdbc.update("INSERT INTO erp_pm_ip_agreement (ID, PROJECT_ID, COOP_MODE, COMPANY_RATE, "
+                + "SIGN_DATE, EFFECTIVE, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) "
+                + "VALUES ('tab-ip-agr', ?, 'INDEP', 100, CURDATE(), '1', 'junit', NOW(), '0', 0)", projectId);
         Map<String, Object> phase = wbsService.create(Map.of(
                 "projectId", projectId, "level", 1, "name", "开发阶段"));
         Map<String, Object> pkg = wbsService.create(Map.of(
@@ -81,8 +85,10 @@ class BudgetApprovalDbTest {
                 userId, userId, nick);
     }
 
-    private void purge() {
+    private     void purge() {
         jdbc.update("DELETE FROM erp_admin_user WHERE ID='tab-junit'");
+        jdbc.update("DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID IN "
+                + "(SELECT ID FROM erp_pm_project WHERE NAME LIKE 'TAB%')");
         jdbc.update("DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID "
                 + "WHERE i.BIZ_TYPE IN ('PmBaseline','PmBudgetChange') "
                 + "AND (i.BIZ_ID IN (SELECT ID FROM erp_pm_project WHERE NAME LIKE 'TAB%') "

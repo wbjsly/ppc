@@ -43,4 +43,12 @@ public class PmWbs extends BaseEntity {
     /** 阶段完成日期 */
     private java.time.LocalDate phaseDoneDate;
     private Integer sortNo;
+
+    /** 任务类型：DEV 开发|TEST 测试|TRIAL 试制|OTHER（C-4.8-12 判断依据，add-rnd-material） */
+    private String taskType;
+
+    public static final String TYPE_DEV = "DEV";
+    public static final String TYPE_TEST = "TEST";
+    public static final String TYPE_TRIAL = "TRIAL";
+    public static final String TYPE_OTHER = "OTHER";
 }

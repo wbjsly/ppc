@@ -114,4 +114,19 @@ public class ContractController {
     public R<List<Map<String, Object>>> versions(@PathVariable String id) {
         return R.ok(service.versions(id));
     }
+
+    @PostMapping("/{id}/terminate")
+    @Operation(summary = "合同终止（软终止，S-4.8-08：原因必填；未关闭 SO 返回 l4Warning，force=true 落库）")
+    public R<Map<String, Object>> terminate(@PathVariable String id,
+                                            @RequestBody Map<String, Object> body) {
+        String reason = body.get("reason") == null ? null : String.valueOf(body.get("reason"));
+        boolean force = Boolean.TRUE.equals(body.get("force"));
+        return R.ok(service.terminate(id, reason, force));
+    }
+
+    @GetMapping("/{id}/delivery-progress")
+    @Operation(summary = "交付执行聚合 + 期次软映射（S-4.8-08 交付跟踪，只读）")
+    public R<Map<String, Object>> deliveryProgress(@PathVariable String id) {
+        return R.ok(service.deliveryProgress(id));
+    }
 }

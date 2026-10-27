@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -55,7 +56,10 @@ public class ContractServiceImpl implements ContractService {
     private final SoDao soDao;
     private final ArService arService;
     private final ApprovalEngine approvalEngine;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    /** 交付执行聚合只读查询（add-contract-close-delivery，design D3） */
+    @org.springframework.beans.factory.annotation.Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public ContractServiceImpl(ContractDao contractDao,
                                ContractPlanDao planDao,
@@ -295,6 +299,10 @@ public class ContractServiceImpl implements ContractService {
     public Map<String, Object> savePlans(String contractId, List<Map<String, Object>> plans) {
         requireAny("维护收款计划");
         Contract c = require(contractId);
+        // 软终止阻断（add-contract-close-delivery，S-4.8-08）：终止合同不可新增收款期次
+        if (Contract.ST_TERMINATED.equals(c.getStatus())) {
+            throw new ServiceException(422, "合同已终止，不可新增收款期次");
+        }
         if (plans == null || plans.isEmpty()) {
             throw new ServiceException(422, "至少一期收款计划");
         }
@@ -469,11 +477,229 @@ public class ContractServiceImpl implements ContractService {
         return out;
     }
 
+    // ==================== 交付执行聚合 + 期次软映射（S-4.8-08，add-contract-close-delivery） ====================
+
+    @Override
+    public Map<String, Object> deliveryProgress(String contractId) {
+        requireAny("查询交付执行");
+        Contract c = require(contractId);
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        // ① SO 行聚合：订单额/已发货/已开票/已核销（只读 join 发货与应收）
+        List<So> sos = soDao.selectList(new LambdaQueryWrapper<So>()
+                .eq(So::getContractId, contractId)
+                .eq(So::getDelFlag, "0")
+                .orderByAsc(So::getSoNo));
+        List<Map<String, Object>> soRows = new ArrayList<>();
+        List<Map<String, Object>> ars = new ArrayList<>();
+        BigDecimal shippedTotal = BigDecimal.ZERO;
+        BigDecimal invoicedTotal = BigDecimal.ZERO;
+        BigDecimal writtenOffTotal = BigDecimal.ZERO;
+        for (So so : sos) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("soNo", so.getSoNo());
+            row.put("status", so.getStatus());
+            BigDecimal orderAmt = nvl(so.getTotalAmount());
+            BigDecimal shipped = jdbc.queryForObject(
+                    "SELECT COALESCE(SUM(sl.AMOUNT),0) FROM erp_sd_shipment_line sl "
+                            + "JOIN erp_sd_shipment s ON s.ID = sl.SHIP_ID AND s.DEL_FLAG='0' "
+                            + "WHERE sl.SO_ID = ? AND sl.DEL_FLAG='0'", BigDecimal.class, so.getId());
+            shipped = nvl(shipped);
+            List<Map<String, Object>> soArs = jdbc.queryForList(
+                    "SELECT AR_NO, AMOUNT, PAID_AMOUNT, STATUS, "
+                            + "COALESCE(INVOICE_DATE, CAST(CREATE_DATE AS DATE)) AS BOOKING_DATE "
+                            + "FROM erp_fin_ar_invoice WHERE SO_ID = ? AND DEL_FLAG='0'", so.getId());
+            BigDecimal inv = BigDecimal.ZERO;
+            BigDecimal wo = BigDecimal.ZERO;
+            for (Map<String, Object> ar : soArs) {
+                inv = inv.add(nvl((BigDecimal) ar.get("AMOUNT")));
+                wo = wo.add(nvl((BigDecimal) ar.get("PAID_AMOUNT")));
+                Map<String, Object> a = new LinkedHashMap<>(ar);
+                a.put("soNo", so.getSoNo());
+                a.put("bookingDate", toLocalDate(ar.get("BOOKING_DATE")));
+                ars.add(a);
+            }
+            row.put("orderAmount", orderAmt);
+            row.put("shippedAmount", shipped);
+            row.put("invoicedAmount", inv);
+            row.put("writtenOffAmount", wo);
+            soRows.add(row);
+            shippedTotal = shippedTotal.add(shipped);
+            invoicedTotal = invoicedTotal.add(inv);
+            writtenOffTotal = writtenOffTotal.add(wo);
+        }
+
+        // ② 汇总条：合同额/累计开票/累计核销/交付完成率（=已发货额/合同额，除零兜底 0%）
+        BigDecimal contractAmount = nvl(c.getAmount());
+        BigDecimal rate = contractAmount.signum() == 0 ? BigDecimal.ZERO
+                : shippedTotal.divide(contractAmount, 4, RoundingMode.HALF_UP);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("contractAmount", contractAmount);
+        summary.put("totalShipped", shippedTotal);
+        summary.put("totalInvoiced", invoicedTotal);
+        summary.put("totalWrittenOff", writtenOffTotal);
+        summary.put("deliveryRate", rate);
+        summary.put("deliveryRatePct", rate.multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString());
+
+        // ③ 期次软映射：窗口 (上期 DUE_DATE, 本期 DUE_DATE] 左开右闭，读取时计算不落字段
+        List<ContractPlan> plans = planDao.selectList(new LambdaQueryWrapper<ContractPlan>()
+                .eq(ContractPlan::getContractId, contractId)
+                .eq(ContractPlan::getDelFlag, "0")
+                .orderByAsc(ContractPlan::getPeriodNo));
+        LocalDate firstBound = c.getStartDate();
+        if (firstBound == null) {
+            firstBound = ars.stream().map(a -> (LocalDate) a.get("bookingDate"))
+                    .filter(Objects::nonNull).min(LocalDate::compareTo).orElse(null);
+        }
+        boolean[] assigned = new boolean[ars.size()];
+        List<Map<String, Object>> planRows = new ArrayList<>();
+        LocalDate prev = firstBound;
+        for (ContractPlan p : plans) {
+            LocalDate due = p.getDueDate();
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("periodNo", p.getPeriodNo());
+            row.put("planAmount", p.getPlanAmount());
+            row.put("dueDate", due == null ? null : due.toString());
+            List<Map<String, Object>> windowAr = new ArrayList<>();
+            BigDecimal windowAmt = BigDecimal.ZERO;
+            BigDecimal windowWo = BigDecimal.ZERO;
+            if (due != null) {
+                for (int i = 0; i < ars.size(); i++) {
+                    LocalDate booking = (LocalDate) ars.get(i).get("bookingDate");
+                    if (booking == null || assigned[i]) {
+                        continue;
+                    }
+                    boolean afterLeft = prev == null || booking.isAfter(prev);
+                    if (afterLeft && !booking.isAfter(due)) {
+                        Map<String, Object> a = new LinkedHashMap<>(ars.get(i));
+                        windowAr.add(a);
+                        windowAmt = windowAmt.add(nvl((BigDecimal) a.get("AMOUNT")));
+                        windowWo = windowWo.add(nvl((BigDecimal) a.get("PAID_AMOUNT")));
+                        assigned[i] = true;
+                    }
+                }
+            }
+            row.put("windowAr", windowAr);
+            row.put("windowAmount", windowAmt);
+            row.put("windowWrittenOff", windowWo);
+            planRows.add(row);
+            prev = due != null ? due : prev;
+        }
+        // 未落窗应收（入账日晚于最后一期到期日，或早于首期左界）：单列防合计困惑
+        List<Map<String, Object>> unwindowed = new ArrayList<>();
+        BigDecimal unwindowedAmt = BigDecimal.ZERO;
+        for (int i = 0; i < ars.size(); i++) {
+            if (!assigned[i]) {
+                unwindowed.add(ars.get(i));
+                unwindowedAmt = unwindowedAmt.add(nvl((BigDecimal) ars.get(i).get("AMOUNT")));
+            }
+        }
+
+        out.put("soRows", soRows);
+        out.put("summary", summary);
+        out.put("plans", planRows);
+        out.put("unwindowedAr", unwindowed);
+        out.put("unwindowedAmount", unwindowedAmt);
+        return out;
+    }
+
+    /** DB 日期 → LocalDate（java.sql.Date/Timestamp/LocalDate 兼容） */
+    private static LocalDate toLocalDate(Object o) {
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof LocalDate ld) {
+            return ld;
+        }
+        if (o instanceof java.sql.Date d) {
+            return d.toLocalDate();
+        }
+        if (o instanceof java.sql.Timestamp t) {
+            return new java.sql.Date(t.getTime()).toLocalDate();
+        }
+        try {
+            return LocalDate.parse(String.valueOf(o).substring(0, 10));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 供 SO 关联（14.3）：校验并回写合同 SO 数（原子 +1） */
     public static void bumpSoCount(ContractDao dao, String contractId) {
         dao.update(null, new LambdaUpdateWrapper<Contract>()
                 .eq(Contract::getId, contractId)
                 .setSql("SO_COUNT = SO_COUNT + 1"));
+    }
+
+    // ==================== 合同终止（软终止，S-4.8-08，add-contract-close-delivery） ====================
+
+    @Override
+    @Transactional
+    public Map<String, Object> terminate(String id, String reason, boolean force) {
+        requireTerminator("终止合同");
+        Contract c = require(id);
+        if (!Contract.ST_SIGNED.equals(c.getStatus()) && !Contract.ST_CHANGED.equals(c.getStatus())) {
+            throw new ServiceException(422, "当前状态不可终止（仅已签订/已变更可终止，当前：" + c.getStatus() + "）");
+        }
+        if (isBlank(reason)) {
+            throw new ServiceException(422, "终止原因必填");
+        }
+        // 软终止：未关闭 SO 警告不阻断（L4）；force=false 且有未关闭 SO 时只返回警告不落库
+        List<Map<String, Object>> openSos = openSosOf(c);
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (!openSos.isEmpty() && !force) {
+            out.put("contract", c);
+            out.put("l4Warning", "名下存在 " + openSos.size() + " 张未关闭 SO，终止后存量单据照常走完、不可新增（确认后再次提交）");
+            out.put("openSos", openSos);
+            return out;
+        }
+        c.setStatus(Contract.ST_TERMINATED);
+        c.setTerminateReason(reason);
+        c.setClosedBy(currentUser());
+        c.setClosedAt(LocalDateTime.now());
+        c.setUpdateBy(currentUser());
+        c.setUpdateDate(LocalDateTime.now());
+        contractDao.updateById(c);
+        log.info("contract {} terminated by {} reason={} openSos={}",
+                c.getContractNo(), currentUser(), reason, openSos.size());
+        writeVersion(c, "TERMINATE", reason, "合同终止（软终止，存量走完）", Contract.ST_TERMINATED);
+        out.put("contract", c);
+        out.put("openSos", openSos);
+        return out;
+    }
+
+    /** 名下未关闭 SO（CLOSED/CANCELLED 视为已关闭） */
+    private List<Map<String, Object>> openSosOf(Contract c) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        List<So> sos = soDao.selectList(new LambdaQueryWrapper<So>()
+                .eq(So::getContractId, c.getId())
+                .notIn(So::getStatus, So.ST_CLOSED, So.ST_CANCELLED)
+                .orderByDesc(So::getCreateDate));
+        for (So so : sos) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", so.getId());
+            m.put("soNo", so.getSoNo());
+            m.put("status", so.getStatus());
+            m.put("totalAmount", so.getTotalAmount());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** 服务层限权（终止：SALES_MGR/ADMIN，requireAny 之外的单据级校验） */
+    private void requireTerminator(String action) {
+        var auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            throw new ServiceException(401, "未登录");
+        }
+        List<String> allowed = List.of("ROLE_SALES_MGR", "ROLE_ADMIN");
+        boolean ok = auth.getAuthorities().stream()
+                .anyMatch(a -> allowed.contains(a.getAuthority()));
+        if (!ok) {
+            throw new ServiceException(403, "当前角色无权" + action + "（限销售经理/管理员）");
+        }
     }
 
     // ==================== 私有工具 ====================

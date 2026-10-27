@@ -147,6 +147,10 @@ public class SoServiceImpl implements SoService {
             if (contract == null) {
                 throw new ServiceException(404, "关联合同不存在：" + contractId);
             }
+            // 软终止阻断（add-contract-close-delivery，S-4.8-08）：终止合同不可新增 SO 关联
+            if (com.erp.entity.crm.Contract.ST_TERMINATED.equals(contract.getStatus())) {
+                throw new ServiceException(422, "合同已终止，不可新增 SO（" + contract.getContractNo() + "）");
+            }
             if (!com.erp.entity.crm.Contract.ST_SIGNED.equals(contract.getStatus())) {
                 throw new ServiceException(422, "仅已签订合同可下达 SO（当前："
                         + contract.getStatus() + "）");

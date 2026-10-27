@@ -53,3 +53,13 @@ export function changeContractApi(id, data) {
 export function getVersionsApi(id) {
   return request({ url: `/crm/contracts/${id}/versions`, method: 'get' })
 }
+
+/** 合同终止（软终止，S-4.8-08：原因必填；未关闭 SO 返回 l4Warning，force=true 落库） */
+export function terminateContractApi(id, data) {
+  return request({ url: `/crm/contracts/${id}/terminate`, method: 'post', data })
+}
+
+/** 交付执行聚合 + 期次软映射（S-4.8-08 交付跟踪，只读） */
+export function getDeliveryProgressApi(id) {
+  return request({ url: `/crm/contracts/${id}/delivery-progress`, method: 'get' })
+}

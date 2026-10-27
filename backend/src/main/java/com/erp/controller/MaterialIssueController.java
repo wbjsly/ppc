@@ -24,15 +24,16 @@ public class MaterialIssueController {
         this.service = service;
     }
 
-    @Operation(summary = "领料单分页（类型/状态/工单号/关键字）")
+    @Operation(summary = "领料单分页（类型/状态/工单号/服务工单号/关键字）")
     @GetMapping
     public R<Page<Map<String, Object>>> page(@RequestParam(defaultValue = "1") long current,
                                              @RequestParam(defaultValue = "10") long size,
                                              @RequestParam(required = false) String issueType,
                                              @RequestParam(required = false) String status,
                                              @RequestParam(required = false) String workOrderNo,
-                                             @RequestParam(required = false) String keyword) {
-        return R.ok(service.page(current, size, issueType, status, workOrderNo, keyword));
+                                             @RequestParam(required = false) String keyword,
+                                             @RequestParam(required = false) String serviceOrderNo) {
+        return R.ok(service.page(current, size, issueType, status, workOrderNo, keyword, serviceOrderNo));
     }
 
     @Operation(summary = "领料单详情（头 + 配批行）")

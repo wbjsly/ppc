@@ -46,8 +46,12 @@
           <template #header>
             <div class="card-head">
               <b>{{ current ? `变更：${current.contractNo}` : '选择左侧合同发起变更' }}</b>
-              <el-button size="small" type="primary" :disabled="!canChange"
-                         @click="changeVisible = true">发起变更</el-button>
+              <div>
+                <el-button size="small" type="primary" :disabled="!canChange"
+                           @click="changeVisible = true">发起变更</el-button>
+                <el-button v-if="canTerminate" size="small" type="danger"
+                           @click="openTerminate">终止合同</el-button>
+              </div>
             </div>
           </template>
 
@@ -135,6 +139,26 @@
       </el-col>
     </el-row>
 
+    <!-- 终止合同（软终止，S-4.8-08） -->
+    <el-dialog v-model="terminateVisible" title="终止合同（软终止）" width="520px">
+      <el-alert type="warning" :closable="false" show-icon class="mb12"
+                title="终止后：不可新增 SO 关联与收款期次；名下存量单据照常走完（不可逆终态）" />
+      <el-form label-width="90px" size="small">
+        <el-form-item label="终止原因" required>
+          <el-input v-model="terminateForm.reason" type="textarea" :rows="3"
+                    placeholder="必填（空则 422），将写入 TERMINATE_REASON 并审计留痕" />
+        </el-form-item>
+      </el-form>
+      <el-alert v-if="terminateForm.l4Warning" type="warning" :closable="false" show-icon
+                :title="terminateForm.l4Warning" />
+      <template #footer>
+        <el-button @click="terminateVisible = false">取消</el-button>
+        <el-button type="danger" :loading="saving" @click="doTerminate">
+          {{ terminateForm.l4Warning ? '确认终止（存量走完）' : '确认终止' }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 变更弹窗 -->
     <el-dialog v-model="changeVisible" title="发起合同变更" width="560px">
       <el-form label-width="92px" size="small">
@@ -175,7 +199,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  getContractsApi, getContractDetailApi, changeContractApi
+  getContractsApi, getContractDetailApi, changeContractApi, terminateContractApi
 } from '@/api/crm/contract'
 import {
   getQmsApprovalTodoApi, passQmsApprovalApi, rejectQmsApprovalApi
@@ -189,12 +213,16 @@ const allTodos = ref([])
 const opinions = ref({})
 const changeVisible = ref(false)
 const saving = ref(false)
+const terminateVisible = ref(false)
+const terminateForm = reactive({ reason: '', l4Warning: '' })
 
 const changeForm = reactive({ title: '', amount: 0, startDate: '', endDate: '', reason: '' })
 
 const signed = computed(() => list.value.filter(c =>
   ['SIGNED', 'APPROVING'].includes(c.status)))
 const canChange = computed(() => current.value && current.value.status === 'SIGNED')
+const canTerminate = computed(() => current.value
+  && ['SIGNED', 'CHANGED'].includes(current.value.status))
 const needL2 = computed(() => newDiff.value !== null
   && Math.abs(newDiff.value) > 0.1)
 const newDiff = computed(() => {
@@ -261,6 +289,35 @@ async function doChange() {
     ElMessage.success(needL2.value ? '已提交（差异 >10%，销售经理→销售总监 L2）'
       : '已提交（销售经理审批）')
     changeVisible.value = false
+    open({ id: current.value.id })
+    load()
+  } finally {
+    saving.value = false
+  }
+}
+
+function openTerminate() {
+  terminateForm.reason = ''
+  terminateForm.l4Warning = ''
+  terminateVisible.value = true
+}
+
+async function doTerminate() {
+  if (!terminateForm.reason.trim()) return ElMessage.warning('终止原因必填')
+  saving.value = true
+  try {
+    const res = await terminateContractApi(current.value.id, {
+      reason: terminateForm.reason.trim(),
+      force: !!terminateForm.l4Warning
+    })
+    const d = res.data || {}
+    if (d.l4Warning) {
+      terminateForm.l4Warning = d.l4Warning
+      ElMessage.warning('存在未关闭 SO，请确认后再次点击「确认终止」')
+      return
+    }
+    ElMessage.success('合同已终止（存量单据照常走完）')
+    terminateVisible.value = false
     open({ id: current.value.id })
     load()
   } finally {

@@ -58,4 +58,15 @@ public interface ContractService {
 
     /** 版本历史（只读，含快照与变更说明） */
     List<Map<String, Object>> versions(String id);
+
+    /**
+     * 合同终止（软终止，S-4.8-08 合同关闭，add-contract-close-delivery）：
+     * 仅 SIGNED/CHANGED 可终止，原因必填（L1），限 SALES_MGR/ADMIN，无审批流；
+     * 未关闭 SO → l4Warning 提示不阻断（force=false 时不落库）；
+     * 终止后阻断新增 SO 关联与新增收款期次，存量单据照常走完（对齐 BR-4.3-66 语义）。
+     */
+    Map<String, Object> terminate(String id, String reason, boolean force);
+
+    /** 交付执行聚合 + 期次软映射（S-4.8-08 交付跟踪，只读零新表） */
+    Map<String, Object> deliveryProgress(String contractId);
 }
