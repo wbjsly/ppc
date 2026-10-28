@@ -137,7 +137,9 @@ public class SecurityConfig {
                         // 项目基线/预算变更审批签署（add-project-initiation：PmBaseline=PmBudgetChange 节点角色）
                         "PMO",
                         // 超预算解冻审批签署（add-cost-collection-freeze：BR-4.8-22 第三级分管领导）
-                        "EXEC")
+                        "EXEC",
+                        // 伙伴入驻三节点签署（add-partner-onboarding：采购初审/质量复审/合规终审）
+                        "PURCHASER", "COMPLIANCE")
                 // 2.6.1 质量退货：具体路径在前（出库过账 WAREHOUSE），兜底创建/编辑 ADMIN
                 .antMatchers(HttpMethod.POST, "/api/proc/returns/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 非质量退货创建（2.6.2，spec other-return）：采购侧发起，收窄为 ADMIN/PM（须先于下方粗规则）
@@ -173,6 +175,7 @@ public class SecurityConfig {
                         "/api/proc/portal-events/**").hasAnyRole("ADMIN", "PM", "WAREHOUSE")
                 // PO 协同（spec po-collaboration）：解锁仅 ADMIN，其余动作 ADMIN+PM，读三角色（先于下方 POST/PUT ADMIN 兜底）
                 .antMatchers(HttpMethod.POST, "/api/proc/po-coops/unlocks").hasRole("ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/proc/po-coops/tickets/*/resolve").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/proc/po-coops/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.GET, "/api/proc/po-coops",
                         "/api/proc/po-coops/**").hasAnyRole("ADMIN", "PM", "WAREHOUSE")
@@ -180,6 +183,16 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/proc/asns").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.GET, "/api/proc/asns",
                         "/api/proc/asns/**").hasAnyRole("ADMIN", "PM", "WAREHOUSE")
+                // 伙伴入驻（add-partner-onboarding design D6，先于 /api/proc/** 兜底）：
+                // 申请单写 PROCUREMENT/ADMIN；通道配置写 INTF_OPS/ADMIN；读随各自动作
+                .antMatchers(HttpMethod.POST, "/api/proc/partner-applies",
+                        "/api/proc/partner-applies/**").hasAnyRole("ADMIN", "PURCHASER")
+                .antMatchers(HttpMethod.PUT, "/api/proc/partner-applies/**")
+                    .hasAnyRole("ADMIN", "PURCHASER")
+                .antMatchers(HttpMethod.GET, "/api/proc/partner-applies",
+                        "/api/proc/partner-applies/**").hasAnyRole("ADMIN", "PURCHASER")
+                .antMatchers("/api/proc/partner-channels/**")
+                    .hasAnyRole("ADMIN", "INTF_OPS")
                 .antMatchers(HttpMethod.POST, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/proc/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/proc/**").hasRole("ADMIN")
@@ -249,6 +262,13 @@ public class SecurityConfig {
                         "/api/fin/manual-vouchers/*/post",
                         "/api/fin/manual-vouchers/*/reject",
                         "/api/fin/manual-vouchers/*/void").hasAnyRole("ADMIN", "FINANCE_MGR")
+                // 供应商对账双签（add-reconciliation-console，spec supplier-statement-reconciliation R2）：
+                // FINANCE_MGR 须读差异清单并签第二节点——GET 与 confirm 放行三角色；
+                // 登记 POST 与 match 不放行（保持下方兜底 ADMIN,PM 口径），先于 /api/fin/** 兜底
+                .antMatchers(HttpMethod.GET, "/api/fin/statements",
+                        "/api/fin/statements/*").hasAnyRole("ADMIN", "PM", "FINANCE_MGR")
+                .antMatchers(HttpMethod.POST, "/api/fin/statements/*/confirm")
+                        .hasAnyRole("ADMIN", "PM", "FINANCE_MGR")
                 .antMatchers(HttpMethod.GET, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.POST, "/api/fin/**").hasAnyRole("ADMIN", "PM")
                 .antMatchers(HttpMethod.PUT, "/api/fin/**").hasAnyRole("ADMIN", "PM")
@@ -371,7 +391,23 @@ public class SecurityConfig {
                 // token 一次性+过期校验在服务层，匿名放行仅此两个动作
                 .antMatchers("/api/public/service-orders/**").permitAll()
 
+                // 伙伴激活免密链接（add-partner-onboarding design D4）：
+                // token 一次性+过期+复杂度校验在服务层，匿名放行仅此两个动作
+                .antMatchers("/api/public/partner-activate/**").permitAll()
+
                 .antMatchers("/api/portal/**").hasRole("SUPPLIER")
+                // CPFR 协同预测与补货（add-cpfr-forecast-replenishment，spec cpfr-collaboration R8）：
+                // 查询四角色（SCMDIR/PMGR/PM/ADMIN）；协议启用/停用/参数变更限 SCMDIR（服务层同口径）；
+                // 计划确认/调整/转化 = SCMDIR,PM,ADMIN（PMGR 是审批签署方，走审批台不走业务写口）
+                .antMatchers(HttpMethod.GET, "/api/scm/cpfr/**")
+                        .hasAnyRole("ADMIN", "SCMDIR", "PMGR", "PM")
+                .antMatchers(HttpMethod.POST, "/api/scm/cpfr/agreements")
+                        .hasAnyRole("ADMIN", "SCMDIR")
+                .antMatchers(HttpMethod.POST, "/api/scm/cpfr/agreements/*/enable",
+                        "/api/scm/cpfr/agreements/*/disable")
+                        .hasAnyRole("ADMIN", "SCMDIR")
+                .antMatchers("/api/scm/cpfr/**")
+                        .hasAnyRole("ADMIN", "SCMDIR", "PM")
                 // 采购分析（add-procurement-analysis design D10）：菜单同口径四角色，
                 // 门户记分卡在 /api/portal/** 之上不冲突；行级法人过滤在查询层（design D6）
                 .antMatchers("/api/bi/**", "/api/scm/scorecard/**")
@@ -381,6 +417,16 @@ public class SecurityConfig {
                 // 校验失败在 filter 内直接写 400/401/429/503 并 return，绝不会走到这行放行
                 .antMatchers("/api/open/**").authenticated()
                 // 接口对接 2.8.3（design D5）：读写 ADMIN + INTF_OPS，四类高危动作在服务层二次校验 ADMIN
+                // 事件定义（add-event-subscription D6）：INTF_ARCH 可写（服务层再校验），细规则置于兜底前
+                .antMatchers("/api/intf/event-types/**").hasAnyRole("ADMIN", "INTF_OPS", "INTF_ARCH")
+                // SLA 月报（add-service-monitoring-console，spec service-monitoring-console）：
+                // ARCH 须查询/生成/审核报告（审核角色=集成架构师），细规则置兜底前；
+                // POST 精确到 generate 与 review——归档/发布保持兜底口径（服务层 requireAdmin 二次校验）
+                .antMatchers(HttpMethod.GET, "/api/intf/sla/reports/**")
+                        .hasAnyRole("ADMIN", "INTF_OPS", "INTF_ARCH")
+                .antMatchers(HttpMethod.POST, "/api/intf/sla/reports/generate",
+                        "/api/intf/sla/reports/*/review")
+                        .hasAnyRole("ADMIN", "INTF_OPS", "INTF_ARCH")
                 .antMatchers("/api/intf/**").hasAnyRole("ADMIN", "INTF_OPS")
                 .antMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()

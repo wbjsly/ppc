@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.intf.IntfChannelDao;
 import com.erp.dao.intf.IntfDeliveryDao;
+import com.erp.dao.intf.IntfSubscriptionDao;
 import com.erp.dao.intf.IntfTicketDao;
 import com.erp.dao.ops.MdmOutboxDao;
 import com.erp.entity.intf.IntfChannel;
 import com.erp.entity.intf.IntfDelivery;
 import com.erp.entity.intf.IntfSlaAlert;
+import com.erp.entity.intf.IntfSubscription;
 import com.erp.entity.intf.IntfTicket;
 import com.erp.entity.ops.MdmOutboxEvent;
 import com.erp.security.IntfGuard;
@@ -49,6 +51,7 @@ public class DeliveryServiceImpl implements DeliveryService {
     private final IntfDeliveryDao deliveryDao;
     private final IntfChannelDao channelDao;
     private final IntfTicketDao ticketDao;
+    private final IntfSubscriptionDao subscriptionDao;
     private final OpenApiGatewayService gateway;
 
     @Value("${app.intf.api-retry-max:3}") private int retryMax;
@@ -58,11 +61,12 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     public DeliveryServiceImpl(MdmOutboxDao outboxDao, IntfDeliveryDao deliveryDao,
                                IntfChannelDao channelDao, IntfTicketDao ticketDao,
-                               OpenApiGatewayService gateway) {
+                               IntfSubscriptionDao subscriptionDao, OpenApiGatewayService gateway) {
         this.outboxDao = outboxDao;
         this.deliveryDao = deliveryDao;
         this.channelDao = channelDao;
         this.ticketDao = ticketDao;
+        this.subscriptionDao = subscriptionDao;
         this.gateway = gateway;
     }
 
@@ -97,6 +101,15 @@ public class DeliveryServiceImpl implements DeliveryService {
             d.setIdempotencyKey(key);
             d.setBizCode(bizBase(key));
             d.setPartnerCode(partnerOf(e));
+            // 两级回落（add-event-subscription D3）：命中启用订阅且 URL 非空 → 快照写行；
+            // 未命中/URL 空/停用 → 留空走旧路径（通道 URL → 台账确认），存量零迁移
+            IntfSubscription sub = d.getPartnerCode() == null ? null
+                    : subscriptionDao.selectByPartnerAndType(d.getPartnerCode(), e.getEventType());
+            if (sub != null && IntfSubscription.ST_ENABLED.equals(sub.getStatus())
+                    && sub.getCallbackUrl() != null && !sub.getCallbackUrl().trim().isEmpty()) {
+                d.setTargetUrl(sub.getCallbackUrl().trim());
+                d.setRetryMax(sub.getRetryMax()); // 快照语义：订阅后续改动不影响在途投递（防半投递）
+            }
             d.setStatus(IntfDelivery.ST_PENDING);
             d.setRetryCount(0);
             // 秒截断：DATETIME 列无亚秒精度，now() 毫秒会被四舍五入进位到下一秒，
@@ -181,7 +194,7 @@ public class DeliveryServiceImpl implements DeliveryService {
         d.setRetryCount(rc);
         d.setCostMs((int) cost);
         d.setFailReason(outcome.error);
-        if (rc > retryMax) {
+        if (rc > effectiveRetryMax(d)) {
             markDead(d, outcome.error);
             return;
         }
@@ -193,17 +206,21 @@ public class DeliveryServiceImpl implements DeliveryService {
                 "投递失败第 " + rc + " 次：" + outcome.error + "，" + backoff + "s 后重投");
     }
 
-    /** 实际投递动作：有回调地址则 HTTP POST，无回调地址按台账确认（design D3） */
+    /** 实际投递动作：订阅快照 URL → 通道 URL → 台账确认（add-event-subscription D3 两级回落） */
     private DeliveryOutcome attempt(IntfDelivery d) {
-        IntfChannel channel = d.getPartnerCode() == null ? null : channelDao.selectByPartnerCode(d.getPartnerCode());
-        if (channel == null || channel.getCallbackUrl() == null || channel.getCallbackUrl().trim().isEmpty()) {
+        String target = d.getTargetUrl(); // 建行时固化的订阅快照
+        if (target == null || target.trim().isEmpty()) {
+            IntfChannel channel = d.getPartnerCode() == null ? null : channelDao.selectByPartnerCode(d.getPartnerCode());
+            target = channel == null ? null : channel.getCallbackUrl();
+        }
+        if (target == null || target.trim().isEmpty()) {
             return DeliveryOutcome.ok("无回调地址，按台账确认投递");
         }
         MdmOutboxEvent e = outboxDao.selectById(d.getEventId());
         String payload = e == null || e.getPayload() == null ? "{}" : e.getPayload();
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(channel.getCallbackUrl());
+            URL url = new URL(target.trim());
             conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setConnectTimeout(3000);
@@ -240,7 +257,7 @@ public class DeliveryServiceImpl implements DeliveryService {
             int rc = (d.getRetryCount() == null ? 0 : d.getRetryCount()) + 1;
             d.setRetryCount(rc);
             d.setFailReason("30 秒内未收到消费确认（ACK），判定投递失败");
-            if (rc > retryMax) {
+            if (rc > effectiveRetryMax(d)) {
                 markDead(d, d.getFailReason());
             } else {
                 d.setStatus(IntfDelivery.ST_RETRYING);
@@ -409,6 +426,11 @@ public class DeliveryServiceImpl implements DeliveryService {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** 死信阈值：行级快照（订阅 RETRY_MAX）优先，空则全局 API_RETRY_MAX（add-event-subscription 1.3） */
+    private int effectiveRetryMax(IntfDelivery d) {
+        return d.getRetryMax() == null ? retryMax : d.getRetryMax();
+    }
 
     private String nextTicketNo() {
         String prefix = "IT" + LocalDateTime.now().format(NO_FMT);

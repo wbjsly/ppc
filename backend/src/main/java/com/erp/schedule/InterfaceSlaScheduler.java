@@ -38,7 +38,7 @@ public class InterfaceSlaScheduler {
     @Scheduled(cron = "0 0 2 1 * *")
     public void generateMonthlyReport() {
         try {
-            Map<String, Object> result = slaService.generateReport(null);
+            Map<String, Object> result = slaService.generateReport(null, "sla-job");
             log.info("monthly interface SLA report generated: {}", result);
         } catch (Exception e) {
             log.warn("monthly interface SLA report failed: {}", e.getMessage());

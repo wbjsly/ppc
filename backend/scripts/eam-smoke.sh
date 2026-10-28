@@ -3371,6 +3371,9 @@ SQL "DELETE FROM hr_remind WHERE EMP_ID='$OG_MGR_EMP'" >/dev/null 2>&1
 # ==================================================================== 段 34：考勤管理与加班调休（add-attendance-management）
 echo "== 段 34 考勤+加班调休（M10-3/M10-4）开始 =="
 
+# 34.0 跨日残留防护：终审按 period 扫全表，昨日残留的未处理异常会拦终审（与段末清理同口径）
+SQL "DELETE FROM hr_attendance_exception WHERE EXC_DATE >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)" >/dev/null 2>&1
+
 # 34.1 造员工 + 班次 + 排班
 SQL "INSERT INTO hr_employee (ID, EMP_NO, NAME, ID_CARD_NO, DEPT_ID, EMP_STATUS, HIRE_DATE, BASE_SALARY, CREATE_BY, DEL_FLAG, VER_NO)
      VALUES ('smk-at-emp','SMKAT-1','考勤冒烟','SMKATID-1','smk-at-dept','REGULAR', DATE_SUB(CURDATE(), INTERVAL 2 YEAR), 21750, 'smoke','0',0)" >/dev/null 2>&1
@@ -4296,6 +4299,7 @@ SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null
 SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_capacity WHERE USER_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'smk-pm-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_crm_contract WHERE ID LIKE 'smk-pm-con%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('PmBaseline','PmBudgetChange') AND BIZ_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk-pm-user','smk-pm-pmo','smk-pm-fin')" >/dev/null 2>&1
@@ -4339,6 +4343,11 @@ PB=$(C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/js
 [ -n "${PB:-}" ] && [ "$PB" != "None" ] && ok "段41 INTERNAL 单号创建（$PB）" || bad "INTERNAL 创建失败"
 PAST=$(SQL "SELECT STATUS FROM erp_pm_project WHERE ID='$PA'")
 [ "$PAST" = "DRAFT" ] && ok "段41 初始 DRAFT" || bad "初始状态异常（$PAST）"
+# IP 归属协议（BR-4.8-24 立项卡控，add-ip-management 2be1297 引入）：基线提交前须有生效协议
+SQL "DELETE FROM erp_pm_ip_agreement WHERE ID IN ('smk-pm-ip-a','smk-pm-ip-b')" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_ip_agreement (ID,PROJECT_ID,COOP_MODE,COMPANY_RATE,SIGN_DATE,EFFECTIVE,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk-pm-ip-a','$PA','INDEPENDENT',1.00,CURDATE(),'1','smoke',NOW(),'0',0),
+            ('smk-pm-ip-b','$PB','INDEPENDENT',1.00,CURDATE(),'1','smoke',NOW(),'0',0)" >/dev/null 2>&1
 
 # 41.3 WBS 层级规则与完整树
 PH=$(C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/json' \
@@ -4432,6 +4441,7 @@ SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null
 SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_capacity WHERE USER_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'smk-pm-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_crm_contract WHERE ID LIKE 'smk-pm-con%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('PmBaseline','PmBudgetChange') AND BIZ_ID LIKE 'smk-pm-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk-pm-user','smk-pm-pmo','smk-pm-fin')" >/dev/null 2>&1
@@ -4963,6 +4973,8 @@ SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'PmCost%' AND BIZ_ID LIKE 's
 echo "== 段 45 项目变更开始 =="
 
 # 45.0 隔离与造数：项目（基线 1000）+ 阶段/任务A/B + PM/PMO 账号
+SQL "DELETE FROM erp_pm_timesheet_line WHERE WBS_ID IN ('smk-pc-taskA','smk-pc-taskB') OR TIMESHEET_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_timesheet WHERE EMP_ID LIKE 'smk-pc-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_timesheet WHERE EMP_ID LIKE 'smk-pc-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_project_change WHERE PROJECT_ID='smk-pc-prj'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_change_wbs WHERE CHANGE_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_project_change WHERE PROJECT_ID='smk-pc-prj') t)" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_baseline_version WHERE PROJECT_ID='smk-pc-prj'" >/dev/null 2>&1
@@ -5114,8 +5126,8 @@ SQL "DELETE FROM erp_pm_baseline_version WHERE PROJECT_ID='smk-pc-prj'" >/dev/nu
 SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PmProjectChange' AND i.BIZ_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_project_change WHERE PROJECT_ID='smk-pc-prj') t)" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PmProjectChange' AND BIZ_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_project_change WHERE PROJECT_ID='smk-pc-prj') t)" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_budget_change WHERE PROJECT_ID='smk-pc-prj'" >/dev/null 2>&1
-SQL "DELETE FROM erp_pm_timesheet_line WHERE WBS_ID IN ('smk-pc-taskA','smk-pc-taskB')" >/dev/null 2>&1
-SQL "DELETE FROM erp_pm_timesheet WHERE ID IN (SELECT TIMESHEET_ID FROM (SELECT ID AS TIMESHEET_ID FROM erp_pm_timesheet_line WHERE WBS_ID IN ('smk-pc-taskA','smk-pc-taskB')) t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_timesheet WHERE ID IN (SELECT TIMESHEET_ID FROM (SELECT ID AS TIMESHEET_ID FROM erp_pm_timesheet_line WHERE WBS_ID IN ('smk-pc-taskA','smk-pc-taskB')) t) OR EMP_ID LIKE 'smk-pc-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_timesheet_line WHERE TIMESHEET_ID LIKE 'smk-pc-%' OR WBS_ID IN ('smk-pc-taskA','smk-pc-taskB')" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_budget_line WHERE PROJECT_ID='smk-pc-prj'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID='smk-pc-prj'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_project WHERE ID='smk-pc-prj'" >/dev/null 2>&1
@@ -5799,6 +5811,9 @@ SQL "DELETE FROM erp_pm_cost_collect WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null
 SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_wbs WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_project WHERE ID LIKE 'clc50-%'" >/dev/null 2>&1
+# 工时隔离：clc50 残留单（跨日跑时 50.6 同人同天 409 拦住归档 422 断言）——先删主单（借行子查询）再删行
+SQL "DELETE t FROM erp_pm_timesheet t WHERE t.ID IN (SELECT TIMESHEET_ID FROM (SELECT TIMESHEET_ID FROM erp_pm_timesheet_line WHERE WBS_ID LIKE 'clc50-%') z)" >/dev/null 2>&1
+SQL "DELETE FROM erp_pm_timesheet_line WHERE WBS_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_attachment WHERE BIZ_TYPE='PROJECT_CLOSURE' AND (BIZ_ID LIKE 'clc50-%' OR BIZ_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%') t2))" >/dev/null 2>&1
 
 SQL "INSERT INTO erp_pm_project (ID,PROJECT_NO,NAME,PROJ_TYPE,DELIVERY_PATH,PM_USER_ID,PM_NAME,START_DATE,END_DATE,STATUS,BASELINE_LOCKED,BASELINE_AMOUNT,FREEZE_FLAG,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
@@ -5819,6 +5834,13 @@ CLC50=$(SQL "SELECT STATUS FROM erp_pm_project WHERE ID='clc50-prj'")
 
 T50=$(C -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
 [ -n "${T50:-}" ] && ok "段50 admin 登录" || bad "段50 登录失败"
+
+# 归档前自造工时（资源释放快照按工时行参与人汇总；不自造则跨轮依赖残留单，
+# 清理残留后快照为 []。参与人用独立账号，不与 50.6 admin 归档后报工的同人同天检查冲突）
+SQL "INSERT INTO erp_pm_timesheet (ID,WORK_DATE,EMP_ID,EMP_NAME,STATUS,TOTAL_HOURS,IS_BACKFILL,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-ts', CURDATE(), 'clc50-emp', '结项冒烟参与人', 'APPROVED', 8, '0', 'smoke', NOW(), '0', 0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_pm_timesheet_line (ID,TIMESHEET_ID,PROJECT_ID,WBS_ID,HOURS,WORK_CONTENT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('clc50-ts-l1','clc50-ts','clc50-prj','clc50-w3',8,'归档前报工','smoke',NOW(),'0',0)" >/dev/null 2>&1
 
 # 50.1 发起结项 → 检查单 + 六项证据（WBS/MS/COST 自动 PASS；ACCEPT/DOC 人工 PENDING）
 INIT=$(C -X POST -H "$(A $T50)" $B/api/pm/closure/clc50-prj/initiate)
@@ -5917,6 +5939,835 @@ NTC2=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='PmClosureRemedia
 EQ "段50 无令牌发起 401" "$(HTTP -X POST $B/api/pm/closure/clc50-prj/initiate)" "401"
 
 echo "段 50 结项归档追加完成"
+
+# ============================================================================
+# 段 51 伙伴入驻（add-partner-onboarding，M12.1，S-4.9-01 / FR-4.9-1-1~7 / BR-4.9-08~11）
+# 链路：信用代码校验负例→高风险三级提交→逐节点 pass→自动建档(合格)+待激活账号+token→
+#       重发旧链失效→匿名激活(弱密码422/重复410)→通道创建/密钥/档位/证书→
+#       驳回≥3 自动关闭→401 负例
+# 断言：401 走 HTTP；403/409/410/422 是业务码用 BIZ
+# ============================================================================
+echo "== 段 51 伙伴入驻（申请→三级审核→自动建档→激活→通道→驳回关闭）开始 =="
+
+# 51.0 隔离与造数
+SQL "DELETE t FROM erp_scm_partner_activate_token t JOIN erp_mdm_supplier s ON s.ID=t.SUPPLIER_ID WHERE s.SUPPLIER_NAME LIKE 'PO 51%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.SUPPLIER_ID IN (SELECT ID FROM (SELECT ID FROM erp_mdm_supplier WHERE SUPPLIER_NAME LIKE 'PO 51%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE SUPPLIER_ID IN (SELECT ID FROM (SELECT ID FROM erp_mdm_supplier WHERE SUPPLIER_NAME LIKE 'PO 51%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_partner_apply_cert WHERE APPLY_ID IN (SELECT ID FROM (SELECT ID FROM erp_scm_partner_apply WHERE SUPPLIER_NAME LIKE 'PO 51%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_partner_apply WHERE SUPPLIER_NAME LIKE 'PO 51%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_supplier_version WHERE ENTITY_ID IN (SELECT ID FROM (SELECT ID FROM erp_mdm_supplier WHERE SUPPLIER_NAME LIKE 'PO 51%' OR ID='po51-sup-dup') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_supplier WHERE SUPPLIER_NAME LIKE 'PO 51%' OR ID='po51-sup-dup'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE EVENT_TYPE LIKE 'MDM.SUPPLIER%' AND IDEMPOTENCY_KEY LIKE 'SUP-0%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval_task WHERE APPR_ID IN (SELECT ID FROM (SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='PARTNER_ADMISSION') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PARTNER_ADMISSION'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='PARTNER_ADMISSION'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_credential WHERE PARTNER_CODE='PCH51'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_channel WHERE PARTNER_CODE='PCH51'" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_critical_group WHERE ID='po51-cg'" >/dev/null 2>&1
+
+# 51.1 BR-4.9-08 信用代码 17 位 → L1 422
+EQ "段51 信用代码非18位 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierName":"PO 51 短码","taxNo":"91310000MA1K35XX0","contactName":"联系人","contactPhone":"13800000000","contactEmail":"a@b.com","bankName":"招行","paymentTerms":"NET30"}' \
+  $B/api/proc/partner-applies)" "422"
+
+# 51.2 BR-4.9-08 信用代码重复 → L1 422（档案占位）
+SQL "INSERT INTO erp_mdm_supplier (ID, SUPPLIER_CODE, SUPPLIER_NAME, TAX_NO, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('po51-sup-dup','SUP-PO51D','PO 51 占位','91310000MA1K35XX02','QUALIFIED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段51 信用代码重复 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierName":"PO 51 重复","taxNo":"91310000MA1K35XX02","contactName":"联系人","contactPhone":"13800000000","contactEmail":"a@b.com","bankName":"招行","paymentTerms":"NET30"}' \
+  $B/api/proc/partner-applies)" "422"
+
+# 51.3 正常保存（高风险 150 万）→ 证照行 → 无附件提交 422
+OID51=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierName":"PO 51 高风险","taxNo":"91310000MA1K35XX03","contactName":"联系人王","contactPhone":"13800000001","contactEmail":"po51@example.com","bankName":"招商银行","paymentTerms":"NET30","estAnnualAmount":1500000}' \
+  $B/api/proc/partner-applies | J "d['data']['apply']['id']")
+[ -n "$OID51" ] && [ "$OID51" != "None" ] && ok "段51 申请单创建" || bad "段51 申请单创建失败（$OID51）"
+CID51=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"applyId\":\"$OID51\",\"certType\":\"LICENSE\",\"certNo\":\"91310000MA1K35XX03\",\"expireDate\":\"2099-12-31\"}" \
+  $B/api/proc/partner-applies/certs | J "d['data']['cert']['id']")
+[ -n "$CID51" ] && [ "$CID51" != "None" ] && ok "段51 证照行创建" || bad "段51 证照行创建失败（$CID51）"
+EQ "段51 无附件提交 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/proc/partner-applies/$OID51/submit)" "422"
+
+# 51.4 上传附件 → 提交 → 三级节点（>100 万高风险）
+PO51F=/tmp/po51-attach.txt; echo "PO51 smoke license" > "$PO51F"
+UP51=$(C -X POST -H "$(A $TADM)" -F "file=@$PO51F;filename=license.pdf" \
+  -F "bizType=PARTNER_APPLY_CERT" -F "bizId=$CID51" $B/api/common/attachments | J "d['code']")
+[ "$UP51" = "200" ] && ok "段51 证照附件上传" || bad "段51 附件上传失败（$UP51）"
+NC51=$(C -X POST -H "$(A $TADM)" $B/api/proc/partner-applies/$OID51/submit | J "d['data']['nodeCount']")
+[ "$NC51" = "3" ] && ok "段51 高风险强制三级审核" || bad "段51 节点数错（$NC51 期望 3）"
+EQ "段51 RISK_LEVEL 落值 HIGH" "$(SQL "SELECT RISK_LEVEL FROM erp_scm_partner_apply WHERE ID='$OID51'")" "HIGH"
+
+# 51.5 逐节点 pass → 自动建档 + 待激活账号
+for n in 1 2 3; do
+  T51=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$OID51' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+  P51=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+    -d "{\"taskId\":\"$T51\",\"opinion\":\"第${n}节点同意\"}" $B/api/qms/approvals/pass)
+  [ "$P51" = "200" ] && ok "段51 第${n}节点通过" || bad "段51 第${n}节点签署失败（$P51）"
+done
+EQ "段51 申请单 APPROVED" "$(SQL "SELECT STATUS FROM erp_scm_partner_apply WHERE ID='$OID51'")" "APPROVED"
+SUP51=$(SQL "SELECT SUPPLIER_ID FROM erp_scm_partner_apply WHERE ID='$OID51'")
+SUPCODE51=$(SQL "SELECT SUPPLIER_CODE FROM erp_mdm_supplier WHERE ID='$SUP51'")
+case "$SUPCODE51" in SUP-*) ok "段51 自动建档编码 $SUPCODE51" ;; *) bad "段51 建档编码错（$SUPCODE51）" ;; esac
+EQ "段51 档案直置 QUALIFIED" "$(SQL "SELECT STATUS FROM erp_mdm_supplier WHERE ID='$SUP51'")" "QUALIFIED"
+ACC51=$(SQL "SELECT ACCOUNT_ID FROM erp_scm_partner_apply WHERE ID='$OID51'")
+EQ "段51 待激活账号不可登录" "$(SQL "SELECT STATUS FROM erp_admin_user WHERE ID='$ACC51'")" "0"
+EQ "段51 激活 token 生成" "$(SQL "SELECT COUNT(*) FROM erp_scm_partner_activate_token WHERE ACCOUNT_ID='$ACC51' AND INVALID_FLAG='0' AND USED_AT IS NULL")" "1"
+
+# 51.6 激活链接管理：取链 → 重发旧链立即失效
+LNK51=$(C -H "$(A $TADM)" $B/api/proc/partner-applies/$OID51/activate-link | J "d['data']['token']")
+OLD51="$LNK51"
+NEW51=$(C -X POST -H "$(A $TADM)" $B/api/proc/partner-applies/$OID51/activate-link/regenerate | J "d['data']['token']")
+[ -n "$NEW51" ] && [ "$NEW51" != "$OLD51" ] && ok "段51 重新生成激活链接" || bad "段51 重发未生成新链（$NEW51）"
+EQ "段51 旧链立即失效 410" "$(BIZ $B/api/public/partner-activate/$OLD51)" "410"
+
+# 51.7 匿名激活：脱敏校验 → 弱密码 422 → 强密码激活 → 重复使用 410
+MASK51=$(C $B/api/public/partner-activate/$NEW51 | J "d['data']['supplierNameMasked']")
+case "$MASK51" in PO*|??*) [ -n "$MASK51" ] && [ "$MASK51" != "None" ] && ok "段51 脱敏回显（$MASK51）" || bad "段51 脱敏回显空" ;; *) bad "段51 脱敏回显错（$MASK51）" ;; esac
+EQ "段51 弱密码 422" "$(BIZ -X POST -H 'Content-Type: application/json' -d '{"password":"weak"}' \
+  $B/api/public/partner-activate/$NEW51/activate)" "422"
+ACT51=$(C -X POST -H 'Content-Type: application/json' -d '{"password":"Passw0rd!x"}' \
+  $B/api/public/partner-activate/$NEW51/activate | J "d['data']['activated']")
+[ "$ACT51" = "True" ] && ok "段51 激活成功设置密码" || bad "段51 激活失败（$ACT51）"
+EQ "段51 账号启用" "$(SQL "SELECT STATUS FROM erp_admin_user WHERE ID='$ACC51'")" "1"
+EQ "段51 token 一次性重复使用 410" "$(BIZ -X POST -H 'Content-Type: application/json' -d '{"password":"Passw0rd!y"}' \
+  $B/api/public/partner-activate/$NEW51/activate)" "410"
+
+# 51.8 通道配置（12.1.3 唯一配置入口）
+CH51=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"PCH51","partnerName":"PO 51 高风险","channelType":"API","protocol":"HTTPS","callbackUrl":"https://p.example/cb","partnerTier":"NORMAL"}' \
+  $B/api/proc/partner-channels | J "d['data']['channel']['id']")
+[ -n "$CH51" ] && [ "$CH51" != "None" ] && ok "段51 通道创建" || bad "段51 通道创建失败（$CH51）"
+EQ "段51 新建默认 SANDBOX（PROD 走会签）" "$(SQL "SELECT STATUS FROM erp_intf_channel WHERE ID='$CH51'")" "SANDBOX"
+EQ "段51 重复通道 409" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"PCH51","partnerName":"PO 51 高风险","channelType":"API","protocol":"HTTPS"}' \
+  $B/api/proc/partner-channels)" "409"
+KEY51=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"channelId\":\"$CH51\",\"scope\":\"po:read,asn:write\",\"ttlDays\":90}" \
+  $B/api/proc/partner-channels/keys)
+APIK51=$(echo "$KEY51" | J "d['data']['apiKey']")
+SECR51=$(echo "$KEY51" | J "d['data']['secret']")
+{ [ -n "$APIK51" ] && [ "$APIK51" != "None" ] && [ -n "$SECR51" ] && [ "$SECR51" != "None" ]; } \
+  && ok "段51 密钥明文仅本次返回" || bad "段51 密钥生成失败"
+SH51=$(SQL "SELECT SECRET_HASH FROM erp_intf_credential WHERE PARTNER_CODE='PCH51' ORDER BY ISSUE_AT DESC LIMIT 1")
+{ [ -n "$SH51" ] && [ "$SH51" != "$SECR51" ]; } && ok "段51 密钥落库为哈希非明文" || bad "段51 密钥落库异常（$SH51）"
+EQ "段51 沙箱凭证环境隔离" "$(SQL "SELECT ENV FROM erp_intf_credential WHERE PARTNER_CODE='PCH51' ORDER BY ISSUE_AT DESC LIMIT 1")" "SANDBOX"
+EQ "段51 限流档位配置（战略 500）" "$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"rateTier":"STRATEGIC"}' $B/api/proc/partner-channels/$CH51/rate-tier)" "200"
+EQ "段51 档位同步限额" "$(SQL "SELECT LIMIT_PER_MIN FROM erp_intf_channel WHERE ID='$CH51'")" "500"
+EQ "段51 非法档位 422" "$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"rateTier":"GOLD"}' $B/api/proc/partner-channels/$CH51/rate-tier)" "422"
+EQ "段51 证书过期日 422" "$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"certFingerprint":"AA:BB","certExpireDate":"2020-01-01"}' $B/api/proc/partner-channels/$CH51/cert)" "422"
+EQ "段51 证书更新 200" "$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"certFingerprint":"AA:BB:CC:DD","certExpireDate":"2099-12-31"}' $B/api/proc/partner-channels/$CH51/cert)" "200"
+
+# 51.9 驳回≥3 自动关闭（BR-4.9-10 语义）
+OID51R=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierName":"PO 51 三驳","taxNo":"91310000MA1K35XX04","contactName":"联系人李","contactPhone":"13800000002","contactEmail":"po51r@example.com","bankName":"工行","paymentTerms":"NET30","estAnnualAmount":50000}' \
+  $B/api/proc/partner-applies | J "d['data']['apply']['id']")
+CID51R=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"applyId\":\"$OID51R\",\"certType\":\"LICENSE\",\"certNo\":\"X\",\"expireDate\":\"2099-12-31\"}" \
+  $B/api/proc/partner-applies/certs | J "d['data']['cert']['id']")
+C -X POST -H "$(A $TADM)" -F "file=@$PO51F;filename=r.pdf" -F "bizType=PARTNER_APPLY_CERT" \
+  -F "bizId=$CID51R" $B/api/common/attachments >/dev/null
+for n in 1 2 3; do
+  SB=$(BIZ -X POST -H "$(A $TADM)" $B/api/proc/partner-applies/$OID51R/submit)
+  [ "$SB" = "200" ] || bad "段51 第${n}轮提交失败（$SB）"
+  TR=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$OID51R' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+  RJ=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+    -d "{\"taskId\":\"$TR\",\"reason\":\"第${n}次驳回原因\"}" $B/api/qms/approvals/reject)
+  [ "$RJ" = "200" ] || bad "段51 第${n}次驳回失败（$RJ）"
+  ST=$(SQL "SELECT STATUS FROM erp_scm_partner_apply WHERE ID='$OID51R'")
+  if [ "$n" -lt 3 ]; then
+    [ "$ST" = "DRAFT" ] && ok "段51 第${n}次驳回退回草稿" || bad "段51 第${n}次驳回后状态错（$ST）"
+  fi
+done
+EQ "段51 三次驳回自动关闭" "$ST" "CLOSED"
+case "$(SQL "SELECT CLOSE_REASON FROM erp_scm_partner_apply WHERE ID='$OID51R'")" in
+  *自动关闭*) ok "段51 关闭原因留痕" ;; *) bad "段51 关闭原因缺失" ;;
+esac
+
+# 51.10 401 负例
+EQ "段51 无令牌申请列表 401" "$(HTTP $B/api/proc/partner-applies)" "401"
+EQ "段51 无令牌创建通道 401" "$(HTTP -X POST $B/api/proc/partner-channels)" "401"
+
+echo "段 51 伙伴入驻追加完成"
+
+# ============================================================
+# 段 52：事件订阅（add-event-subscription，M12.2 四叶）
+# ============================================================
+
+# 52.0 隔离、角色造数与种子恢复
+SQL "DELETE FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'WATER:SMK52%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE EVENT_ID LIKE 'smk52-e%'" >/dev/null 2>&1
+SQL "DELETE d FROM erp_intf_delivery d WHERE d.PARTNER_CODE LIKE 'SMK52%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_subscription WHERE PARTNER_CODE LIKE 'SMK52%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_event_type WHERE EVENT_TYPE LIKE 'SM52%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_sla_alert WHERE ID='smk52-alert'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_vmi_stock WHERE SUPPLIER_ID='SMK52-SUP'" >/dev/null 2>&1
+SQL "DELETE l FROM erp_proc_vmi_agreement_line l JOIN erp_proc_vmi_agreement a ON a.ID=l.AGREE_ID WHERE a.SUPPLIER_ID='SMK52-SUP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_proc_vmi_agreement WHERE SUPPLIER_ID='SMK52-SUP'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME IN ('smk52-ops','smk52-arch')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME IN ('smk52-ops','smk52-arch')" >/dev/null 2>&1
+# 种子恢复（上一轮改过 schema/状态时保证幂等）
+SQL "UPDATE erp_intf_event_type SET STATUS='ENABLED', VERSION_MAJOR=1, VERSION_MINOR=0, SCHEMA_JSON='{\"required\":[{\"field\":\"supplierId\",\"type\":\"string\"},{\"field\":\"syncTime\",\"type\":\"string\"},{\"field\":\"items\",\"type\":\"array\"}]}' WHERE ID='evt-vmi-water-synced'" >/dev/null 2>&1
+# INTF_OPS / INTF_ARCH 账号（密码同 admin）
+for U in ops:INTF_OPS arch:INTF_ARCH; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk52-$S','smk52-$S',PASSWORD,'冒烟事件订阅-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk52-ur-$S','smk52-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+T52OPS=$(C -H 'Content-Type: application/json' -d '{"username":"smk52-ops","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T52ARCH=$(C -H 'Content-Type: application/json' -d '{"username":"smk52-arch","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+
+# 52.1 事件定义注册表（命名 422 / 重复 409 / 架构师写 200 / 运维写 403）
+EQ "段52 命名不合规 422" "$(BIZ -X POST -H "$(A $T52ARCH)" -H 'Content-Type: application/json' \
+  -d '{"eventType":"createDelivery","typeName":"坏命名"}' $B/api/intf/event-types)" "422"
+EQ "段52 注册事件类型 200" "$(BIZ -X POST -H "$(A $T52ARCH)" -H 'Content-Type: application/json' \
+  -d '{"eventType":"SM52_CREATED","typeName":"冒烟事件","schemaJson":"{\"required\":[{\"field\":\"poNo\",\"type\":\"string\"}]}","versionMajor":1,"versionMinor":0}' \
+  $B/api/intf/event-types)" "200"
+EQ "段52 重复注册 409" "$(BIZ -X POST -H "$(A $T52ARCH)" -H 'Content-Type: application/json' \
+  -d '{"eventType":"SM52_CREATED","typeName":"冒烟事件"}' $B/api/intf/event-types)" "409"
+EQ "段52 运维写事件定义 403" "$(BIZ -X POST -H "$(A $T52OPS)" -H 'Content-Type: application/json' \
+  -d '{"eventType":"SM52_FORBID","typeName":"越权"}' $B/api/intf/event-types)" "403"
+EQ "段52 无令牌事件定义 401" "$(HTTP $B/api/intf/event-types)" "401"
+
+# 52.2 发布校验（停用拒发 → 必填缺失拒发 → 正常发布版本信封），走 VMI 水位同步真实链路
+SQL "INSERT INTO erp_proc_vmi_agreement (ID, AGREE_NO, SUPPLIER_ID, SUPPLIER_NAME, SETTLE_CYCLE, TRANSFER_TIME, EFFECTIVE_DATE, EXPIRE_DATE, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk52-agr','SMK52-AGR','SMK52-SUP','冒烟 VMI 伙伴','M','09:00','2026-01-01','2099-12-31','EFFECTIVE','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_proc_vmi_agreement_line (ID, AGREE_ID, ITEM_CODE, ITEM_NAME, UNIT, MIN_QTY, MAX_QTY, UNIT_PRICE, PRICE_START, PRICE_END, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk52-agrl','smk52-agr','SMK52-IT1','冒烟 VMI 物料','PC',1,100,10,'2026-01-01','2099-12-31','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_inv_vmi_stock (ID, ITEM_CODE, ITEM_NAME, SUPPLIER_ID, SUPPLIER_NAME, QTY, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk52-stk','SMK52-IT1','冒烟 VMI 物料','SMK52-SUP','冒烟 VMI 伙伴',10,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+ET52=$(SQL "SELECT ID FROM erp_intf_event_type WHERE EVENT_TYPE='VMI.WATER_SYNCED'")
+# 停用 → 拒发
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"DISABLED"}' \
+  $B/api/intf/event-types/$ET52/toggle >/dev/null
+EQ "段52 停用类型拒发 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK52-SUP"}' $B/api/proc/vmi/water-sync)" "422"
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"ENABLED"}' \
+  $B/api/intf/event-types/$ET52/toggle >/dev/null
+# 必填缺失 → 拒发（临时 schema 加 ghost 必填并升 Major）
+SQL "UPDATE erp_intf_event_type SET SCHEMA_JSON='{\"required\":[{\"field\":\"supplierId\",\"type\":\"string\"},{\"field\":\"ghostField\",\"type\":\"string\"}]}', VERSION_MAJOR=2 WHERE ID='$ET52'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'WATER:SMK52%'" >/dev/null 2>&1
+EQ "段52 必填缺失拒发 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK52-SUP"}' $B/api/proc/vmi/water-sync)" "422"
+EQ "段52 拒发不入队" "$(SQL "SELECT COUNT(*) FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'WATER:SMK52%'")" "0"
+# 恢复 schema → 正常发布，信封版本 Major.Minor
+SQL "UPDATE erp_intf_event_type SET SCHEMA_JSON='{\"required\":[{\"field\":\"supplierId\",\"type\":\"string\"},{\"field\":\"syncTime\",\"type\":\"string\"},{\"field\":\"items\",\"type\":\"array\"}]}', VERSION_MAJOR=1, VERSION_MINOR=0 WHERE ID='$ET52'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'WATER:SMK52%'" >/dev/null 2>&1
+EQ "段52 正常发布 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK52-SUP"}' $B/api/proc/vmi/water-sync)" "200"
+case "$(SQL "SELECT PAYLOAD FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'WATER:SMK52%' LIMIT 1")" in
+  *'"eventVersion":"1.0"'*) ok "段52 信封版本 1.0" ;; *) bad "段52 信封版本缺失" ;;
+esac
+
+# 52.3 订阅配置（UK 409 / RETRY_MAX 范围 422）
+EQ "段52 创建订阅 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"SMK52P","eventType":"PROC.PO_PUSHED","callbackUrl":"http://127.0.0.1:9/sub","retryMax":5}' \
+  $B/api/intf/subscriptions)" "200"
+EQ "段52 订阅 UK 409" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"SMK52P","eventType":"PROC.PO_PUSHED"}' $B/api/intf/subscriptions)" "409"
+EQ "段52 RETRY_MAX 越界 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"SMK52Q","eventType":"PROC.ASN_CREATED","retryMax":9}' $B/api/intf/subscriptions)" "422"
+
+# 52.4 订阅路由与两级回落（直插 outbox 事件驱动，payload 抠 partnerCode）
+mk52evt() {
+  SQL "INSERT INTO erp_ops_outbox (ID, EVENT_ID, EVENT_TYPE, VERSION, RECORD_VERSION, OCCURRED_AT, SOURCE, IDEMPOTENCY_KEY, PAYLOAD, STATUS, DEL_FLAG, VER_NO)
+       VALUES ('$1','$1','PROC.PO_PUSHED',1,1,NOW(),'smoke','$1:v1','{\"partnerCode\":\"$2\",\"bizCode\":\"$1\"}','PENDING','0',0)" >/dev/null 2>&1
+  echo "$1"
+}
+mk52evt "smk52-e1" "SMK52P" >/dev/null
+mk52evt "smk52-e2" "SMK52Q" >/dev/null
+BIZ -X POST -H "$(A $TADM)" $B/api/intf/deliveries/scan >/dev/null
+EQ "段52 订阅命中快照 URL" "$(SQL "SELECT TARGET_URL FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")" "http://127.0.0.1:9/sub"
+EQ "段52 行级 RETRY_MAX 快照" "$(SQL "SELECT RETRY_MAX FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")" "5"
+EQ "段52 无订阅回落通道（留空）" "$(SQL "SELECT IFNULL(TARGET_URL,'') FROM erp_intf_delivery WHERE EVENT_ID='smk52-e2'")" ""
+# 停用订阅 → 后续事件回落
+SUB52=$(SQL "SELECT ID FROM erp_intf_subscription WHERE PARTNER_CODE='SMK52P' AND EVENT_TYPE='PROC.PO_PUSHED'")
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"DISABLED"}' \
+  $B/api/intf/subscriptions/$SUB52/toggle >/dev/null
+mk52evt "smk52-e3" "SMK52P" >/dev/null
+BIZ -X POST -H "$(A $TADM)" $B/api/intf/deliveries/scan >/dev/null
+EQ "段52 停用订阅回落（留空）" "$(SQL "SELECT IFNULL(TARGET_URL,'') FROM erp_intf_delivery WHERE EVENT_ID='smk52-e3'")" ""
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"ENABLED"}' \
+  $B/api/intf/subscriptions/$SUB52/toggle >/dev/null
+
+# 52.5 行级 RETRY_MAX 死信阈值（行快照 5 > 全局 3）
+SQL "UPDATE erp_intf_delivery SET RETRY_COUNT=5, NEXT_AT=NOW() WHERE EVENT_ID='smk52-e1'" >/dev/null 2>&1
+BIZ -X POST -H "$(A $TADM)" $B/api/intf/deliveries/scan >/dev/null
+EQ "段52 行级阈值转死信" "$(SQL "SELECT STATUS FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")" "DEAD"
+
+# 52.6 重放收口（复用原幂等键）
+EQ "段52 重放 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/intf/deliveries/$(SQL "SELECT ID FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")/replay)" "200"
+EQ "段52 重放计数+1" "$(SQL "SELECT REPLAY_COUNT FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")" "1"
+
+# 52.7 告警确认（12.2.4 复用 sla 端点）
+SQL "INSERT INTO erp_intf_sla_alert (ID, ALERT_KEY, ALERT_WINDOW, METRIC_KEY, PARTNER_CODE, LEVEL, MESSAGE, STATUS, ALERT_AT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk52-alert','SMK52_LATENCY',NOW(),'LATENCY_P95','SMK52P','CRITICAL','冒烟 SLA 告警','OPEN',NOW(),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段52 告警确认 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/intf/sla/alerts/smk52-alert/respond)" "200"
+EQ "段52 告警 ACK 留痕" "$(SQL "SELECT STATUS FROM erp_intf_sla_alert WHERE ID='smk52-alert'")" "ACK"
+
+# 52.8 权限负例（架构师不可操作投递 → /api/intf/** 兜底 403，Spring Security 层无 JSON body 用状态码断言）
+EQ "段52 架构师重放 403" "$(HTTP -X POST -H "$(A $T52ARCH)" $B/api/intf/deliveries/$(SQL "SELECT ID FROM erp_intf_delivery WHERE EVENT_ID='smk52-e1'")/replay)" "403"
+
+echo "段 52 事件订阅追加完成"
+
+# ============================================================
+# 段 53：接口调用操作台（add-interface-call-console，M12.3 三叶）
+# ============================================================
+
+# 53.0 隔离与造数（OPS/WH 角色 + 审计/历史/通道前缀 SMK53）
+SQL "DELETE FROM erp_intf_tier_change_log WHERE CALLER LIKE 'SMK53%' OR PARTNER_CODE LIKE 'SMK53%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_call_log WHERE CALLER LIKE 'SMK53%' OR REQ_ID LIKE 'SMK53-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_credential WHERE PARTNER_CODE='SMK53P'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_channel WHERE PARTNER_CODE='SMK53P'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME IN ('smk53-ops','smk53-wh')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME IN ('smk53-ops','smk53-wh')" >/dev/null 2>&1
+for U in ops:INTF_OPS wh:WAREHOUSE; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk53-$S','smk53-$S',PASSWORD,'冒烟调用台-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk53-ur-$S','smk53-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+T53OPS=$(C -H 'Content-Type: application/json' -d '{"username":"smk53-ops","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T53WH=$(C -H 'Content-Type: application/json' -d '{"username":"smk53-wh","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "$T53OPS" ] && [ "$T53OPS" != "None" ] && ok "段53 INTF_OPS 登录" || bad "段53 INTF_OPS 登录失败"
+
+# 53.1 菜单三叶 PERM（与 099 生成物一致）
+EQ "段53 菜单 M12-3 父 PERM" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-3'")" "ROLE_INTF_OPS,ROLE_ADMIN"
+EQ "段53 三叶 PERM 齐" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID LIKE 'M12-3-%' AND PERM='ROLE_INTF_OPS,ROLE_ADMIN'")" "3"
+
+# 53.2 七组端点 200（INTF_OPS 可读，spec 12.3.2 权限场景）
+for ep in "auth-rejections" "rate-overview" "tier-changes" "rate-trend" "trace/SMK53-NOPE" "audit-aggregates" "credentials"; do
+  EQ "段53 端点 $ep" "$(HTTP -H "$(A $T53OPS)" $B/api/intf/call-console/$ep)" "200"
+done
+EQ "段53 call-logs respGroup 扩展" "$(HTTP -H "$(A $T53OPS)" "$B/api/intf/call-logs?respGroup=2xx")" "200"
+
+# 53.3 认证拒绝四类分组与明细对账（spec 12.3.1 对账口径）
+for row in "400|INVALID_ARGUMENT" "401|SECURITY_EVENT:HMAC 签名不匹配" "401|UNAUTHENTICATED" "403|"; do
+  RC=${row%%|*}; EC=${row##*|}
+  SQL "INSERT INTO erp_intf_call_log (ID,CALLER,API_PATH,HTTP_METHOD,REQ_ID,RESP_CODE,ERR_CODE,COST_MS,RATE_HIT,CIRCUIT_HIT,ENV,CALL_AT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       VALUES (CONCAT('smk53-a',UUID()),'SMK53-R','/api/open/ping','POST',CONCAT('SMK53-R-',UUID()),$RC,'${EC}',1,0,0,'SANDBOX',NOW(),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+done
+EQ "段53 分组总数=明细总数=4" "$(C -H "$(A $T53OPS)" "$B/api/intf/call-console/auth-rejections?caller=SMK53-R" | J "str(sum(g['total'] for g in d['data']['groups']))+'/'+str(d['data']['detail']['total'])")" "4/4"
+
+# 53.4 档位变更落历史（12.1.3 写入点 MANUAL 同源留痕）
+CH53=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"partnerCode":"SMK53P","partnerName":"冒烟调用台伙伴","channelType":"API","protocol":"HTTPS"}' \
+  $B/api/proc/partner-channels | J "d['data']['channel']['id']")
+[ -n "$CH53" ] && [ "$CH53" != "None" ] && ok "段53 通道创建" || bad "段53 通道创建失败（$CH53）"
+EQ "段53 手动调档 200" "$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"rateTier":"STRATEGIC"}' $B/api/proc/partner-channels/$CH53/rate-tier)" "200"
+EQ "段53 历史落 MANUAL 行" "$(SQL "SELECT COUNT(*) FROM erp_intf_tier_change_log WHERE PARTNER_CODE='SMK53P' AND CHANGE_TYPE='MANUAL' AND TIER_FROM='NEW' AND TIER_TO='STRATEGIC'")" "1"
+EQ "段53 历史端点可查" "$(C -H "$(A $T53OPS)" "$B/api/intf/call-console/tier-changes?caller=SMK53P" | J "str(d['data']['total'])")" "1"
+
+# 53.5 Trace 下钻含被拒请求（spec 12.3.3 场景）
+SQL "INSERT INTO erp_intf_call_log (ID,CALLER,API_PATH,HTTP_METHOD,REQ_ID,RESP_CODE,ERR_CODE,COST_MS,RATE_HIT,CIRCUIT_HIT,ENV,CALL_AT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk53-req401','SMK53-R','/api/open/ping','POST','SMK53-REQ-401',401,'UNAUTHENTICATED',1,0,0,'SANDBOX',NOW(),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段53 Trace 下钻含 401" "$(C -H "$(A $T53OPS)" $B/api/intf/call-console/trace/SMK53-REQ-401 | J "str(d['data'][0]['respCode']) if d['data'] else 'none'")" "401"
+
+# 53.6 权限负例（spec 12.3.2：无关角色不可见、无令牌 401）
+EQ "段53 无令牌 401" "$(HTTP $B/api/intf/call-console/rate-overview)" "401"
+EQ "段53 无关角色 403" "$(HTTP -H "$(A $T53WH)" $B/api/intf/call-console/rate-overview)" "403"
+
+echo "段 53 接口调用操作台追加完成"
+
+# ============================================================
+# 段 54：报文处理操作台（add-edi-message-console，M12.4 三叶）
+# ============================================================
+
+# 54.0 隔离（SMK54 前缀：报文/轨迹/回执/工单/凭证）
+SQL "DELETE FROM erp_intf_msg_retry_trace WHERE MSG_ID IN (SELECT ID FROM (SELECT ID FROM erp_intf_message WHERE PARTNER_CODE LIKE 'SMK54%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_msg_receipt WHERE MSG_ID IN (SELECT ID FROM (SELECT ID FROM erp_intf_message WHERE PARTNER_CODE LIKE 'SMK54%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_ticket WHERE PARTNER_CODE LIKE 'SMK54%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_message WHERE PARTNER_CODE LIKE 'SMK54%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_credential WHERE PARTNER_CODE='SMK54P'" >/dev/null 2>&1
+
+# 54.1 菜单三叶 PERM（spec 菜单路由与权限场景）
+EQ "段54 菜单 M12-4 父 PERM" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-4'")" "ROLE_INTF_OPS,ROLE_ADMIN"
+EQ "段54 三叶 PERM 齐" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID LIKE 'M12-4-%' AND PERM='ROLE_INTF_OPS,ROLE_ADMIN'")" "3"
+
+# 54.2 入口②：页面上传（语法失败也先独立落台账 RECEIVED→REJECTED，spec 三入口接收）
+RAW1='{"idempotencyKey":"SMK54:ORDERS:M1:v1","header":{"supplierId":"S1","orderDate":"20261028"},"lines":[{"qty":1,"unit":"PC","unitPrice":1}]}'
+D1=$(python3 -c 'import json,sys;print(json.dumps({"partnerCode":"SMK54P","msgType":"ORDERS","raw":sys.argv[1]}))' "$RAW1")
+EQ "段54 上传（语法失败）200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "$D1" $B/api/intf/messages/upload)" "200"
+EQ "段54 上传落台账 REJECTED" "$(SQL "SELECT STATUS FROM erp_intf_message WHERE IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")" "REJECTED"
+
+# 54.3 对方重发两次（同幂等键同载荷）→ 第 3 次耗尽转 MANUAL，轨迹逐次留痕不覆盖（BR-4.9-24）
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "$D1" $B/api/intf/messages/upload >/dev/null 2>&1
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "$D1" $B/api/intf/messages/upload >/dev/null 2>&1
+EQ "段54 重试耗尽转 MANUAL" "$(SQL "SELECT STATUS FROM erp_intf_message WHERE IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")" "MANUAL"
+EQ "段54 轨迹 3 条不覆盖" "$(SQL "SELECT COUNT(*) FROM erp_intf_msg_retry_trace t JOIN erp_intf_message m ON m.ID=t.MSG_ID WHERE m.IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")" "3"
+EQ "段54 轨迹序号 1,2,3" "$(SQL "SELECT GROUP_CONCAT(ATTEMPT_NO ORDER BY ATTEMPT_NO) FROM erp_intf_msg_retry_trace t JOIN erp_intf_message m ON m.ID=t.MSG_ID WHERE m.IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")" "1,2,3"
+EQ "段54 重试耗尽生成工单" "$(SQL "SELECT COUNT(*) FROM erp_intf_ticket WHERE PARTNER_CODE='SMK54P' AND SOURCE='EDI_MANUAL'")" "1"
+
+# 54.4 detail 返回体扩展（design D2：轨迹升序 + 回执每次结论各一条）
+M54=$(SQL "SELECT ID FROM erp_intf_message WHERE IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")
+EQ "段54 detail 轨迹/回执 3/3" "$(C -H "$(A $TADM)" $B/api/intf/messages/$M54 | J "str(len(d['data']['retryTrace']))+'/'+str(len(d['data']['receipts']))")" "3/3"
+EQ "段54 回执按结论各留一条" "$(C -H "$(A $TADM)" $B/api/intf/messages/$M54 | J "','.join(sorted(set(r['conclusion'] for r in d['data']['receipts'])))")" "MANUAL,REJECTED"
+
+# 54.5 人工重放（保留原幂等键）：再次语法失败 → 轨迹第 4 条，历史不被清除（spec 轨迹不可改删）
+C -X POST -H "$(A $TADM)" $B/api/intf/messages/$M54/replay >/dev/null 2>&1
+EQ "段54 重放后轨迹 4 条历史保留" "$(SQL "SELECT COUNT(*) FROM erp_intf_msg_retry_trace t JOIN erp_intf_message m ON m.ID=t.MSG_ID WHERE m.IDEMPOTENCY_KEY='SMK54:ORDERS:M1:v1'")" "4"
+
+# 54.6 幂等跳过：已处理报文同键同载荷再推 → SKIPPED 回执行且主行不变（BR-4.9-26）
+RAW2='{"idempotencyKey":"SMK54:ORDERS:M2:v1","header":{"supplierId":"S1","orderDate":"20261028"},"lines":[{"itemCode":"M1","qty":1,"unit":"PC","unitPrice":1}]}'
+HASH2=$(python3 -c 'import hashlib,sys;print(hashlib.sha256(sys.argv[1].encode()).hexdigest())' "$RAW2")
+SQL "INSERT INTO erp_intf_message (ID,MSG_NO,PARTNER_CODE,MSG_TYPE,MSG_VERSION,IDEMPOTENCY_KEY,RAW_PAYLOAD,PAYLOAD_HASH,SOURCE,STATUS,LINE_TOTAL,LINE_OK,LINE_FAIL,RETRY_COUNT,RECEIVED_AT,RECEIPT_SENT,DEL_FLAG,VER_NO) VALUES ('smk54-m2','SMK54-MSG-2','SMK54P','ORDERS','v1','SMK54:ORDERS:M2:v1','$RAW2','$HASH2','UPLOAD','PROCESSED',1,1,0,0,NOW(),1,'0',0)" >/dev/null 2>&1
+D2=$(python3 -c 'import json,sys;print(json.dumps({"partnerCode":"SMK54P","msgType":"ORDERS","raw":sys.argv[1]}))' "$RAW2")
+R2=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "$D2" $B/api/intf/messages/upload | J "d['data'].get('skipped','')")
+[ "$R2" = "True" ] && ok "段54 幂等跳过标注" || bad "段54 幂等跳过未标注（$R2）"
+EQ "段54 SKIPPED 回执行" "$(SQL "SELECT CONCLUSION FROM erp_intf_msg_receipt WHERE MSG_ID='smk54-m2'")" "SKIPPED"
+EQ "段54 跳过主行仍 PROCESSED" "$(SQL "SELECT STATUS FROM erp_intf_message WHERE ID='smk54-m2'")" "PROCESSED"
+
+# 54.7 入口③：模拟伙伴推送（凭证造数 → 真实签名经开放入口落台账）
+SQL "INSERT IGNORE INTO erp_intf_credential (ID,CHANNEL_ID,PARTNER_CODE,API_KEY,SECRET_HASH,SECRET_SALT,SIGN_KEY,ENV,RATE_TIER,LIMIT_PER_MIN,STATUS,REMIND_30,REMIND_7,REMIND_1,DEL_FLAG,VER_NO) VALUES ('smk54-cred','','SMK54P','smk54-key','','','smk54-sign','SANDBOX','NEW',30,'ACTIVE',0,0,0,'0',0)" >/dev/null 2>&1
+RAW3='{"idempotencyKey":"SMK54:ORDERS:M3:v1","header":{"supplierId":"S1","orderDate":"20261028"},"lines":[{"qty":1,"unit":"PC","unitPrice":1}]}'
+D3=$(python3 -c 'import json,sys;print(json.dumps({"partnerCode":"SMK54P","msgType":"ORDERS","raw":sys.argv[1]}))' "$RAW3")
+SIM=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "$D3" $B/api/intf/messages/simulate-push | J "d['data']['status']")
+[ "$SIM" = "200" ] && ok "段54 模拟推送经开放入口 200" || bad "段54 模拟推送失败（$SIM）"
+EQ "段54 模拟推送落台账" "$(SQL "SELECT COUNT(*) FROM erp_intf_message WHERE IDEMPOTENCY_KEY='SMK54:ORDERS:M3:v1'")" "1"
+
+# 54.8 权限负例（spec 传输层拒绝场景：开放入口无签名拒收 + 无令牌 401）
+# 网关判定顺序：X-Timestamp 先于签名（缺时间戳 400）→ 无签名 401 须携带时间戳头
+EQ "段54 开放入口无签名 401" "$(HTTP -X POST -H 'Content-Type: application/json' -H "X-Timestamp: $(python3 -c 'import time;print(int(time.time()*1000))')" -d "$D1" $B/api/open/edi/ORDERS)" "401"
+EQ "段54 无令牌台账 401" "$(HTTP $B/api/intf/messages)" "401"
+
+echo "段 54 报文处理操作台追加完成"
+
+# ============================================================
+# 段 55：订单协同操作台（add-po-collaboration-console，M12.5 三叶）
+# ============================================================
+
+# 55.0 隔离（PCC55 前缀：PO/流水/工单/outbox/菜单已有 PERM）
+SQL "DELETE FROM erp_po_coop_ticket WHERE SUPPLIER_ID LIKE 'PCC55%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_proc_po_coop WHERE SUPPLIER_ID LIKE 'PCC55%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'PCC55%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_proc_po WHERE SUPPLIER_ID LIKE 'PCC55%'" >/dev/null 2>&1
+
+# 55.1 菜单三叶 PERM（spec 补链与收口场景）
+EQ "段55 菜单 M12-5 父 PERM" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-5'")" "ROLE_PM,ROLE_ADMIN,ROLE_WAREHOUSE"
+EQ "段55 12.5.1/2 PERM" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID IN ('M12-5-1','M12-5-2') AND PERM='ROLE_PM,ROLE_ADMIN,ROLE_WAREHOUSE'")" "2"
+EQ "段55 12.5.3 补链 PERM（与 2.8.1 一致）" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-5-3'")" "ROLE_PM,ROLE_ADMIN"
+
+# 55.2 PO 造数（APPROVED 直插 + 推送流水 + outbox v1/v2 台账事件）
+PO55() {
+  SQL "INSERT INTO erp_proc_po (ID,PO_NO,PO_TYPE,SOURCE,SUPPLIER_ID,SUPPLIER_NAME,STATUS,APPROVAL_BATCH,CURRENCY,TOTAL_AMT,CURR_VERSION,CONFIRM_STATUS,COOP_LOCK,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       VALUES ('pcc55-$1','PCC55-$1','NORMAL','MANUAL','PCC55-SUP','PCC55 供应商','APPROVED',0,'CNY',10000,1,'PUSHED','0','smoke',NOW(),'0',0)" >/dev/null 2>&1
+  SQL "INSERT INTO erp_proc_po_coop (ID,PO_ID,PO_NO,SUPPLIER_ID,ACTION_TYPE,SOURCE,DETAIL,ACTION_AT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       VALUES ('pcc55-l-$1','pcc55-$1','PCC55-$1','PCC55-SUP','PUSHED','SYSTEM','v1 下达推送',DATE_SUB(NOW(), INTERVAL 2 HOUR),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+}
+PO55 A
+SQL "INSERT INTO erp_ops_outbox (ID,EVENT_ID,EVENT_TYPE,VERSION,RECORD_VERSION,OCCURRED_AT,SOURCE,IDEMPOTENCY_KEY,PAYLOAD,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('pcc55-ob1',UUID(),'PROC.PO_PUSHED',1,1,NOW(),'PROC','PCC55-A#PUSH:v1','{\"poNo\":\"PCC55-A\"}','DELIVERED','smoke',NOW(),'0',0),
+            ('pcc55-ob2',UUID(),'PROC.PO_PUSHED',2,2,NOW(),'PROC','PCC55-A#PUSH:v2','{\"poNo\":\"PCC55-A\",\"version\":2}','DELIVERED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段55 推送台账 v1/v2 两条" "$(C -H "$(A $TADM)" "$B/api/proc/po-coops/push-ledger?poNo=PCC55-A" | J "str(d['data']['total'])")" "2"
+
+# 55.3 确认四分支（默认确认 / 接受改期 / 结构化数量建议 / 协商留痕）
+# 默认确认：直插 PO 无行数据 → 显式传 promiseDate（等价"接受原交期"）
+PO55 B
+EQ "段55 默认确认 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"promiseDate":"2026-11-05"}' $B/api/proc/po-coops/pcc55-b/confirm)" "200"
+EQ "段55 确认后 CONFIRMED" "$(SQL "SELECT CONFIRM_STATUS FROM erp_proc_po WHERE ID='pcc55-b'")" "CONFIRMED"
+# 接受改期：SQL 模拟供应商门户已申请（门户端点有行级隔离，冒烟不绑门户账号）
+PO55 C
+SQL "UPDATE erp_proc_po_coop SET ACTION_TYPE='CHANGE_REQUEST' WHERE ID='pcc55-l-c'" >/dev/null 2>&1
+SQL "UPDATE erp_proc_po SET CONFIRM_STATUS='CHANGE_PENDING' WHERE ID='pcc55-c'" >/dev/null 2>&1
+EQ "段55 接受改期 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"promiseDate":"2026-11-11","remark":"接受提前"}' $B/api/proc/po-coops/pcc55-c/change-accept)" "200"
+EQ "段55 改期写回 promiseDate" "$(SQL "SELECT PROMISE_DATE FROM erp_proc_po WHERE ID='pcc55-c'")" "2026-11-11"
+# 结构化数量建议（confirm 附 qtySuggested/qtyReason，不写回 PO）
+PO55 D
+EQ "段55 数量建议确认 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"promiseDate":"2026-11-08","qtySuggested":"100","qtyReason":"产能不足"}' $B/api/proc/po-coops/pcc55-d/confirm)" "200"
+EQ "段55 数量建议结构化落库" "$(SQL "SELECT CONCAT(QTY_SUGGESTED,'/',QTY_REASON) FROM erp_proc_po_coop WHERE PO_NO='PCC55-D' AND ACTION_TYPE='CONFIRM'")" "100.000/产能不足"
+# 协商留痕
+PO55 E
+SQL "UPDATE erp_proc_po SET CONFIRM_STATUS='CHANGE_PENDING' WHERE ID='pcc55-e'" >/dev/null 2>&1
+EQ "段55 发起协商 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"note":"请评估提前至 11-05 的可行性"}' $B/api/proc/po-coops/pcc55-e/negotiate)" "200"
+EQ "段55 协商 NEGOTIATE 留痕" "$(SQL "SELECT COUNT(*) FROM erp_proc_po_coop WHERE PO_NO='PCC55-E' AND ACTION_TYPE='NEGOTIATE' AND DETAIL LIKE '%11-05%'")" "1"
+EQ "段55 协商不改 PO 状态" "$(SQL "SELECT CONFIRM_STATUS FROM erp_proc_po WHERE ID='pcc55-e'")" "CHANGE_PENDING"
+
+# 55.4 超时倒计时两级（推送 50h → 已超催办、距升级 22h）
+SQL "UPDATE erp_proc_po_coop SET ACTION_AT=DATE_SUB(NOW(), INTERVAL 50 HOUR) WHERE ID='pcc55-l-a'" >/dev/null 2>&1
+OVER=$(C -H "$(A $TADM)" "$B/api/proc/po-coops?keyword=PCC55-A" | J "str(d['data']['records'][0]['overdueHours'])+'/'+str(d['data']['records'][0].get('escalateInHours'))")
+CONTAINS "段55 倒计时两级（overdue>0 / escalateIn=22）" "$OVER" "/22"
+
+# 55.5 连续 3 张超时锁定 → OPEN 工单
+# lockIfNeeded 取该供应商"最近 3 张推送"判连续超时 → 先把 A~E 组回拨 90h 让 L 组成为最近且全部超时
+for X in L1 L2 L3; do PO55 $X; done
+SQL "UPDATE erp_proc_po_coop SET ACTION_AT=DATE_SUB(NOW(), INTERVAL 90 HOUR) WHERE SUPPLIER_ID='PCC55-SUP' AND ACTION_TYPE='PUSHED'" >/dev/null 2>&1
+SQL "UPDATE erp_proc_po_coop SET ACTION_AT=DATE_SUB(NOW(), INTERVAL 80 HOUR) WHERE PO_NO IN ('PCC55-L1','PCC55-L2','PCC55-L3') AND ACTION_TYPE='PUSHED'" >/dev/null 2>&1
+C -H "$(A $TADM)" "$B/api/proc/po-coops?keyword=PCC55-L" >/dev/null 2>&1
+EQ "段55 锁定生成 OPEN 工单" "$(SQL "SELECT COUNT(*) FROM erp_po_coop_ticket WHERE SUPPLIER_ID='PCC55-SUP' AND STATUS='OPEN'")" "1"
+EQ "段55 工单含 3 张 PO" "$(SQL "SELECT LOCK_PO_NOS FROM erp_po_coop_ticket WHERE SUPPLIER_ID='PCC55-SUP' AND STATUS='OPEN'" | tr '、' ' ' | tr ' ' '\n' | grep -c PCC55)" "3"
+EQ "段55 确认入口锁定 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/proc/po-coops/pcc55-l1/confirm)" "422"
+
+# 55.6 解锁必须经工单（无工单 422 → resolve DONE L5 → unlocks 收紧 422）
+EQ "段55 无工单解锁 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"supplierId":"PCC55-NOTLOCK","remark":"x"}' $B/api/proc/po-coops/unlocks)" "422"
+T55TID=$(SQL "SELECT ID FROM erp_po_coop_ticket WHERE SUPPLIER_ID='PCC55-SUP' AND STATUS='OPEN'")
+EQ "段55 原因必填 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"reason":" "}' $B/api/proc/po-coops/tickets/$T55TID/resolve)" "422"
+EQ "段55 工单解锁 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"reason":"继续合作，观察下批交付"}' $B/api/proc/po-coops/tickets/$T55TID/resolve)" "200"
+EQ "段55 工单 DONE+L5 留痕" "$(SQL "SELECT CONCAT(STATUS,'/',UNLOCK_BY IS NOT NULL,'/',UNLOCK_REASON IS NOT NULL) FROM erp_po_coop_ticket WHERE ID='$T55TID'")" "DONE/1/1"
+EQ "段55 解锁后 coopLock 清零" "$(SQL "SELECT GROUP_CONCAT(DISTINCT COOP_LOCK) FROM erp_proc_po WHERE SUPPLIER_ID='PCC55-SUP'")" "0"
+EQ "段55 已解锁再解锁 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"supplierId":"PCC55-SUP","remark":"x"}' $B/api/proc/po-coops/unlocks)" "422"
+EQ "段55 时间线含解锁" "$(SQL "SELECT COUNT(*) FROM erp_proc_po_coop WHERE SUPPLIER_ID='PCC55-SUP' AND ACTION_TYPE='UNLOCK' AND DETAIL LIKE '%工单%'")" "1"
+
+# 55.7 权限负例与 2.8.2 降级
+EQ "段55 无令牌工单 401" "$(HTTP $B/api/proc/po-coops/tickets)" "401"
+EQ "段55 2.8.2 PO Tab 无操作按钮" "$(grep -cE 'openConfirm|openUnlock|doRemind|submitConfirm' frontend/src/views/proc/portal-collaboration/index.vue)" "0"
+EQ "段55 2.8.2 收口跳转存在" "$(grep -c '/m/12.5.1' frontend/src/views/proc/portal-collaboration/index.vue | head -1)" "1"
+
+echo "段 55 订单协同操作台追加完成"
+
+# ============================================================ 段 56：对账协同操作台
+# ============================================================ 段 56：对账协同操作台（add-reconciliation-console，M12.6 两叶）
+
+# 56.0 隔离（SMK56 供应商前缀）
+SQL "DELETE FROM erp_fin_supplier_statement WHERE SUPPLIER_ID LIKE 'SMK56%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_fin_accrual WHERE SUPPLIER_ID LIKE 'SMK56%'" >/dev/null 2>&1
+
+# 56.1 菜单 PERM（spec 菜单路由与权限）
+EQ "段56 菜单 M12-6 父 PERM" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-6'")" "ROLE_PM,ROLE_FINANCE_MGR,ROLE_ADMIN"
+EQ "段56 两叶 PERM" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID IN ('M12-6-1','M12-6-2') AND PERM='ROLE_PM,ROLE_FINANCE_MGR,ROLE_ADMIN'")" "2"
+EQ "段56 路由两条" "$(grep -cE '/m/12.6.1|/m/12.6.2' frontend/src/router/index.js)" "2"
+
+# 56.2 登记两路径（容差内 ACCEPTED / 超容差 EXCEPTION+冻结）
+SQL "INSERT INTO erp_fin_accrual (ID,ACCRUAL_NO,SOURCE_TYPE,SUPPLIER_ID,AMOUNT,OFFSETTED_AMOUNT,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk56-acc1','SMK56AC001','GR','SMK56-A',1000,0,'OPEN','smoke',NOW(),'0',0)" >/dev/null 2>&1
+STMT_A=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK56-A","supplierName":"SMK56 容差内供应商","stmtAmount":1000}' \
+  $B/api/fin/statements | J "d['data']['id']")
+EQ "段56 容差内登记 ACCEPTED" "$(SQL "SELECT STATUS FROM erp_fin_supplier_statement WHERE ID='$STMT_A'")" "ACCEPTED"
+STMT_B=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK56-B","supplierName":"SMK56 冻结供应商","stmtAmount":2000}' \
+  $B/api/fin/statements | J "d['data']['id']")
+EQ "段56 超容差登记 EXCEPTION" "$(SQL "SELECT STATUS FROM erp_fin_supplier_statement WHERE ID='$STMT_B'")" "EXCEPTION"
+
+# 56.3 系统匹配（S-4.9-06：ERP 侧无 OPEN 暂估 → 全部供应商侧标红）
+EQ "段56 系统匹配 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/fin/statements/$STMT_B/match)" "200"
+EQ "段56 匹配标红 1 笔" "$(C -X POST -H "$(A $TADM)" $B/api/fin/statements/$STMT_B/match | J "str(d['data']['redCount'])")" "1"
+EQ "段56 匹配留痕落库" "$(SQL "SELECT COUNT(*) FROM erp_fin_supplier_statement WHERE ID='$STMT_B' AND MATCH_BY IS NOT NULL AND MATCH_AT IS NOT NULL")" "1"
+
+# 56.4 财务 HTTP 权限矩阵（spec 财务双签与只读查询 HTTP 可达）
+TF=$(C -H 'Content-Type: application/json' -d '{"username":"finmgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+EQ "段56 财务读列表 200" "$(HTTP -H "$(A $TF)" "$B/api/fin/statements?current=1&size=5")" "200"
+EQ "段56 财务 confirm 进服务层（非403→422 状态拦截）" "$(BIZ -X POST -H "$(A $TF)" $B/api/fin/statements/$STMT_A/confirm)" "422"
+EQ "段56 财务登记 403（口径不放宽）" "$(HTTP -X POST -H "$(A $TF)" -H 'Content-Type: application/json' -d '{}' $B/api/fin/statements)" "403"
+EQ "段56 财务匹配 403（口径不放宽）" "$(HTTP -X POST -H "$(A $TF)" -H 'Content-Type: application/json' -d '{}' $B/api/fin/statements/$STMT_B/match)" "403"
+EQ "段56 无令牌 401" "$(HTTP $B/api/fin/statements)" "401"
+
+# 56.5 冻结阻断回显（C-4.2-15 L2：单号+差额 422）
+PAY_MSG=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK56-B","applyAmount":100,"invoiceIds":["fake-inv"]}' $B/api/fin/payments | J "d['message']")
+CONTAINS "段56 冻结中付款 422 回显单号" "$PAY_MSG" "$(SQL "SELECT STMT_NO FROM erp_fin_supplier_statement WHERE ID='$STMT_B'")"
+CONTAINS "段56 冻结文案 C-4.2-15" "$PAY_MSG" "对账差异冻结付款"
+
+# 56.6 双签闭环（发起 → 空意见 422 → PM 签不解冻 → 财务签 CLOSED）
+EQ "段56 发起双签 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/fin/statements/$STMT_B/confirm)" "200"
+EQ "段56 重复发起 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/fin/statements/$STMT_B/confirm)" "422"
+TASK_PM=$(C -H "$(A $TADM)" $B/api/qms/approvals/todo | J "[t['taskId'] for t in d['data'] if t.get('bizType')=='StatementReconcile' and t.get('bizId')=='$STMT_B' and t.get('kind')=='SIGN'][0]")
+EQ "段56 空意见签署 422（意见必填）" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TASK_PM\",\"opinion\":\"\"}" $B/api/qms/approvals/pass)" "422"
+EQ "段56 PM 节点签署 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TASK_PM\",\"opinion\":\"核对入库明细后接受差异\"}" $B/api/qms/approvals/pass)" "200"
+EQ "段56 单节点不解冻" "$(SQL "SELECT STATUS FROM erp_fin_supplier_statement WHERE ID='$STMT_B'")" "EXCEPTION"
+TASK_FIN=$(C -H "$(A $TF)" $B/api/qms/approvals/todo | J "[t['taskId'] for t in d['data'] if t.get('bizType')=='StatementReconcile' and t.get('bizId')=='$STMT_B' and t.get('kind')=='SIGN'][0]")
+EQ "段56 财务节点签署 200" "$(BIZ -X POST -H "$(A $TF)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TASK_FIN\",\"opinion\":\"复核差异清单，同意解冻\"}" $B/api/qms/approvals/pass)" "200"
+EQ "段56 双签完成 CLOSED" "$(SQL "SELECT STATUS FROM erp_fin_supplier_statement WHERE ID='$STMT_B'")" "CLOSED"
+EQ "段56 双签人留痕 L5" "$(SQL "SELECT COUNT(*) FROM erp_fin_supplier_statement WHERE ID='$STMT_B' AND PM_CONFIRM_BY IS NOT NULL AND FIN_CONFIRM_BY IS NOT NULL AND PM_OPINION IS NOT NULL AND FIN_OPINION IS NOT NULL")" "1"
+
+# 56.7 关闭后恢复（越过冻结 → 进入发票校验）
+PAY_MSG2=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK56-B","applyAmount":100,"invoiceIds":["fake-inv"]}' $B/api/fin/payments | J "d['message']")
+CONTAINS "段56 解冻后不再冻结拦截" "$PAY_MSG2" "关联发票不存在"
+
+# 56.8 收口源码断言（2.7.3 Tab1 / 2.8.2 recon Tab 降级只读+跳转）
+EQ "段56 2.7.3 无写动作函数" "$(grep -cE 'openStatement|doConfirmStatement|submitStatement' frontend/src/views/proc/payment/index.vue)" "0"
+EQ "段56 2.7.3 跳转存在" "$(grep -c '/m/12.6.1' frontend/src/views/proc/payment/index.vue)" "1"
+EQ "段56 2.8.2 无匹配动作" "$(grep -cE 'doMatch|matchStatementApi' frontend/src/views/proc/portal-collaboration/index.vue)" "0"
+EQ "段56 2.8.2 跳转存在" "$(grep -c '/m/12.6.1' frontend/src/views/proc/portal-collaboration/index.vue)" "1"
+
+echo "段 56 对账协同操作台追加完成"
+
+# ============================================================ 段 57：服务监控操作台
+# ============================================================ 段 57：服务监控操作台（add-service-monitoring-console，M12.7 三叶）
+
+# 57.0 隔离与账号
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME IN ('smk57-arch','smk57-ops','smk57-portal')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME IN ('smk57-arch','smk57-ops','smk57-portal')" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_channel WHERE PARTNER_CODE IN ('SMK57P','SMK57Q')" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_sla_report WHERE MONTH_TAG IN ('209905','209906') OR TITLE LIKE 'SMK57%'" >/dev/null 2>&1
+# 当月报告由本段生成（生成人=smk57-arch），重跑前必须清——否则撞状态机 422 级联
+SQL "DELETE FROM erp_intf_sla_report WHERE MONTH_TAG=DATE_FORMAT(NOW(),'%Y%m') AND GENERATED_BY='smk57-arch'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_sla_metric WHERE PARTNER_CODE IN ('SMK57P','SMK57Q','SMK57NONE')" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_call_log WHERE REQ_ID LIKE 'SMK57-%'" >/dev/null 2>&1
+for U in arch:INTF_ARCH ops:INTF_OPS; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk57-$S','smk57-$S',PASSWORD,'冒烟服务监控-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk57-ur-$S','smk57-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+# 门户账号（绑定供应商 SMK57-SUP，token name = 用户 ID）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,SUPPLIER_ID,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk57-portal','smk57-portal',PASSWORD,'冒烟服务监控-门户','1','SMK57-SUP','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk57-ur-portal','smk57-portal',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_SUPPLIER'" >/dev/null 2>&1
+# 通道结构映射（迁移 182）：SMK57P→SMK57-SUP；SMK57Q→他供应商
+SQL "INSERT INTO erp_intf_channel (ID,PARTNER_CODE,PARTNER_NAME,SUPPLIER_ID,PARTNER_TIER,CHANNEL_TYPE,PROTOCOL,STATUS,RATE_TIER,LIMIT_PER_MIN,CIRCUIT_STATE,CIRCUIT_PROBE_OK,PROBE_HITS,CIRCUIT_TRIP_COUNT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk57-ch-p','SMK57P','SMK57 伙伴P','SMK57-SUP','NEW','API','HTTPS','SANDBOX','NEW',30,'CLOSED',1,0,0,'smoke',NOW(),'0',0),
+            ('smk57-ch-q','SMK57Q','SMK57 伙伴Q','SMK57-OTHER-SUP','NEW','API','HTTPS','SANDBOX','NEW',30,'CLOSED',1,0,0,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+T57ARCH=$(C -H 'Content-Type: application/json' -d '{"username":"smk57-arch","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T57OPS=$(C -H 'Content-Type: application/json' -d '{"username":"smk57-ops","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T57PORTAL=$(C -H 'Content-Type: application/json' -d '{"username":"smk57-portal","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+
+# 57.1 菜单四行 PERM（spec 菜单路由与权限）
+EQ "段57 菜单 M12-7 父 PERM（三叶并集）" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-7'")" "ROLE_INTF_OPS,ROLE_INTF_ARCH,ROLE_ADMIN"
+EQ "段57 12.7.1/12.7.2 PERM" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID IN ('M12-7-1','M12-7-2') AND PERM='ROLE_INTF_OPS,ROLE_ADMIN'")" "2"
+EQ "段57 12.7.3 PERM（含架构师）" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-7-3'")" "ROLE_INTF_OPS,ROLE_INTF_ARCH,ROLE_ADMIN"
+EQ "段57 路由三条" "$(grep -cE '/m/12.7.1|/m/12.7.2|/m/12.7.3' frontend/src/router/index.js)" "3"
+
+# 57.2 伙伴行采集（design D2：活跃 caller 有行 / 零活动无行）
+SQL "INSERT INTO erp_intf_call_log (ID,CALLER,API_PATH,REQ_ID,RESP_CODE,COST_MS,RATE_HIT,CIRCUIT_HIT,CALL_AT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk57-cl1','SMK57P','/api/open/test','SMK57-1',200,5,0,0,NOW(),'smoke',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段57 立即采集 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/intf/sla/collect)" "200"
+N57P=$(SQL "SELECT COUNT(*) FROM erp_intf_sla_metric WHERE PARTNER_CODE='SMK57P'")
+[ -n "$N57P" ] && [ "$N57P" -gt 0 ] && ok "段57 活跃伙伴有指标行（$N57P）" || bad "段57 活跃伙伴无指标行（实际 $N57P）"
+EQ "段57 零活动伙伴无行" "$(SQL "SELECT COUNT(*) FROM erp_intf_sla_metric WHERE PARTNER_CODE='SMK57NONE'")" "0"
+
+# 57.3 月报生成（记操作人）+ 章节含伙伴 + 互斥 + 审核角色
+CURM=$(SQL "SELECT DATE_FORMAT(NOW(),'%Y%m')")
+EQ "段57 架构师生成 200" "$(BIZ -X POST -H "$(A $T57ARCH)" -H 'Content-Type: application/json' -d "{\"monthTag\":\"$CURM\"}" $B/api/intf/sla/reports/generate)" "200"
+EQ "段57 生成记操作人" "$(SQL "SELECT GENERATED_BY FROM erp_intf_sla_report WHERE MONTH_TAG='$CURM'")" "smk57-arch"
+EQ "段57 章节含活跃伙伴" "$(SQL "SELECT METRICS_JSON FROM erp_intf_sla_report WHERE MONTH_TAG='$CURM'" | grep -c 'SMK57P')" "1"
+T57RID=$(SQL "SELECT ID FROM erp_intf_sla_report WHERE MONTH_TAG='$CURM'")
+EQ "段57 本人审核 422（互斥）" "$(BIZ -X POST -H "$(A $T57ARCH)" -H 'Content-Type: application/json' -d '{"opinion":"复核"}' $B/api/intf/sla/reports/$T57RID/review)" "422"
+EQ "段57 OPS 审核 403（角色强制）" "$(BIZ -X POST -H "$(A $T57OPS)" -H 'Content-Type: application/json' -d '{"opinion":"复核"}' $B/api/intf/sla/reports/$T57RID/review)" "403"
+
+# 57.4 未归档发布 422（C-5.5-04）→ 审核 → 归档 → 发布
+EQ "段57 未归档发布 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"scope":"ALL"}' $B/api/intf/sla/reports/$T57RID/publish)" "422"
+N57V=$(SQL "SELECT COUNT(*) FROM erp_intf_sla_alert WHERE ALERT_KEY LIKE 'SLA_PUBLISH_BLOCK:%'")
+[ -n "$N57V" ] && [ "$N57V" -gt 0 ] && ok "段57 违规留痕（$N57V）" || bad "段57 违规留痕缺失"
+EQ "段57 ADMIN 审核 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"opinion":"复核通过"}' $B/api/intf/sla/reports/$T57RID/review)" "200"
+EQ "段57 归档 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/intf/sla/reports/$T57RID/archive)" "200"
+EQ "段57 发布 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"scope":"ALL"}' $B/api/intf/sla/reports/$T57RID/publish)" "200"
+
+# 57.5 门户章节级隔离（spec：仅已发布 + 仅本人章节 + 无 partner 入参）
+SQL "INSERT INTO erp_intf_sla_report (ID,MONTH_TAG,TITLE,STATUS,VERSION,METRICS_JSON,UNREACHED_JSON,GENERATED_BY,GENERATED_AT,DEL_FLAG,VER_NO)
+     VALUES ('smk57-r-draft','209906','SMK57 未发布','GENERATED','v1','{}','[]','sla-job',NOW(),'0',0)" >/dev/null 2>&1
+EQ "段57 门户列表仅已发布" "$(C -H "$(A $T57PORTAL)" $B/api/portal/sla-reports | J "str(len([r for r in d['data'] if r['id']=='$T57RID']))+'/'+str(len([r for r in d['data'] if r['id']=='smk57-r-draft']))")" "1/0"
+PORTAL_DETAIL=$(C -H "$(A $T57PORTAL)" "$B/api/portal/sla-reports/$T57RID?partnerCode=SMK57Q")
+CONTAINS "段57 门户见本人关联章节" "$PORTAL_DETAIL" "SMK57P"
+EQ "段57 门户无他伙伴章节" "$(echo "$PORTAL_DETAIL" | J "str(len([c for c in d['data']['chapters'] if c['partnerCode']=='SMK57Q']))")" "0"
+EQ "段57 未发布详情 404" "$(BIZ -H "$(A $T57PORTAL)" $B/api/portal/sla-reports/smk57-r-draft)" "404"
+EQ "段57 无令牌 401" "$(HTTP $B/api/portal/sla-reports)" "401"
+
+# 57.6 2.8.3 Tab5 收口源码断言
+EQ "段57 Tab5 无写动作函数" "$(grep -cE 'doCollect|doGenerate|doReviewReport|doArchiveReport|doPublishReport' frontend/src/views/proc/interface-integration/index.vue)" "0"
+EQ "段57 Tab5 跳转存在" "$(grep -c '/m/12.7.1' frontend/src/views/proc/interface-integration/index.vue)" "1"
+
+echo "段 57 服务监控操作台追加完成"
+
+# ============================================================
+# 段 58：CPFR 协同预测与补货（add-cpfr-forecast-replenishment，M12.8 两叶）
+# 链路：协议参数禁启用→启用→建版本→快照数据包→推送幂等→门户反馈→例外达成→
+#       联合计划双方确认→冻结区调整走审批/弹性区免审批→72h 默认采纳→准确率评估
+# ============================================================
+
+# 58.0 隔离与账号（SMK58 前缀，段首清理保证可重跑）
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME IN ('smk58-scmdir','smk58-pmgr','smk58-portal')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME IN ('smk58-scmdir','smk58-pmgr','smk58-portal')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval_task WHERE APPR_ID IN (SELECT ID FROM (SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='CpfrPlanAdjust') t58)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='CpfrPlanAdjust'" >/dev/null 2>&1
+AGR58=$(SQL "SELECT ID FROM erp_scm_cpfr_agreement WHERE SUPPLIER_ID='SMK58-SUP'")
+if [ -n "${AGR58:-}" ]; then
+  SQL "DELETE FROM erp_scm_cpfr_plan_line WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+  SQL "DELETE FROM erp_scm_cpfr_plan WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+  SQL "DELETE FROM erp_scm_cpfr_exception WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+  SQL "DELETE FROM erp_scm_cpfr_adjust_log WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+  SQL "DELETE FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+  SQL "DELETE FROM erp_scm_cpfr_forecast_line WHERE AGREEMENT_ID='$AGR58'" >/dev/null 2>&1
+fi
+SQL "DELETE FROM erp_scm_cpfr_forecast_head WHERE PERIOD_TAG='209851'" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_cpfr_agreement WHERE SUPPLIER_ID='SMK58-SUP'" >/dev/null 2>&1
+for U in scmdir:SCMDIR pmgr:PMGR; do
+  S=${U%%:*}; R=${U##*:}
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT 'smk58-$S','smk58-$S',PASSWORD,'冒烟CPFR-$S','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk58-ur-$S','smk58-$S',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_$R'" >/dev/null 2>&1
+done
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,SUPPLIER_ID,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk58-portal','smk58-portal',PASSWORD,'冒烟CPFR-门户','1','SMK58-SUP','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk58-ur-portal','smk58-portal',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_SUPPLIER'" >/dev/null 2>&1
+T58DIR=$(C -H 'Content-Type: application/json' -d '{"username":"smk58-scmdir","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T58PMGR=$(C -H 'Content-Type: application/json' -d '{"username":"smk58-pmgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T58PORTAL=$(C -H 'Content-Type: application/json' -d '{"username":"smk58-portal","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T58DIR:-}" ] && [ -n "${T58PORTAL:-}" ] && ok "段58 三账号登录" || bad "段58 账号登录失败"
+
+# 58.1 菜单与路由
+EQ "段58 菜单 M12-8 PERM" "$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M12-8'")" "ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_ADMIN"
+EQ "段58 两叶 PERM 同口径" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID IN ('M12-8-1','M12-8-2') AND PERM='ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_ADMIN'")" "2"
+EQ "段58 角色两枚" "$(SQL "SELECT COUNT(*) FROM erp_admin_role WHERE ROLE_CODE IN ('ROLE_SCMDIR','ROLE_PMGR')")" "2"
+EQ "段58 路由两条" "$(grep -cE '/m/12.8.1|/m/12.8.2' frontend/src/router/index.js)" "2"
+
+# 58.2 协议：参数不全禁启用（BR-4.9-31）→ 补全 → 启用
+AGR58=$(C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"supplierId":"SMK58-SUP","supplierName":"SMK58 冒烟供应商","cycleType":"WEEK","horizonWeeks":8,"deviationThresholdPct":10}' \
+  $B/api/scm/cpfr/agreements | J "d['data']['id']")
+[ -n "${AGR58:-}" ] && ok "段58 协议创建（$AGR58）" || bad "段58 协议创建失败"
+EQ "段58 参数不全启用 422" "$(BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/agreements/$AGR58/enable)" "422"
+C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d "{\"id\":\"$AGR58\",\"freezeWeeks\":2,\"elasticStartWeek\":3,\"elasticEndWeek\":6,\"elasticPct\":20}" \
+  $B/api/scm/cpfr/agreements >/dev/null
+EQ "段58 补全后启用 200" "$(BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/agreements/$AGR58/enable)" "200"
+EQ "段58 PMGR 启用 403（配置限 SCMDIR，Spring Security 真状态码）" "$(HTTP -X POST -H "$(A $T58PMGR)" $B/api/scm/cpfr/agreements/$AGR58/enable)" "403"
+
+# 58.3 预测版本：四行 → 数据包快照 → 推送 → 幂等 → 停用后推送 422
+HEAD58=$(C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"periodTag":"209851","remark":"SMK58 冒烟预测"}' $B/api/scm/cpfr/forecasts | J "d['data']['id']")
+[ -n "${HEAD58:-}" ] && ok "段58 预测版本创建（$HEAD58）" || bad "段58 预测版本创建失败"
+for L in "A:1:1000" "B:2:1000" "C:5:500" "D:7:500"; do
+  IC=$(echo $L | cut -d: -f1); WK=$(echo $L | cut -d: -f2); QT=$(echo $L | cut -d: -f3)
+  C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+    -d "{\"headId\":\"$HEAD58\",\"agreementId\":\"$AGR58\",\"itemCode\":\"SMK58-ITEM-$IC\",\"weekOffset\":$WK,\"forecastQty\":$QT}" \
+    $B/api/scm/cpfr/forecasts/lines >/dev/null
+done
+EQ "段58 预测行 4 条" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_forecast_line WHERE HEAD_ID='$HEAD58'")" "4"
+EQ "段58 数据包生成 200" "$(BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/forecasts/$HEAD58/generate-package)" "200"
+SNAP58=$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_forecast_line WHERE HEAD_ID='$HEAD58' AND SNAPSHOT_STOCK IS NOT NULL AND SAFETY_STOCK IS NOT NULL")
+[ "${SNAP58:-0}" = "4" ] && ok "段58 快照四行落库" || bad "段58 快照缺失（$SNAP58/4）"
+EQ "段58 推送 200" "$(BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/forecasts/$HEAD58/push)" "200"
+EQ "段58 反馈行 4 条（待反馈）" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND STATUS='待反馈'")" "4"
+PUSH2=$(C -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/forecasts/$HEAD58/push | J "str(d['data']['feedbackRowsCreated'])")
+EQ "段58 重复推送幂等（0 新增）" "${PUSH2:-x}" "0"
+BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/agreements/$AGR58/disable >/dev/null
+EQ "段58 停用后推送 422（BR-4.9-34 联动）" "$(BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/forecasts/$HEAD58/push)" "422"
+BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/agreements/$AGR58/enable >/dev/null
+
+# 58.4 门户反馈 → 分歧例外（-15% > ±10%）
+FB58=$(C -X POST -H "$(A $T58PORTAL)" -H 'Content-Type: application/json' \
+  -d "{\"agreementId\":\"$AGR58\",\"periodTag\":\"209851\",\"weekOffset\":1,\"itemCode\":\"SMK58-ITEM-A\",\"supplyQty\":850,\"capacityNote\":\"模具检修\"}" \
+  $B/api/portal/cpfr/feedbacks | J "d['data']['id']")
+[ -n "${FB58:-}" ] && ok "段58 门户反馈提交" || bad "段58 门户反馈失败"
+EX58=$(SQL "SELECT ID FROM erp_scm_cpfr_exception WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND ITEM_CODE='SMK58-ITEM-A'")
+[ -n "${EX58:-}" ] && ok "段58 -15% 自动生成例外（$EX58）" || bad "段58 例外未生成"
+DEV58=$(SQL "SELECT CAST(DEVIATION_PCT AS CHAR) FROM erp_scm_cpfr_exception WHERE ID='$EX58'")
+EQ "段58 分歧率 -15.00" "${DEV58:-x}" "-15.00"
+# 阈值内不产生例外（+5%）
+C -X POST -H "$(A $T58PORTAL)" -H 'Content-Type: application/json' \
+  -d "{\"agreementId\":\"$AGR58\",\"periodTag\":\"209851\",\"weekOffset\":2,\"itemCode\":\"SMK58-ITEM-B\",\"supplyQty\":1050}" \
+  $B/api/portal/cpfr/feedbacks >/dev/null
+EQ "段58 阈值内无新例外" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_exception WHERE AGREEMENT_ID='$AGR58' AND ITEM_CODE='SMK58-ITEM-B'")" "0"
+
+# 58.5 例外协商：供应商意见 → 计划员终确认（两态闭环 + 留痕）
+C -X POST -H "$(A $T58PORTAL)" -H 'Content-Type: application/json' \
+  -d '{"proposedQty":900,"remark":"产能爬坡可补至 900"}' $B/api/portal/cpfr/exceptions/$EX58/opinion >/dev/null
+EQ "段58 协商留痕 1 条（供应商意见）" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_adjust_log WHERE TARGET_ID='$EX58' AND ACTION='SUPPLIER_OPINION'")" "1"
+EQ "段58 终确认达成 200" "$(BIZ -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"accept":true,"remark":"接受 900"}' $B/api/scm/cpfr/exceptions/$EX58/final-confirm)" "200"
+EQ "段58 例外已达成" "$(SQL "SELECT STATUS FROM erp_scm_cpfr_exception WHERE ID='$EX58'")" "已达成"
+
+# 58.6 联合补货计划：创建（ZONE 标注）→ 双方确认 → 预测订单
+PLAN58=$(C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d "{\"agreementId\":\"$AGR58\",\"periodTag\":\"209851\"}" $B/api/scm/cpfr/plans | J "d['data']['id']")
+[ -n "${PLAN58:-}" ] && ok "段58 联合计划创建（$PLAN58）" || bad "段58 联合计划创建失败"
+EQ "段58 计划行 4 条" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_plan_line WHERE PLAN_ID='$PLAN58'")" "4"
+EQ "段58 ZONE 标注（W1/W2 冻结、W5 弹性、W7 自由）" "$(SQL "SELECT GROUP_CONCAT(ZONE ORDER BY WEEK_OFFSET SEPARATOR ',') FROM erp_scm_cpfr_plan_line WHERE PLAN_ID='$PLAN58'")" "FREEZE,FREEZE,ELASTIC,FREE"
+
+# 58.7 冻结区调整走 L2 审批（C-4.9-08）→ 数量锁定
+PL1=$(SQL "SELECT ID FROM erp_scm_cpfr_plan_line WHERE PLAN_ID='$PLAN58' AND WEEK_OFFSET=1")
+ADJ58=$(C -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"qty":1200,"remark":"冻结期加量"}' $B/api/scm/cpfr/plan-lines/$PL1/adjust | J "d['data']['approvalId']")
+[ -n "${ADJ58:-}" ] && ok "段58 冻结区调整生成审批（$ADJ58）" || bad "段58 审批未生成"
+EQ "段58 审批节点=PMGR" "$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task WHERE APPR_ID='$ADJ58' AND ROLE_REQUIRED='ROLE_PMGR'")" "1"
+Q58=$(SQL "SELECT CAST(QTY AS CHAR) FROM erp_scm_cpfr_plan_line WHERE ID='$PL1'")
+EQ "段58 审批中原数量锁定" "${Q58:-x}" "1000.000"
+# 弹性区内未超比例免审批（W5 500→550 = +10% ≤ 20%）
+PL5=$(SQL "SELECT ID FROM erp_scm_cpfr_plan_line WHERE PLAN_ID='$PLAN58' AND WEEK_OFFSET=5")
+EQ "段58 弹性区免审批直改 200" "$(BIZ -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"qty":550,"remark":"弹性区间内微调"}' $B/api/scm/cpfr/plan-lines/$PL5/adjust)" "200"
+Q5=$(SQL "SELECT CAST(QTY AS CHAR) FROM erp_scm_cpfr_plan_line WHERE ID='$PL5'")
+EQ "段58 弹性区数量已更新" "${Q5:-x}" "550.000"
+EQ "段58 弹性区留痕 ADJUST_DIRECT" "$(SQL "SELECT COUNT(*) FROM erp_scm_cpfr_adjust_log WHERE TARGET_ID='$PL5' AND ACTION='ADJUST_DIRECT'")" "1"
+
+# 58.8 双方确认 → 预测订单（冻结数量转承诺）
+EQ "段58 企业方确认 200" "$(BIZ -X POST -H "$(A $T58DIR)" -H 'Content-Type: application/json' \
+  -d '{"side":"INTERNAL"}' $B/api/scm/cpfr/plans/$PLAN58/confirm)" "200"
+EQ "段58 单方确认状态" "$(SQL "SELECT STATUS FROM erp_scm_cpfr_plan WHERE ID='$PLAN58'")" "单方确认"
+EQ "段58 门户确认 200" "$(BIZ -X POST -H "$(A $T58PORTAL)" $B/api/portal/cpfr/plans/$PLAN58/confirm)" "200"
+EQ "段58 双方确认生成订单" "$(SQL "SELECT STATUS FROM erp_scm_cpfr_plan WHERE ID='$PLAN58'")" "已生成订单"
+PLJ=$(C -H "$(A $T58DIR)" $B/api/scm/cpfr/plan-lines/$PL1/po-jump | J "d['data']['sourceRef']")
+CONTAINS "段58 PO 跳转预填 sourceRef" "${PLJ:-x}" "CPFR:209851"
+
+# 58.9 72h 升级 + 默认采纳（BR-4.9-33）——W7 行无反馈，周期起点回拨 73h
+SQL "UPDATE erp_scm_cpfr_feedback SET PERIOD_START_AT = DATE_SUB(NOW(), INTERVAL 73 HOUR)
+     WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND WEEK_OFFSET=7" >/dev/null 2>&1
+BIZ -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/deadlines/evaluate >/dev/null
+FB3=$(SQL "SELECT STATUS FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND WEEK_OFFSET=7")
+EQ "段58 73h 默认采纳" "${FB3:-x}" "默认采纳"
+EQ "段58 升级接收=PMGR" "$(SQL "SELECT ESCALATE_TO_ROLE FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND WEEK_OFFSET=7")" "ROLE_PMGR"
+EQ "段58 来源 DEFAULT_ROLL" "$(SQL "SELECT FEEDBACK_SOURCE FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID='$AGR58' AND PERIOD_TAG='209851' AND WEEK_OFFSET=7")" "DEFAULT_ROLL"
+
+# 58.10 转化登记 + 准确率评估
+SQL "UPDATE erp_scm_cpfr_plan_line SET PO_CONVERSION_QTY=990 WHERE PLAN_ID='$PLAN58' AND WEEK_OFFSET=1" >/dev/null 2>&1
+SQL "UPDATE erp_scm_cpfr_plan_line SET PO_CONVERSION_QTY=1010 WHERE PLAN_ID='$PLAN58' AND WEEK_OFFSET=2" >/dev/null 2>&1
+ACC58=$(C -X POST -H "$(A $T58DIR)" $B/api/scm/cpfr/accuracy/209810/evaluate | J "str(d['data']['plans'])")
+[ "${ACC58:-0}" -ge 1 ] && ok "段58 准确率评估完成（$ACC58 条）" || bad "段58 准确率评估未执行（$ACC58）"
+ACCV=$(SQL "SELECT CAST(ACCURACY_PCT AS CHAR) FROM erp_scm_cpfr_plan WHERE ID='$PLAN58'")
+CONTAINS "段58 准确率落库" "${ACCV:-x}" "99"
+
+# 58.11 门户隔离与收口源码断言
+EQ "段58 门户只见本人协议" "$(C -H "$(A $T58PORTAL)" $B/api/portal/cpfr/agreements | J "str(len(d['data']))")" "1"
+EQ "段58 无令牌 401" "$(HTTP $B/api/scm/cpfr/agreements)" "401"
+EQ "段58 门户 Tab 存在" "$(grep -c 'label="CPFR 协同"' frontend/src/views/portal/supplier/index.vue)" "1"
+EQ "段58 管理页两文件" "$(ls frontend/src/views/scm/forecast-replenishment/forecast.vue frontend/src/views/scm/forecast-replenishment/plan.vue 2>/dev/null | wc -l | tr -d ' ')" "2"
+
+echo "段 58 CPFR 协同预测补货追加完成"
+
+# ============================================================
+# 段 59：供应绩效 12.9（add-supply-performance-menu）
+# 链路：菜单 PERM → 路由/Tab 源码断言 → CPFR 反馈+工单造数 → 月度采集 →
+#       响应三子项明细断言（cpfrRate 真 CPFR 口径 / ticketRespAvgHours / replenishRate 分流）
+# ============================================================
+
+# 59.0 隔离清理（SC9S 前缀，月份 209911 与 DbTest 209912 隔离）
+SQL "DELETE FROM erp_scm_scorecard_result WHERE SUPPLIER_ID='SC9S-SUP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_cpfr_feedback WHERE AGREEMENT_ID LIKE 'sc9s-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_scm_cpfr_agreement WHERE SUPPLIER_ID='SC9S-SUP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_po_coop_ticket WHERE TICKET_NO LIKE 'SC9S-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_proc_po WHERE PO_NO LIKE 'SC9S-PO-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_proc_replenish_confirm WHERE ID LIKE 'sc9s-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE IDEMPOTENCY_KEY LIKE 'sc9s-%'" >/dev/null 2>&1
+
+# 59.1 菜单 PERM 与路由/Tab 源码断言
+EQ "段59 菜单 M12-9 三行 PERM" "$(SQL "SELECT COUNT(*) FROM erp_admin_menu WHERE ID IN ('M12-9','M12-9-1','M12-9-2') AND PERM='ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN'")" "3"
+EQ "段59 路由两条" "$(grep -cE '/m/12.9.1|/m/12.9.2' frontend/src/router/index.js)" "2"
+EQ "段59 12.9.1 定位 models Tab" "$(grep -c "tab: 'models'" frontend/src/router/index.js)" "1"
+EQ "段59 Tab 白名单存在" "$(grep -c 'TAB_WHITELIST' frontend/src/views/proc/scorecard/index.vue)" "2"
+
+# 59.2 造数：活跃供应商 PO + CPFR 协议（2 反馈：1 及时/1 默认采纳）+ 2 已解锁工单 + VMI 参考行
+SQL "INSERT INTO erp_proc_po (ID,PO_NO,PO_TYPE,SOURCE,SUPPLIER_ID,SUPPLIER_NAME,STATUS,CREATE_DATE,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('sc9s-po-1','SC9S-PO-1','NORMAL','PR','SC9S-SUP','SC9S 冒烟供应商','APPROVED','2099-11-05 10:00:00','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_scm_cpfr_agreement (ID,SUPPLIER_ID,SUPPLIER_NAME,CYCLE_TYPE,HORIZON_WEEKS,DEVIATION_THRESHOLD_PCT,STATUS,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('sc9s-agr','SC9S-SUP','SC9S 冒烟供应商','WEEK',8,10,'已启用','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_scm_cpfr_feedback (ID,AGREEMENT_ID,PERIOD_TAG,WEEK_OFFSET,ITEM_CODE,DEMAND_QTY,SUPPLY_QTY,FEEDBACK_SOURCE,STATUS,SUBMIT_AT,PERIOD_START_AT,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('sc9s-fb-1','sc9s-agr','209911',1,'SC9S-ITEM',100,100,'PORTAL','已反馈','2099-11-03 01:00:00','2099-11-03 00:00:00','smoke','0',0),
+            ('sc9s-fb-2','sc9s-agr','209911',2,'SC9S-ITEM',100,100,'DEFAULT_ROLL','默认采纳','2099-11-07 00:00:00','2099-11-03 00:00:00','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_po_coop_ticket (ID,TICKET_NO,SUPPLIER_ID,SUPPLIER_NAME,LOCK_PO_NOS,LOCK_AT,STATUS,UNLOCK_BY,UNLOCK_AT,UNLOCK_REASON,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('sc9s-tk-1','SC9S-TK-1','SC9S-SUP','SC9S 冒烟供应商','SC9S-PO-1','2099-11-10 08:00:00','DONE','smoke','2099-11-10 14:00:00','冒烟解锁','smoke','0',0),
+            ('sc9s-tk-2','SC9S-TK-2','SC9S-SUP','SC9S 冒烟供应商','SC9S-PO-1','2099-11-11 08:00:00','DONE','smoke','2099-11-12 02:00:00','冒烟解锁','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_proc_replenish_confirm (ID,ALERT_ID,SUPPLIER_ID,ITEM_CODE,SUGGEST_QTY,CONFIRM_QTY,SOURCE,CONFIRM_AT,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('sc9s-vmi','sc9s-alert','SC9S-SUP','SC9S-ITEM',100,100,'PORTAL','2099-11-06 10:00:00','smoke','2099-11-05 10:00:00','0',0)" >/dev/null 2>&1
+
+# 59.3 月度采集 → 响应三子项明细断言
+EQ "段59 采集 209911 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"monthTag":"209911"}' $B/api/scm/scorecard/collect)" "200"
+SRC59=$(SQL "SELECT SOURCE_JSON FROM erp_scm_scorecard_result WHERE MONTH_TAG='209911' AND SUPPLIER_ID='SC9S-SUP' AND DEL_FLAG='0'")
+[ -n "$SRC59" ] && ok "段59 记分卡落库" || bad "段59 记分卡缺失"
+CONTAINS "段59 cpfrRate=50（48h 全量：1/2，默认采纳进分母）" "$SRC59" '"cpfrRate":50'
+CONTAINS "段59 工单均值 12h" "$SRC59" '"ticketRespAvgHours":12'
+CONTAINS "段59 工单折算 100（12h≤24h）" "$SRC59" '"ticketScore":100'
+CONTAINS "段59 VMI 落 replenishRate 不冒充 cpfrRate" "$SRC59" '"replenishRate":100'
+
+# 59.4 响应维度总分（PO48h 无确认事件=0；(0+50+100)/3=50）
+R59=$(SQL "SELECT CAST(R_SCORE AS CHAR) FROM erp_scm_scorecard_result WHERE MONTH_TAG='209911' AND SUPPLIER_ID='SC9S-SUP' AND DEL_FLAG='0'")
+CONTAINS "段59 响应三等权 50" "${R59:-x}" "50.00"
+
+echo "段 59 供应绩效 12.9 追加完成"
 
 echo "段 46 知识产权追加完成"
 

@@ -205,8 +205,10 @@ class PortalRulesUnitTest {
             return onlyLock[0] ? null : unlock;
         });
 
-        PoCoopServiceImpl svc = new PoCoopServiceImpl(coopDao, mock(PurchaseOrderDao.class),
-                mock(PurchaseOrderLineDao.class), mock(PortalEventService.class));
+        PoCoopServiceImpl svc = new PoCoopServiceImpl(coopDao,
+                mock(com.erp.dao.proc.PoCoopTicketDao.class), mock(PurchaseOrderDao.class),
+                mock(PurchaseOrderLineDao.class), mock(PortalEventService.class),
+                mock(com.erp.dao.ops.MdmOutboxDao.class));
         assertFalse(svc.supplierLocked("sup-x"), "同秒解锁后不得仍判锁定（unlock >= lock 视为已解锁）");
 
         onlyLock[0] = true;                            // 仅有 LOCK（无 UNLOCK）→ 锁定

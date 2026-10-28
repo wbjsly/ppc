@@ -31,13 +31,14 @@ public class IntfSlaController {
         return R.ok(service.collect());
     }
 
-    @Operation(summary = "指标分页（按指标/月份）")
+    @Operation(summary = "指标分页（按指标/月份/伙伴：partnerCode 空串=全局行）")
     @GetMapping("/metrics")
     public R<Page<IntfSlaMetric>> metrics(@RequestParam(defaultValue = "1") long current,
                                           @RequestParam(defaultValue = "20") long size,
                                           @RequestParam(required = false) String metricKey,
-                                          @RequestParam(required = false) String monthTag) {
-        return R.ok(service.metrics(current, size, metricKey, monthTag));
+                                          @RequestParam(required = false) String monthTag,
+                                          @RequestParam(required = false) String partnerCode) {
+        return R.ok(service.metrics(current, size, metricKey, monthTag, partnerCode));
     }
 
     @Operation(summary = "告警分页（级别/状态）")
@@ -67,7 +68,9 @@ public class IntfSlaController {
     @PostMapping("/reports/generate")
     public R<Map<String, Object>> generate(@RequestBody(required = false) Map<String, Object> body) {
         Object month = body == null ? null : body.get("monthTag");
-        return R.ok(service.generateReport(month == null ? null : String.valueOf(month)));
+        // 手动生成记当前操作人为生成人（调度线程由 scheduler 传 "sla-job"）
+        return R.ok(service.generateReport(month == null ? null : String.valueOf(month),
+                IntfGuard.currentUser()));
     }
 
     @Operation(summary = "审核报告（审核人不得为生成作业执行人）")

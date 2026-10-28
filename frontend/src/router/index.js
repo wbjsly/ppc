@@ -398,6 +398,22 @@ const routes = [
         meta: { title: '绩效评估', group: '采购管理', perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
       },
       {
+        // 12.9.1 评分模型（add-supply-performance-menu：SCM 域入口，初始定位模型配置 Tab）
+        path: '/m/12.9.1',
+        name: 'ScmScorecardModels',
+        component: () => import('@/views/proc/scorecard/index.vue'),
+        meta: { title: '评分模型', group: '外部协同', tab: 'models',
+          perm: 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
+      },
+      {
+        // 12.9.2 记分卡片（add-supply-performance-menu：默认记分卡 Tab，整改同页可达）
+        path: '/m/12.9.2',
+        name: 'ScmScorecardCards',
+        component: () => import('@/views/proc/scorecard/index.vue'),
+        meta: { title: '记分卡片', group: '外部协同',
+          perm: 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN' }
+      },
+      {
         // 2.9.3 价格监测（spec price-monitoring 监测工作台）
         path: '/m/2.9.3',
         name: 'PriceMonitoring',
@@ -783,6 +799,190 @@ const routes = [
         component: () => import('@/views/pm/closure/res-release.vue'),
         meta: { title: '资源释放', group: '项目研发',
           perm: 'ROLE_PMO,ROLE_ADMIN' }
+      },
+      {
+        // 12.1.1 伙伴注册（add-partner-onboarding：引入申请+证照附件+激活链接）
+        path: '/m/12.1.1',
+        name: 'PartnerApply',
+        component: () => import('@/views/scm/partner-onboarding/apply-list.vue'),
+        meta: { title: '伙伴注册', group: '外部协同',
+          perm: 'ROLE_PURCHASER,ROLE_ADMIN' }
+      },
+      {
+        // 12.1.2 资质审核（add-partner-onboarding：动态节点链待办+驳回+时限说明）
+        path: '/m/12.1.2',
+        name: 'PartnerReview',
+        component: () => import('@/views/scm/partner-onboarding/review.vue'),
+        meta: { title: '资质审核', group: '外部协同',
+          perm: 'ROLE_PURCHASER,ROLE_QUALITY_MGR,ROLE_COMPLIANCE,ROLE_ADMIN' }
+      },
+      {
+        // 12.1.3 通道开通（add-partner-onboarding：配置唯一入口，SANDBOX 默认走会签升 PROD）
+        path: '/m/12.1.3',
+        name: 'PartnerChannel',
+        component: () => import('@/views/scm/partner-onboarding/channel-config.vue'),
+        meta: { title: '通道开通', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.2.1 事件定义（add-event-subscription：注册表/Schema/版本，集成架构师维护）
+        path: '/m/12.2.1',
+        name: 'EventType',
+        component: () => import('@/views/proc/event-subscription/event-type.vue'),
+        meta: { title: '事件定义', group: '外部协同',
+          perm: 'ROLE_INTF_ARCH,ROLE_ADMIN' }
+      },
+      {
+        // 12.2.2 订阅配置（add-event-subscription：伙伴×类型，两级回落零断流）
+        path: '/m/12.2.2',
+        name: 'EventSubscription',
+        component: () => import('@/views/proc/event-subscription/subscription.vue'),
+        meta: { title: '订阅配置', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.2.3 消费监控（add-event-subscription：类型聚合+台账+重放/工单收口）
+        path: '/m/12.2.3',
+        name: 'EventConsumeMonitor',
+        component: () => import('@/views/proc/event-subscription/consume-monitor.vue'),
+        meta: { title: '消费监控', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.2.4 告警处理（add-event-subscription：三级告警确认+死信/暂存区块）
+        path: '/m/12.2.4',
+        name: 'EventAlertHandle',
+        component: () => import('@/views/proc/event-subscription/alert-handle.vue'),
+        meta: { title: '告警处理', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.3.1 认证鉴权（add-interface-call-console：拒绝原因分析+凭证只读，方案 B 独立建页）
+        path: '/m/12.3.1',
+        name: 'AuthRejection',
+        component: () => import('@/views/proc/interface-call-console/auth-rejection.vue'),
+        meta: { title: '认证鉴权', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.3.2 限流控制（状态总览+降档历史+429 趋势，参数只读跳 12.1.3）
+        path: '/m/12.3.2',
+        name: 'RateControl',
+        component: () => import('@/views/proc/interface-call-console/rate-control.vue'),
+        meta: { title: '限流控制', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.3.3 调用审计（Trace 下钻+聚合+明细增强+导出）
+        path: '/m/12.3.3',
+        name: 'AuditTrace',
+        component: () => import('@/views/proc/interface-call-console/audit-trace.vue'),
+        meta: { title: '调用审计', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.4.1 报文接收（add-edi-message-console：台账+三入口+MDN）
+        path: '/m/12.4.1',
+        name: 'EdiReceive',
+        component: () => import('@/views/proc/edi-message-console/receive.vue'),
+        meta: { title: '报文接收', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.4.2 格式校验（四级校验详情+重试轨迹+工单联动）
+        path: '/m/12.4.2',
+        name: 'EdiValidation',
+        component: () => import('@/views/proc/edi-message-console/validation.vue'),
+        meta: { title: '格式校验', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.4.3 映射入库（映射规则维护 admin-only+入库结果+回执视图）
+        path: '/m/12.4.3',
+        name: 'EdiMapping',
+        component: () => import('@/views/proc/edi-message-console/mapping.vue'),
+        meta: { title: '映射入库', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.5.1 订单下达（add-po-collaboration-console：推送列表+推送台账）
+        path: '/m/12.5.1',
+        name: 'PoPush',
+        component: () => import('@/views/proc/po-collaboration-console/push.vue'),
+        meta: { title: '订单下达', group: '外部协同',
+          perm: 'ROLE_PM,ROLE_ADMIN,ROLE_WAREHOUSE' }
+      },
+      {
+        // 12.5.2 交期确认（确认四分支+倒计时+时间线+协同异常工单）
+        path: '/m/12.5.2',
+        name: 'PoConfirm',
+        component: () => import('@/views/proc/po-collaboration-console/confirm.vue'),
+        meta: { title: '交期确认', group: '外部协同',
+          perm: 'ROLE_PM,ROLE_ADMIN,ROLE_WAREHOUSE' }
+      },
+      {
+        // 12.5.3 寄售协同（补链：复用 2.8.1 寄售采购页，同一页两域入口不复制）
+        path: '/m/12.5.3',
+        name: 'ConsignmentLink',
+        component: () => import('@/views/proc/consignment/index.vue'),
+        meta: { title: '寄售协同', group: '外部协同',
+          perm: 'ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 12.6.1 对账匹配（add-reconciliation-console：登记+系统匹配+差异并排）
+        path: '/m/12.6.1',
+        name: 'ReconMatch',
+        component: () => import('@/views/proc/reconciliation-console/match.vue'),
+        meta: { title: '对账匹配', group: '外部协同',
+          perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 12.6.2 差异处理（add-reconciliation-console：差异清单+双签解冻+冻结回显）
+        path: '/m/12.6.2',
+        name: 'ReconException',
+        component: () => import('@/views/proc/reconciliation-console/exception.vue'),
+        meta: { title: '差异处理', group: '外部协同',
+          perm: 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 12.7.1 指标采集（add-service-monitoring-console：四项指标+伙伴维度筛选）
+        path: '/m/12.7.1',
+        name: 'SlaMetrics',
+        component: () => import('@/views/proc/service-monitoring/metrics.vue'),
+        meta: { title: '指标采集', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.7.2 告警升级（add-service-monitoring-console：升级链只读视图）
+        path: '/m/12.7.2',
+        name: 'SlaAlerts',
+        component: () => import('@/views/proc/service-monitoring/alerts.vue'),
+        meta: { title: '告警升级', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        // 12.7.3 月度报告（add-service-monitoring-console：月报四链+章节预览）
+        path: '/m/12.7.3',
+        name: 'SlaReport',
+        component: () => import('@/views/proc/service-monitoring/report.vue'),
+        meta: { title: '月度报告', group: '外部协同',
+          perm: 'ROLE_INTF_OPS,ROLE_INTF_ARCH,ROLE_ADMIN' }
+      },
+      {
+        // 12.8.1 协同预测（add-cpfr-forecast-replenishment：协议/预测/反馈/例外四 Tab）
+        path: '/m/12.8.1',
+        name: 'CpfrForecast',
+        component: () => import('@/views/scm/forecast-replenishment/forecast.vue'),
+        meta: { title: '协同预测', group: '外部协同',
+          perm: 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_ADMIN' }
+      },
+      {
+        // 12.8.2 补货计划（add-cpfr-forecast-replenishment：联合计划/冻结期调整/准确率）
+        path: '/m/12.8.2',
+        name: 'CpfrPlan',
+        component: () => import('@/views/scm/forecast-replenishment/plan.vue'),
+        meta: { title: '补货计划', group: '外部协同',
+          perm: 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_ADMIN' }
       },
       {
         // 3.3.1 信用检查（add-sales-lead-to-cash，spec customer-credit-control）

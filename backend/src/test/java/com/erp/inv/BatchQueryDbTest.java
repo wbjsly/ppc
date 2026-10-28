@@ -26,15 +26,17 @@ class BatchQueryDbTest {
     private InvBatchDao batchDao;
     @Autowired
     private BatchService batchService;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private String idA;
     private String idB;
 
     @BeforeEach
     void purgeStale() {
-        // 共享库隔离：批次号为 nanoTime 弱熵，前轮残留会撞 UK_INV_BATCH——先清同类残留
-        batchDao.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<InvBatch>()
-                .eq(InvBatch::getItemCode, "IT-QUERY-TEST"));
+        // 共享库隔离：UK_INV_BATCH 不区分逻辑删除（@TableLogic 幽灵行仍占键），
+        // 且批次号 nanoTime%100000 弱熵会撞残留——须物理清同类残留
+        jdbc.update("DELETE FROM erp_inv_batch WHERE ITEM_CODE='IT-QUERY-TEST'");
     }
 
     @AfterEach

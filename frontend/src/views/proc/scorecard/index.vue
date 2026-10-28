@@ -153,14 +153,20 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { useRoute } from 'vue-router'
 import { getResultsApi, getResultDetailApi, reviewResultApi, publishResultApi,
   getModelsApi, saveModelApi, collectScorecardApi, getRectifiesApi, closeRectifyApi,
   unfreezeApi, getPortalScorecardApi } from '@/api/proc/analysis'
 import request from '@/utils/request'
 
 const userStore = useUserStore()
+const route = useRoute()
 const isAdmin = computed(() => (userStore.userInfo?.roles || []).includes('ROLE_ADMIN'))
-const tab = ref('results')
+// Tab 初始定位（add-supply-performance-menu，design D3）：query.tab 或路由 meta.tab（12.9.1=models）；
+// /m/2.9.2 无 query 无 meta 行为不变（白名单外回落 results）
+const TAB_WHITELIST = ['results', 'models', 'rectifies']
+const initialTab = route.query.tab || route.meta?.tab
+const tab = ref(TAB_WHITELIST.includes(initialTab) ? initialTab : 'results')
 const loading = ref(false)
 
 // ---- 记分卡 ----

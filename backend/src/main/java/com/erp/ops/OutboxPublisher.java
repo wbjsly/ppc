@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.ServiceException;
 import com.erp.dao.ops.MdmOutboxDao;
 import com.erp.entity.ops.MdmOutboxEvent;
+import com.erp.service.intf.EventTypeService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -30,9 +31,11 @@ public class OutboxPublisher {
             "MDM.CUSTOMER.CREDIT_UPDATED", "MDM.CUSTOMER.REVIEWED", "MDM.CUSTOMER.TEMP_ROLLBACK");
 
     private final MdmOutboxDao outboxDao;
+    private final EventTypeService eventTypeService;
 
-    public OutboxPublisher(MdmOutboxDao outboxDao) {
+    public OutboxPublisher(MdmOutboxDao outboxDao, EventTypeService eventTypeService) {
         this.outboxDao = outboxDao;
+        this.eventTypeService = eventTypeService;
     }
 
     /**
@@ -58,6 +61,17 @@ public class OutboxPublisher {
     public void publishSourced(String eventType, String bizCode, int recordVersion,
                                String legalEntityId, String diffSummary,
                                Map<String, Object> extra, String source) {
+        Map<String, Object> payloadMap = buildPayloadMap(eventType, bizCode, recordVersion, diffSummary, extra);
+        String note = "消息总线未接入，PENDING 为预期态";
+        // 接口推送通道事件（PROC.*/VMI.*）发布前走注册表校验（add-event-subscription design D2）；
+        // MDM.*/审批等内部事件零感知，不受注册表约束
+        if (isInterfaceEvent(eventType)) {
+            EventTypeService.ValidateResult r = eventTypeService.validateForPublish(eventType, payloadMap);
+            payloadMap.put("eventVersion", r.version()); // 信封版本 Major.Minor（消费方从 payload 读）
+            if (!r.warnings().isEmpty()) {
+                note += "；类型不符警告（L4 放行）：" + String.join("; ", r.warnings());
+            }
+        }
         MdmOutboxEvent e = new MdmOutboxEvent();
         e.setEventId(UUID.randomUUID().toString());
         e.setEventType(eventType);
@@ -67,9 +81,9 @@ public class OutboxPublisher {
         e.setSource(source);
         e.setIdempotencyKey(bizCode + ":v" + recordVersion);
         e.setLegalEntityId(legalEntityId);
-        e.setPayload(buildPayload(eventType, bizCode, recordVersion, diffSummary, extra));
+        e.setPayload(writeJson(payloadMap));
         e.setStatus("PENDING"); // 消息总线未接入，PENDING 为预期态（桩口径）
-        e.setConsumerNote("消息总线未接入，PENDING 为预期态");
+        e.setConsumerNote(note);
         try {
             outboxDao.insert(e);
         } catch (org.springframework.dao.DuplicateKeyException ex) {
@@ -80,8 +94,13 @@ public class OutboxPublisher {
         log.info("{} code={} v{} key={}", eventType, bizCode, recordVersion, e.getIdempotencyKey());
     }
 
-    private String buildPayload(String eventType, String bizCode, int recordVersion,
-                                String diffSummary, Map<String, Object> extra) {
+    /** 接口推送通道事件判定（与 MdmOutboxDao.selectUndeliveredInterface 过滤前缀一致） */
+    private static boolean isInterfaceEvent(String eventType) {
+        return eventType != null && (eventType.startsWith("PROC.") || eventType.startsWith("VMI."));
+    }
+
+    private Map<String, Object> buildPayloadMap(String eventType, String bizCode, int recordVersion,
+                                                String diffSummary, Map<String, Object> extra) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("bizCode", bizCode);
         p.put("recordVersion", recordVersion);
@@ -98,6 +117,10 @@ public class OutboxPublisher {
         if (extra != null) {
             p.putAll(extra);
         }
+        return p;
+    }
+
+    private static String writeJson(Map<String, Object> p) {
         try {
             return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(p);
         } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {

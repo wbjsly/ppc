@@ -62,12 +62,45 @@ public class PoCoopController {
         return R.ok(service.acceptChange(poId, payload));
     }
 
-    @Operation(summary = "解锁供应商确认入口（ADMIN）")
+    @Operation(summary = "解锁供应商确认入口（须经协同异常工单——无 OPEN 工单 422，ADMIN）")
     @PostMapping("/unlocks")
     public R<Map<String, Object>> unlock(@RequestBody Map<String, Object> payload) {
         Object sid = payload.get("supplierId");
         Object remark = payload.get("remark");
         return R.ok(service.unlock(sid == null ? null : String.valueOf(sid),
                 remark == null ? null : String.valueOf(remark)));
+    }
+
+    @Operation(summary = "协同异常工单分页（OPEN/DONE，12.5.2 工单视图）")
+    @GetMapping("/tickets")
+    public R<Page<Map<String, Object>>> tickets(
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) String status) {
+        return R.ok(service.tickets(current, size, status));
+    }
+
+    @Operation(summary = "工单处理解锁（DONE + 解锁人/时间/原因 L5 留痕，ADMIN）")
+    @PostMapping("/tickets/{id}/resolve")
+    public R<Map<String, Object>> resolveTicket(@PathVariable String id,
+                                                @RequestBody Map<String, Object> payload) {
+        Object reason = payload.get("reason");
+        return R.ok(service.resolveTicket(id, reason == null ? null : String.valueOf(reason)));
+    }
+
+    @Operation(summary = "发起协商（ADMIN/PM，NEGOTIATE 留痕时间线可见）")
+    @PostMapping("/{poId}/negotiate")
+    public R<Map<String, Object>> negotiate(@PathVariable String poId,
+                                            @RequestBody Map<String, Object> payload) {
+        return R.ok(service.negotiate(poId, payload == null ? Map.of() : payload));
+    }
+
+    @Operation(summary = "推送台账（outbox PROC.PO_PUSHED 明细，12.5.1）")
+    @GetMapping("/push-ledger")
+    public R<Page<Map<String, Object>>> pushLedger(
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) String poNo) {
+        return R.ok(service.pushLedger(current, size, poNo));
     }
 }

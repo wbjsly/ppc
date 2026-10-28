@@ -13,7 +13,8 @@
           <el-input v-model="poFilters.keyword" placeholder="PO 单号" clearable style="width: 180px;" @keyup.enter="loadPoCoops" />
           <el-button type="primary" @click="loadPoCoops">查询</el-button>
           <el-button @click="openLedger">推送台账</el-button>
-          <el-button v-if="isAdmin" type="warning" plain @click="openUnlock">解锁供应商</el-button>
+          <el-button @click="$router.push('/m/12.5.1')">订单下达 12.5.1</el-button>
+          <el-button @click="$router.push('/m/12.5.2')">交期确认 12.5.2</el-button>
         </div>
         <el-table :data="poRows" size="small" border v-loading="loading" @expand-change="loadPoTimeline">
           <el-table-column type="expand">
@@ -55,16 +56,8 @@
             </template>
           </el-table-column>
           <el-table-column prop="pushedAt" label="推送时间" width="155" />
-          <el-table-column label="操作" width="230" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="canPm && row.confirmStatus !== 'CONFIRMED'" link type="primary"
-                @click="openConfirm(row)">代录确认</el-button>
-              <el-button v-if="canPm && row.confirmStatus === 'CHANGE_PENDING'" link type="warning"
-                @click="openAccept(row)">接受改期</el-button>
-              <el-button v-if="canPm && row.confirmStatus !== 'CONFIRMED'" link @click="doRemind(row)">催办</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+          </el-table>
+          <div style="color:#909399;font-size:12px;margin-top:8px">PO 协同操作（代录确认/接受改期/催办/协商/工单解锁）已收口至「订单协同 12.5.1 / 12.5.2」，本页保留只读摘要与时间线。</div>
         <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="poTotal"
           :page-size="poFilters.size" v-model:current-page="poFilters.current" @current-change="loadPoCoops" />
       </el-tab-pane>
@@ -192,7 +185,7 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- ============ Tab4 对账协同 ============ -->
+      <!-- ============ Tab4 对账协同（收口至 12.6：只读 + 跳转） ============ -->
       <el-tab-pane label="对账协同" name="recon">
         <div class="toolbar">
           <el-select v-model="reconFilters.status" placeholder="状态" clearable style="width: 150px;" @change="loadStatements">
@@ -201,10 +194,12 @@
             <el-option label="双签关闭" value="CLOSED" />
           </el-select>
           <el-button type="primary" @click="loadStatements">查询</el-button>
-          <span class="hint">系统匹配（S-4.9-06）：ERP 入库/领用明细 vs 供应商对账单，差异标红；冻结与双签归 2.7.3</span>
+          <el-button @click="$router.push('/m/12.6.1')">对账匹配 12.6.1</el-button>
+          <el-button @click="$router.push('/m/12.6.2')">差异处理 12.6.2</el-button>
+          <span class="hint">系统匹配与双签操作已收口至「对账协同 12.6.1 / 12.6.2」，本页保留只读差异视图。</span>
         </div>
         <el-alert v-if="reconDenied" type="info" :closable="false" show-icon
-          title="对账协同查询仅开放 ADMIN/PM（2.7.3 口径），当前角色不可见" />
+          title="对账协同查询按菜单权限开放（12.6 口径：PM/财务主管/ADMIN），当前角色不可见" />
         <el-table :data="reconRows" size="small" border v-loading="loading">
           <el-table-column prop="stmtNo" label="对账单号" width="150" />
           <el-table-column prop="supplierName" label="供应商" min-width="130" show-overflow-tooltip />
@@ -226,9 +221,8 @@
               <el-tag v-else size="small" type="info">未匹配</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="160" fixed="right">
+          <el-table-column label="操作" width="110" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="canPm" link type="primary" @click="doMatch(row)">系统匹配</el-button>
               <el-button link @click="openReconDetail(row)">差异清单</el-button>
             </template>
           </el-table-column>
@@ -237,50 +231,6 @@
           :page-size="reconFilters.size" v-model:current-page="reconFilters.current" @current-change="loadStatements" />
       </el-tab-pane>
     </el-tabs>
-
-    <!-- 代录确认对话框 -->
-    <el-dialog v-model="confirmDlg" title="代录交期确认（来源 OFFLINE）" width="440px">
-      <el-form label-width="96px">
-        <el-form-item label="PO"><span>{{ currentPo.poNo }}</span></el-form-item>
-        <el-form-item label="承诺交期">
-          <el-date-picker v-model="confirmForm.promiseDate" type="date" value-format="YYYY-MM-DD"
-            placeholder="原交期可留空默认" style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="备注"><el-input v-model="confirmForm.remark" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="confirmDlg = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitConfirm">确认</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 接受改期对话框 -->
-    <el-dialog v-model="acceptDlg" title="接受供应商改期申请" width="440px">
-      <el-form label-width="96px">
-        <el-form-item label="PO"><span>{{ currentPo.poNo }}</span></el-form-item>
-        <el-form-item label="最终承诺交期" required>
-          <el-date-picker v-model="acceptForm.promiseDate" type="date" value-format="YYYY-MM-DD"
-            style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="意见"><el-input v-model="acceptForm.remark" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="acceptDlg = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitAccept">接受并确认</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 解锁对话框 -->
-    <el-dialog v-model="unlockDlg" title="解锁供应商确认入口（ADMIN）" width="440px">
-      <el-form label-width="96px">
-        <el-form-item label="供应商 ID" required><el-input v-model="unlockForm.supplierId" /></el-form-item>
-        <el-form-item label="解锁原因"><el-input v-model="unlockForm.remark" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="unlockDlg = false">取消</el-button>
-        <el-button type="warning" :loading="submitting" @click="submitUnlock">确认解锁</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 推送台账对话框 -->
     <el-dialog v-model="ledgerDlg" title="推送台账（outbox 事件）" width="860px">
@@ -441,8 +391,6 @@
       </template>
       <el-empty v-else description="尚未执行系统匹配" />
       <template #footer>
-        <el-button v-if="canPm && currentRecon.id" type="primary" :loading="submitting"
-          @click="doMatch(currentRecon)">执行系统匹配</el-button>
         <el-button @click="reconDlg = false">关闭</el-button>
       </template>
     </el-dialog>
@@ -455,9 +403,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import request from '@/utils/request'
 import {
-  getPoCoopPageApi, getPoCoopTimelineApi, remindPoApi, offlineConfirmPoApi,
-  acceptPoChangeApi, unlockPoSupplierApi, getAsnPageApi, getAsnDetailApi,
-  createAsnApi, triggerWaterSyncApi, getPortalEventLedgerApi, matchStatementApi
+  getPoCoopPageApi, getPoCoopTimelineApi, getAsnPageApi, getAsnDetailApi,
+  createAsnApi, triggerWaterSyncApi, getPortalEventLedgerApi
 } from '@/api/proc/portal-collaboration'
 import { getAlertPageApi, getSettlementPageApi, signSettlementApi } from '@/api/proc/vmi'
 import { getStatementPageApi, getStatementDetailApi } from '@/api/fin/payment'
@@ -484,14 +431,7 @@ const poRows = ref([])
 const poTotal = ref(0)
 const poFilters = reactive({ current: 1, size: 20, status: '', keyword: '' })
 const timelineCache = ref({})
-const confirmDlg = ref(false)
-const acceptDlg = ref(false)
-const unlockDlg = ref(false)
 const ledgerDlg = ref(false)
-const currentPo = ref({})
-const confirmForm = reactive({ promiseDate: '', remark: '' })
-const acceptForm = reactive({ promiseDate: '', remark: '' })
-const unlockForm = reactive({ supplierId: '', remark: '' })
 const ledgerRows = ref([])
 const ledgerTotal = ref(0)
 const ledgerCurrent = ref(1)
@@ -518,77 +458,7 @@ async function loadPoTimeline(row) {
   timelineCache.value[row.id] = data || []
 }
 
-function openConfirm(row) {
-  currentPo.value = row
-  confirmForm.promiseDate = row.promiseDate || ''
-  confirmForm.remark = ''
-  confirmDlg.value = true
-}
-
-async function submitConfirm() {
-  submitting.value = true
-  try {
-    await offlineConfirmPoApi(currentPo.value.id, { ...confirmForm })
-    ElMessage.success('交期确认已登记（OFFLINE）')
-    confirmDlg.value = false
-    delete timelineCache.value[currentPo.value.id]
-    await loadPoCoops()
-  } finally {
-    submitting.value = false
-  }
-}
-
-function openAccept(row) {
-  currentPo.value = row
-  acceptForm.promiseDate = row.promiseDate || ''
-  acceptForm.remark = ''
-  acceptDlg.value = true
-}
-
-async function submitAccept() {
-  if (!acceptForm.promiseDate) {
-    ElMessage.warning('请选择最终承诺交期')
-    return
-  }
-  submitting.value = true
-  try {
-    await acceptPoChangeApi(currentPo.value.id, { ...acceptForm })
-    ElMessage.success('已接受改期并确认交期')
-    acceptDlg.value = false
-    await loadPoCoops()
-  } finally {
-    submitting.value = false
-  }
-}
-
-async function doRemind(row) {
-  await remindPoApi(row.id)
-  ElMessage.success('催办已补发')
-  delete timelineCache.value[row.id]
-  await loadPoCoops()
-}
-
-function openUnlock() {
-  unlockForm.supplierId = ''
-  unlockForm.remark = ''
-  unlockDlg.value = true
-}
-
-async function submitUnlock() {
-  if (!unlockForm.supplierId) {
-    ElMessage.warning('请填写供应商 ID')
-    return
-  }
-  submitting.value = true
-  try {
-    await unlockPoSupplierApi({ ...unlockForm })
-    ElMessage.success('已解锁')
-    unlockDlg.value = false
-    await loadPoCoops()
-  } finally {
-    submitting.value = false
-  }
-}
+// 代录确认/接受改期/催办/解锁已收口至 12.5.2（add-po-collaboration-console interface delta，端点保留）
 
 async function openLedger() {
   ledgerDlg.value = true
@@ -808,20 +678,7 @@ async function loadStatements() {
   }
 }
 
-async function doMatch(row) {
-  submitting.value = true
-  try {
-    const { data } = await matchStatementApi(row.id, {})
-    matchView.value = data
-    ElMessage.success(`匹配完成：差异 ${data.diffAmount}，标红 ${data.redCount} 笔`)
-    await loadStatements()
-    if (reconDlg.value) {
-      currentRecon.value = row
-    }
-  } finally {
-    submitting.value = false
-  }
-}
+// 系统匹配动作已收口至 12.6.1（add-reconciliation-console interface 收口），本 Tab 只读差异视图
 
 async function openReconDetail(row) {
   currentRecon.value = row

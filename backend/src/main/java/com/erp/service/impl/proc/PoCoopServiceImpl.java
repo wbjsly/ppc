@@ -3,10 +3,14 @@ package com.erp.service.impl.proc;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
+import com.erp.dao.ops.MdmOutboxDao;
 import com.erp.dao.proc.PoCoopLogDao;
+import com.erp.dao.proc.PoCoopTicketDao;
 import com.erp.dao.proc.PurchaseOrderDao;
 import com.erp.dao.proc.PurchaseOrderLineDao;
+import com.erp.entity.ops.MdmOutboxEvent;
 import com.erp.entity.proc.PoCoopLog;
+import com.erp.entity.proc.PoCoopTicket;
 import com.erp.entity.proc.PurchaseOrder;
 import com.erp.entity.proc.PurchaseOrderLine;
 import com.erp.ops.PortalEvents;
@@ -22,6 +26,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -38,9 +43,11 @@ import java.util.Set;
 public class PoCoopServiceImpl implements PoCoopService {
 
     private final PoCoopLogDao coopDao;
+    private final PoCoopTicketDao ticketDao;
     private final PurchaseOrderDao poDao;
     private final PurchaseOrderLineDao lineDao;
     private final PortalEventService eventService;
+    private final MdmOutboxDao outboxDao;
 
     /** 确认时限（默认 48h，spec po-collaboration） */
     @Value("${app.proc.po-confirm-hours:48}")
@@ -51,13 +58,17 @@ public class PoCoopServiceImpl implements PoCoopService {
     private long escalateHours;
 
     public PoCoopServiceImpl(PoCoopLogDao coopDao,
+                             PoCoopTicketDao ticketDao,
                              PurchaseOrderDao poDao,
                              PurchaseOrderLineDao lineDao,
-                             PortalEventService eventService) {
+                             PortalEventService eventService,
+                             MdmOutboxDao outboxDao) {
         this.coopDao = coopDao;
+        this.ticketDao = ticketDao;
         this.poDao = poDao;
         this.lineDao = lineDao;
         this.eventService = eventService;
+        this.outboxDao = outboxDao;
     }
 
     // ---------- 下达推送 ----------
@@ -114,8 +125,15 @@ public class PoCoopServiceImpl implements PoCoopService {
         }
         // seq 先于写行计算（否则把本行也计入 → 每次 v+1 → 幂等键漂移）
         int seq = confirmSeq(poId);
-        write(po, PoCoopLog.ACT_CONFIRM, source, promise,
-                "交期确认（" + source + "）", payloadStr(payload, "remark"), operator);
+        // 结构化数量变更建议（spec 增补：建议数量+原因，不写回 PO；旧 qtyNote 兼容映射进原因）
+        BigDecimal qtySuggested = payloadDec(payload, "qtySuggested");
+        String qtyReason = payloadStr(payload, "qtyReason");
+        if (!StringUtils.hasText(qtyReason)) {
+            qtyReason = payloadStr(payload, "qtyNote");
+        }
+        writeWithQty(po, PoCoopLog.ACT_CONFIRM, source, promise,
+                "交期确认（" + source + "）" + (qtySuggested != null ? "；数量建议 " + qtySuggested : ""),
+                payloadStr(payload, "remark"), operator, qtySuggested, qtyReason);
         po.setPromiseDate(promise);
         po.setConfirmStatus("CONFIRMED");
         po.setUpdateBy(operator);
@@ -151,9 +169,20 @@ public class PoCoopServiceImpl implements PoCoopService {
             operator = SecurityUtils.getCurrentUserId();
         }
         String qtyNote = payloadStr(payload, "qtyNote");
+        // 结构化数量建议优先（spec 增补），旧 qtyNote 兼容
+        BigDecimal qtySuggested = payloadDec(payload, "qtySuggested");
+        String qtyReason = payloadStr(payload, "qtyReason");
+        if (!StringUtils.hasText(qtyReason)) {
+            qtyReason = qtyNote;
+        }
         String detail = "申请改期至 " + promise
-                + (StringUtils.hasText(qtyNote) ? "；数量建议：" + qtyNote : "");
-        write(po, "CHANGE_REQUEST", source, promise, detail, payloadStr(payload, "remark"), operator);
+                + (qtySuggested != null ? "；数量建议：" + qtySuggested
+                    : (StringUtils.hasText(qtyNote) ? "；数量建议：" + qtyNote : ""));
+        PoCoopLog l = newRow(po, "CHANGE_REQUEST", source, promise, detail,
+                payloadStr(payload, "remark"), operator);
+        l.setQtySuggested(qtySuggested);
+        l.setQtyReason(qtyReason);
+        coopDao.insert(l);
         po.setConfirmStatus("CHANGE_PENDING");
         po.setUpdateBy(operator);
         poDao.updateById(po);
@@ -208,29 +237,135 @@ public class PoCoopServiceImpl implements PoCoopService {
         if (!StringUtils.hasText(supplierId)) {
             throw new ServiceException(422, "supplierId 必填");
         }
-        PoCoopLog lock = latestAction(supplierId, PoCoopLog.ACT_LOCK);
-        if (lock == null || !supplierLocked(supplierId)) {
-            throw new ServiceException(422, "该供应商未处于锁定状态");
+        // spec 增补：解锁必须经协同异常工单——无 OPEN 工单即拒绝（"无工单不得解锁"）
+        PoCoopTicket open = ticketDao.selectOpenBySupplier(supplierId);
+        if (open == null) {
+            throw new ServiceException(422, "该供应商无待处理的协同异常工单，须经工单解锁");
+        }
+        return resolveTicket(open.getId(), remark);
+    }
+
+    /** 工单处理解锁（DONE + 解锁人/时间/原因 L5 留痕，spec po-collaboration 增补） */
+    @Override
+    @Transactional
+    public Map<String, Object> resolveTicket(String ticketId, String reason) {
+        PoCoopTicket t = ticketDao.selectById(ticketId);
+        if (t == null) {
+            throw new ServiceException(404, "协同异常工单不存在");
+        }
+        if (!PoCoopTicket.ST_OPEN.equals(t.getStatus())) {
+            throw new ServiceException(422, "工单已处理（当前 " + t.getStatus() + "）");
+        }
+        if (!StringUtils.hasText(reason)) {
+            throw new ServiceException(422, "解锁原因必填（L5 留痕）");
+        }
+        String supplierId = t.getSupplierId();
+        if (supplierLocked(supplierId)) {
+            PoCoopLog lock = latestAction(supplierId, PoCoopLog.ACT_LOCK);
+            String operator = SecurityUtils.getCurrentUserId();
+            writeById(lock == null ? null : lock.getPoId(), supplierId,
+                    PoCoopLog.ACT_UNLOCK, PoCoopLog.SRC_SYSTEM,
+                    null, "采购经理经工单 " + t.getTicketNo() + " 解锁：" + reason, operator);
+            // 清 PO 锁定标记（列表展示一致性；判定以流水为准）。
+            // 用 LambdaUpdateWrapper 显式 set 绕过 @Version：惰性补写已推进 ver_no，
+            // update(实体, wrapper) 的乐观锁条件会静默匹配 0 行。
+            poDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<PurchaseOrder>()
+                    .set(PurchaseOrder::getCoopLock, "0")
+                    .eq(PurchaseOrder::getSupplierId, supplierId)
+                    .eq(PurchaseOrder::getCoopLock, "1"));
         }
         String operator = SecurityUtils.getCurrentUserId();
-        writeById(lock.getPoId(), supplierId, PoCoopLog.ACT_UNLOCK, PoCoopLog.SRC_SYSTEM,
-                null, "采购经理解锁：" + (StringUtils.hasText(remark) ? remark : "继续合作"),
-                operator);
-        // 清 PO 锁定标记（列表展示一致性；判定以流水为准）
-        PurchaseOrder upd = new PurchaseOrder();
-        upd.setCoopLock("0");
-        poDao.update(upd, new LambdaQueryWrapper<PurchaseOrder>()
-                .eq(PurchaseOrder::getSupplierId, supplierId)
-                .eq(PurchaseOrder::getCoopLock, "1"));
-        log.info("PO 协同解锁 supplier={} by {} remark={}", supplierId, operator, remark);
+        t.setStatus(PoCoopTicket.ST_DONE);
+        t.setUnlockBy(operator);
+        t.setUnlockAt(LocalDateTime.now());
+        t.setUnlockReason(reason);
+        t.setUpdateBy(operator);
+        ticketDao.updateById(t);
+        log.info("PO 协同工单解锁 ticket={} supplier={} by {} reason={}",
+                t.getTicketNo(), supplierId, operator, reason);
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ticketNo", t.getTicketNo());
         m.put("supplierId", supplierId);
+        m.put("status", PoCoopTicket.ST_DONE);
+        m.put("unlockBy", operator);
+        m.put("unlockReason", reason);
         m.put("locked", false);
-        m.put("operator", operator);
         return m;
     }
 
+    /** 发起协商（spec 增补：采购员对变更发起协商并留痕，时间线可见） */
+    @Override
+    @Transactional
+    public Map<String, Object> negotiate(String poId, Map<String, Object> payload) {
+        PurchaseOrder po = requireApprovable(poId);
+        String note = payloadStr(payload, "note");
+        if (!StringUtils.hasText(note)) {
+            throw new ServiceException(422, "协商说明必填");
+        }
+        String operator = SecurityUtils.getCurrentUserId();
+        write(po, PoCoopLog.ACT_NEGOTIATE, PoCoopLog.SRC_SYSTEM, po.getPromiseDate(),
+                "发起协商：" + note, payloadStr(payload, "remark"), operator);
+        log.info("PO {} 发起协商 by {}：{}", po.getPoNo(), operator, note);
+        return row(po, po.getConfirmStatus(), po.getPromiseDate());
+    }
+
     // ---------- 查询（惰性超时补写） ----------
+
+    /** 协同异常工单分页（spec 增补：12.5.2 工单视图数据源） */
+    @Override
+    public Page<Map<String, Object>> tickets(long current, long size, String status) {
+        LambdaQueryWrapper<PoCoopTicket> qw = new LambdaQueryWrapper<PoCoopTicket>()
+                .orderByDesc(PoCoopTicket::getLockAt);
+        if (StringUtils.hasText(status)) {
+            qw.eq(PoCoopTicket::getStatus, status.trim().toUpperCase());
+        }
+        Page<PoCoopTicket> page = ticketDao.selectPage(new Page<>(current, size), qw);
+        Page<Map<String, Object>> out = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (PoCoopTicket t : page.getRecords()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", t.getId());
+            m.put("ticketNo", t.getTicketNo());
+            m.put("supplierId", t.getSupplierId());
+            m.put("supplierName", t.getSupplierName());
+            m.put("lockPoNos", t.getLockPoNos());
+            m.put("lockAt", t.getLockAt());
+            m.put("status", t.getStatus());
+            m.put("unlockBy", t.getUnlockBy());
+            m.put("unlockAt", t.getUnlockAt());
+            m.put("unlockReason", t.getUnlockReason());
+            rows.add(m);
+        }
+        out.setRecords(rows);
+        return out;
+    }
+
+    /** 推送台账：outbox PROC.PO_PUSHED 事件明细（design D4：outbox 即台账不建新表） */
+    @Override
+    public Page<Map<String, Object>> pushLedger(long current, long size, String poNo) {
+        LambdaQueryWrapper<MdmOutboxEvent> qw = new LambdaQueryWrapper<MdmOutboxEvent>()
+                .eq(MdmOutboxEvent::getEventType, "PROC.PO_PUSHED")
+                .orderByDesc(MdmOutboxEvent::getOccurredAt);
+        if (StringUtils.hasText(poNo)) {
+            qw.like(MdmOutboxEvent::getIdempotencyKey, poNo.trim());
+        }
+        Page<MdmOutboxEvent> page = outboxDao.selectPage(new Page<>(current, size), qw);
+        Page<Map<String, Object>> out = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (MdmOutboxEvent e : page.getRecords()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("eventId", e.getEventId());
+            m.put("eventType", e.getEventType());
+            m.put("idempotencyKey", e.getIdempotencyKey());
+            m.put("occurredAt", e.getOccurredAt());
+            m.put("status", e.getStatus());
+            m.put("consumerNote", e.getConsumerNote());
+            m.put("payload", e.getPayload());
+            rows.add(m);
+        }
+        out.setRecords(rows);
+        return out;
+    }
 
     @Override
     public Page<Map<String, Object>> page(long current, long size, String status,
@@ -397,7 +532,45 @@ public class PoCoopServiceImpl implements PoCoopService {
         po.setCoopLock("1");
         po.setUpdateBy("system");
         poDao.updateById(po);
+        // 协同异常工单（spec 增补：锁定即生成 OPEN 工单，解锁须经工单处理 L5 留痕）
+        openTicket(po, overduePoNos);
         log.warn("PO 协同锁定 supplier={} 连续超时 {}", po.getSupplierId(), overduePoNos);
+    }
+
+    /** 锁定后插 OPEN 工单（按 supplierId+OPEN 防御查重，锁态短路下不会重复） */
+    private void openTicket(PurchaseOrder po, List<String> overduePoNos) {
+        if (ticketDao.selectOpenBySupplier(po.getSupplierId()) != null) {
+            return;
+        }
+        PoCoopTicket t = new PoCoopTicket();
+        t.setTicketNo(nextTicketNo());
+        t.setSupplierId(po.getSupplierId());
+        t.setSupplierName(po.getSupplierName());
+        t.setLockPoNos(String.join("、", overduePoNos));
+        t.setLockAt(LocalDateTime.now());
+        t.setStatus(PoCoopTicket.ST_OPEN);
+        t.setCreateBy("system");
+        ticketDao.insert(t);
+    }
+
+    /** 当日最大后缀 +1（COUNT+1 在当日删行出现空洞时会复用已存在号撞 UK——
+     *  测试 purge 与跨供应商惰性重锁组合实测触发，故按 MAX 后缀计算） */
+    private synchronized String nextTicketNo() {
+        String prefix = "PCT" + LocalDateTime.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        int max = 0;
+        for (PoCoopTicket r : ticketDao.selectList(new LambdaQueryWrapper<PoCoopTicket>()
+                .likeRight(PoCoopTicket::getTicketNo, prefix)
+                .select(PoCoopTicket::getTicketNo))) {
+            String no = r.getTicketNo();
+            if (no != null && no.length() > prefix.length()) {
+                try {
+                    max = Math.max(max, Integer.parseInt(no.substring(prefix.length())));
+                } catch (NumberFormatException ignore) {
+                    // 非数字后缀跳过
+                }
+            }
+        }
+        return prefix + String.format("%03d", max + 1);
     }
 
     // ---------- 帮助方法 ----------
@@ -416,6 +589,33 @@ public class PoCoopServiceImpl implements PoCoopService {
     private void write(PurchaseOrder po, String action, String source, LocalDate promise,
                        String detail, String remark, String operator) {
         writeById(po.getId(), po.getSupplierId(), action, source, promise, detail, remark, operator);
+    }
+
+    /** 带结构化数量建议的写行（spec 增补） */
+    private void writeWithQty(PurchaseOrder po, String action, String source, LocalDate promise,
+                              String detail, String remark, String operator,
+                              BigDecimal qtySuggested, String qtyReason) {
+        PoCoopLog l = newRow(po, action, source, promise, detail, remark, operator);
+        l.setQtySuggested(qtySuggested);
+        l.setQtyReason(qtyReason);
+        coopDao.insert(l);
+    }
+
+    private PoCoopLog newRow(PurchaseOrder po, String action, String source, LocalDate promise,
+                             String detail, String remark, String operator) {
+        PoCoopLog l = new PoCoopLog();
+        l.setPoId(po.getId());
+        l.setPoNo(po.getPoNo());
+        l.setSupplierId(po.getSupplierId());
+        l.setActionType(action);
+        l.setSource(source);
+        l.setPromiseDate(promise);
+        l.setDetail(detail);
+        l.setRemark(remark);
+        l.setOperatorName(operator);
+        l.setActionAt(LocalDateTime.now());
+        l.setCreateBy(operator);
+        return l;
     }
 
     private void writeById(String poId, String supplierId, String action, String source,
@@ -539,5 +739,10 @@ public class PoCoopServiceImpl implements PoCoopService {
     private static LocalDate payloadDate(Map<String, Object> payload, String key) {
         String s = payloadStr(payload, key);
         return s == null ? null : LocalDate.parse(s);
+    }
+
+    private static BigDecimal payloadDec(Map<String, Object> payload, String key) {
+        String s = payloadStr(payload, key);
+        return s == null ? null : new BigDecimal(s);
     }
 }

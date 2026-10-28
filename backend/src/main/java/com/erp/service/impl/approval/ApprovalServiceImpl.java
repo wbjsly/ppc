@@ -131,6 +131,12 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         requireSignable(task, inst);
         requireNodeRole(task);
         rejectSelfSign(inst, "通过");
+        // 对账双签确认意见必填（add-reconciliation-console，spec reconciliation-console：
+        // 「确认意见 MUST 必填并记录确认人与时间」）——仅 StatementReconcile 定向强制，
+        // 其余业务维持空意见默认「同意」的全局行为
+        if ("StatementReconcile".equals(inst.getBizType()) && !hasText(opinion)) {
+            throw new ServiceException(422, "对账双签确认意见必填");
+        }
 
         task.setStatus("PASSED");
         task.setSigner(SecurityUtils.getCurrentUserId());

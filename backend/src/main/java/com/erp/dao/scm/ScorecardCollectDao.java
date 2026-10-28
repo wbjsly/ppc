@@ -70,7 +70,8 @@ public interface ScorecardCollectDao {
             "GROUP BY p.SUPPLIER_ID")
     List<Map<String, Object>> poConfirm(@Param("start") String start, @Param("next") String next);
 
-    /** 响应：补货确认及时率 = CONFIRM_AT - CREATE_DATE ≤ 24h */
+    /** 响应：补货确认及时率 = CONFIRM_AT - CREATE_DATE ≤ 24h
+     * （VMI 补货确认——add-supply-performance-menu 起退出响应维度，仅作明细参考 replenishRate） */
     @Select("SELECT SUPPLIER_ID AS supplierId, COUNT(*) AS totalCnt, " +
             "  SUM(CASE WHEN CONFIRM_AT IS NOT NULL " +
             "       AND CONFIRM_AT <= DATE_ADD(CREATE_DATE, INTERVAL 24 HOUR) THEN 1 ELSE 0 END) AS timelyCnt " +
@@ -78,6 +79,33 @@ public interface ScorecardCollectDao {
             "WHERE DEL_FLAG = '0' AND CREATE_DATE >= #{start} AND CREATE_DATE < #{next} " +
             "GROUP BY SUPPLIER_ID")
     List<Map<String, Object>> replenishTimely(@Param("start") String start, @Param("next") String next);
+
+    /**
+     * 响应：CPFR 反馈及时率（add-supply-performance-menu，FR-4.9-7-2 对齐）。
+     * 48h 全量口径：分母 = 周期起点落窗的全部反馈行；分子 = SUBMIT_AT ≤ PERIOD_START_AT+48h。
+     * 「默认采纳」行（SUBMIT_AT=默认采纳时刻）超期居多，天然进分母不进分子（BR-4.9-33 扣分语义）。
+     */
+    @Select("SELECT a.SUPPLIER_ID AS supplierId, COUNT(*) AS totalCnt, " +
+            "  SUM(CASE WHEN f.SUBMIT_AT IS NOT NULL " +
+            "       AND f.SUBMIT_AT <= DATE_ADD(f.PERIOD_START_AT, INTERVAL 48 HOUR) " +
+            "       THEN 1 ELSE 0 END) AS timelyCnt " +
+            "FROM erp_scm_cpfr_feedback f " +
+            "JOIN erp_scm_cpfr_agreement a ON a.ID = f.AGREEMENT_ID AND a.DEL_FLAG = '0' " +
+            "WHERE f.DEL_FLAG = '0' AND f.PERIOD_START_AT >= #{start} AND f.PERIOD_START_AT < #{next} " +
+            "GROUP BY a.SUPPLIER_ID")
+    List<Map<String, Object>> cpfrFeedbackTimely(@Param("start") String start, @Param("next") String next);
+
+    /**
+     * 响应：异常工单响应时长（add-supply-performance-menu，FR-4.9-7-2 对齐）。
+     * 当月锁定且已解锁工单：LOCK_AT → UNLOCK_AT 平均小时数；未解锁工单不计（无响应时长）。
+     */
+    @Select("SELECT SUPPLIER_ID AS supplierId, COUNT(*) AS ticketCnt, " +
+            "  AVG(TIMESTAMPDIFF(HOUR, LOCK_AT, UNLOCK_AT)) AS avgHours " +
+            "FROM erp_po_coop_ticket " +
+            "WHERE DEL_FLAG = '0' AND LOCK_AT >= #{start} AND LOCK_AT < #{next} " +
+            "AND UNLOCK_AT IS NOT NULL " +
+            "GROUP BY SUPPLIER_ID")
+    List<Map<String, Object>> ticketResponse(@Param("start") String start, @Param("next") String next);
 
     /** 成本：价格竞争力指数数据源 = 当月快照各供应商月均价（品类内对比在服务层算） */
     @Select("SELECT SUPPLIER_ID AS supplierId, CATEGORY_CODE AS categoryCode, ITEM_CODE AS itemCode, " +

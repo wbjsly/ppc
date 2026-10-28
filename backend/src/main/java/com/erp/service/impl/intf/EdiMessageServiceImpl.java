@@ -5,10 +5,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.erp.common.ServiceException;
 import com.erp.dao.intf.IntfEdimapDao;
 import com.erp.dao.intf.IntfMessageDao;
+import com.erp.dao.intf.IntfMsgReceiptDao;
+import com.erp.dao.intf.IntfMsgRetryTraceDao;
 import com.erp.dao.intf.IntfTicketDao;
 import com.erp.dao.proc.PurchaseOrderDao;
 import com.erp.entity.intf.IntfEdimap;
 import com.erp.entity.intf.IntfMessage;
+import com.erp.entity.intf.IntfMsgReceipt;
+import com.erp.entity.intf.IntfMsgRetryTrace;
 import com.erp.entity.intf.IntfSlaAlert;
 import com.erp.entity.intf.IntfTicket;
 import com.erp.entity.proc.PurchaseOrder;
@@ -56,6 +60,8 @@ public class EdiMessageServiceImpl implements EdiMessageService {
     private final IntfMessageDao messageDao;
     private final IntfEdimapDao edimapDao;
     private final IntfTicketDao ticketDao;
+    private final IntfMsgRetryTraceDao retryTraceDao;
+    private final IntfMsgReceiptDao receiptDao;
     private final PurchaseOrderDao purchaseOrderDao;
     private final PurchaseOrderService purchaseOrderService;
     private final AsnService asnService;
@@ -67,7 +73,8 @@ public class EdiMessageServiceImpl implements EdiMessageService {
     @Value("${app.intf.api-retry-max:3}") private int retryMax;
 
     public EdiMessageServiceImpl(IntfMessageDao messageDao, IntfEdimapDao edimapDao,
-                                 IntfTicketDao ticketDao, PurchaseOrderDao purchaseOrderDao,
+                                 IntfTicketDao ticketDao, IntfMsgRetryTraceDao retryTraceDao,
+                                 IntfMsgReceiptDao receiptDao, PurchaseOrderDao purchaseOrderDao,
                                  PurchaseOrderService purchaseOrderService, AsnService asnService,
                                  ThreeWayMatchService threeWayMatchService,
                                  OpenApiGatewayService gateway,
@@ -75,6 +82,8 @@ public class EdiMessageServiceImpl implements EdiMessageService {
         this.messageDao = messageDao;
         this.edimapDao = edimapDao;
         this.ticketDao = ticketDao;
+        this.retryTraceDao = retryTraceDao;
+        this.receiptDao = receiptDao;
         this.purchaseOrderDao = purchaseOrderDao;
         this.purchaseOrderService = purchaseOrderService;
         this.asnService = asnService;
@@ -135,7 +144,10 @@ public class EdiMessageServiceImpl implements EdiMessageService {
                 || IntfMessage.ST_PARTIAL.equals(existing.getStatus());
         if (hash != null && existing.getPayloadHash() != null && hash.equals(existing.getPayloadHash())) {
             if (processed) {
-                return receiptOf(existing, true, "重复跳过：幂等键命中，返回首次处理结果");
+                Map<String, Object> r = receiptOf(existing, true, "重复跳过：幂等键命中，返回首次处理结果");
+                // 重复跳过也留回执（spec 回执留存：SKIPPED 结论，引用首次处理结果）
+                saveReceipt(existing, "SKIPPED", r);
+                return r;
             }
             // 同载荷但未处理成功：允许按重发/重放语义继续
             return process(existing, root);
@@ -168,6 +180,8 @@ public class EdiMessageServiceImpl implements EdiMessageService {
             msg.setLineOk(lines.size() - lineFail);
             msg.setSyntaxResult(toJson(errors));
             msg.setRetryCount((msg.getRetryCount() == null ? 0 : msg.getRetryCount()) + 1);
+            // 轨迹逐次留痕（spec 留痕要求：主行 syntaxResult 会被覆盖，轨迹不覆盖；先插轨迹后更主行）
+            saveRetryTrace(msg, errors);
             if (msg.getRetryCount() >= retryMax) {
                 msg.setStatus(IntfMessage.ST_MANUAL);
                 msg.setRemark("语法层校验重发已达 " + retryMax + " 次，终止自动重试转人工");
@@ -553,7 +567,39 @@ public class EdiMessageServiceImpl implements EdiMessageService {
         receipt.put("idempotencyKey", msg.getIdempotencyKey());
         receipt.put("processedAt", msg.getFinishedAt());
         receipt.put("receiptWithinSeconds", 60);
+        // 回执快照留存（spec 回执留存：与主行结论同路径写入，保证一致）
+        saveReceipt(msg, String.valueOf(msg.getStatus()), receipt);
         return receipt;
+    }
+
+    /** 重试轨迹留痕（只 INSERT：第 N 次 + 失败时间 + 错误清单快照，spec 留痕要求） */
+    private void saveRetryTrace(IntfMessage msg, List<Map<String, Object>> errors) {
+        try {
+            IntfMsgRetryTrace t = new IntfMsgRetryTrace();
+            t.setMsgId(msg.getId());
+            t.setAttemptNo(msg.getRetryCount());
+            t.setFailAt(LocalDateTime.now());
+            t.setErrorsJson(toJson(errors));
+            retryTraceDao.insert(t);
+        } catch (Exception e) {
+            log.warn("retry trace insert failed msg={}: {}", msg.getMsgNo(), e.getMessage());
+        }
+    }
+
+    /** 回执快照留存（只 INSERT：每次处理结论各留一条，spec 回执留存要求） */
+    private void saveReceipt(IntfMessage msg, String conclusion, Map<String, Object> receipt) {
+        try {
+            IntfMsgReceipt r = new IntfMsgReceipt();
+            r.setMsgId(msg.getId());
+            r.setMsgNo(msg.getMsgNo());
+            r.setConclusion(conclusion);
+            r.setReceiptJson(toJson(receipt));
+            r.setReceiptAt(LocalDateTime.now());
+            r.setSentFlag("0");   // design D4：送达标记预留列，异步发送器立项前恒 0
+            receiptDao.insert(r);
+        } catch (Exception e) {
+            log.warn("receipt insert failed msg={}: {}", msg.getMsgNo(), e.getMessage());
+        }
     }
 
     private Map<String, Object> receiptOf(IntfMessage msg, boolean skipped, String note) {
@@ -592,6 +638,9 @@ public class EdiMessageServiceImpl implements EdiMessageService {
         m.put("syntax", parseQuietly(msg.getSyntaxResult()));
         m.put("mapping", parseQuietly(msg.getMapResult()));
         m.put("business", parseQuietly(msg.getBizResult()));
+        // detail 扩展（design D2）：重试轨迹（ATTEMPT_NO 升序）与回执历史（RECEIPT_AT 降序）
+        m.put("retryTrace", retryTraceDao.selectByMsgId(msg.getId()));
+        m.put("receipts", receiptDao.selectByMsgId(msg.getId()));
         return m;
     }
 

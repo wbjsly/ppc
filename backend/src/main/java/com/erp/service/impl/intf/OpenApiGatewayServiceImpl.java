@@ -10,7 +10,9 @@ import com.erp.entity.intf.IntfChannel;
 import com.erp.entity.intf.IntfCredential;
 import com.erp.entity.intf.IntfRateState;
 import com.erp.entity.intf.IntfSlaAlert;
+import com.erp.entity.intf.IntfTierChangeLog;
 import com.erp.service.intf.GatewayDecision;
+import com.erp.service.intf.TierChangeLogService;
 import com.erp.util.IntfCrypto;
 import com.erp.service.intf.OpenApiGatewayService;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +56,7 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
     private final IntfCallLogDao callLogDao;
     private final IntfRateStateDao rateStateDao;
     private final IntfSlaAlertDao alertDao;
+    private final TierChangeLogService tierChangeLog;
 
     @Value("${app.intf.rate-limit-strategic:500}") private int rateStrategic;
     @Value("${app.intf.rate-limit-normal:100}") private int rateNormal;
@@ -65,12 +68,13 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
 
     public OpenApiGatewayServiceImpl(IntfChannelDao channelDao, IntfCredentialDao credentialDao,
                                      IntfCallLogDao callLogDao, IntfRateStateDao rateStateDao,
-                                     IntfSlaAlertDao alertDao) {
+                                     IntfSlaAlertDao alertDao, TierChangeLogService tierChangeLog) {
         this.channelDao = channelDao;
         this.credentialDao = credentialDao;
         this.callLogDao = callLogDao;
         this.rateStateDao = rateStateDao;
         this.alertDao = alertDao;
+        this.tierChangeLog = tierChangeLog;
     }
 
     // ------------------------------------------------------------------ evaluate
@@ -237,7 +241,12 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
                 if (row != null) {
                     row.setCaller(d.getCaller());
                     row.setRespCode(respCode);
-                    row.setErrCode(errCode);
+                    // securityEvent() 先写入的 SECURITY_EVENT:* 不得被决策码覆盖
+                    // （add-interface-call-console B'：修复"写了即被抵消"，C-5.5-05 安全审计留痕生效；
+                    //   RESP_CODE 仍承载 401/429 等粗粒度语义，判定与放行行为零变化）
+                    if (row.getErrCode() == null || row.getErrCode().isEmpty()) {
+                        row.setErrCode(errCode);
+                    }
                     row.setCostMs((int) costMs);
                     row.setRateHit(d.isRateHit());
                     row.setCircuitHit(d.isCircuitHit());
@@ -348,6 +357,7 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
             return;
         }
         String from = cred.getRateTier();
+        int limitFrom = cred.getLimitPerMin() == null ? 0 : cred.getLimitPerMin();
         cred.setRateTier(IntfChannel.TIER_LOWEST);
         cred.setLimitPerMin(rateNew);
         credentialDao.updateById(cred);
@@ -359,6 +369,11 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
             channelDao.updateById(channel);
         }
         log.warn("caller {} downgraded {} -> LOWEST ({} 次/分钟)", d.getCaller(), from, rateNew);
+        // 档位变更历史（spec 12.3.2：自动降档同源留痕，design D1 单入口）
+        tierChangeLog.record(d.getCaller(), channel == null ? null : channel.getPartnerCode(),
+                IntfTierChangeLog.TYPE_AUTO, from, IntfChannel.TIER_LOWEST,
+                limitFrom, rateNew,
+                "连续 3 个统计窗口触发 429，自动降档至最低档", IntfTierChangeLog.OPERATOR_SYSTEM);
         raiseAlert("RATE_DOWNGRADE:" + d.getCaller(), "RATE_LIMIT", IntfSlaAlert.LVL_WARNING,
                 "连续 3 个统计窗口触发 429，限流档位由 " + from + " 自动降档至 LOWEST（" + rateNew + " 次/分钟）",
                 channel == null ? null : channel.getPartnerCode());

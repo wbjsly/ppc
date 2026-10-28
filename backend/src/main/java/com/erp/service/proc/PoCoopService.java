@@ -27,8 +27,20 @@ public interface PoCoopService {
     /** 催办补发（ADMIN/PM 手工；惰性自动催办走 ensureTimeout） */
     Map<String, Object> remind(String poId);
 
-    /** 采购经理/ADMIN 解锁（写 UNLOCK 行 + 清 PO 锁定标记） */
-    Map<String, Object> unlock(String supplierId, String remark);
+    /** 采购经理/ADMIN 解锁（须经协同异常工单——无 OPEN 工单 422，spec 增补） */
+    Map<String, Object> unlock(String supplierId, String reason);
+
+    /** 工单处理解锁（DONE + 解锁人/时间/原因 L5 留痕，spec po-collaboration 增补） */
+    Map<String, Object> resolveTicket(String ticketId, String reason);
+
+    /** 采购员对变更发起协商（NEGOTIATE 行留痕，时间线可见，spec 增补） */
+    Map<String, Object> negotiate(String poId, Map<String, Object> payload);
+
+    /** 协同异常工单分页（status 筛选 OPEN/DONE） */
+    Page<Map<String, Object>> tickets(long current, long size, String status);
+
+    /** 推送台账（outbox PROC.PO_PUSHED 事件明细，12.5.1 页面区块） */
+    Page<Map<String, Object>> pushLedger(long current, long size, String poNo);
 
     /** 内部分页（含惰性超时补写与锁定判定） */
     Page<Map<String, Object>> page(long current, long size, String status,

@@ -236,6 +236,188 @@
           </template>
         </el-dialog>
       </el-tab-pane>
+
+      <!-- ============ 服务等级（add-service-monitoring-console：已发布 SLA 报告章节级可见） ============ -->
+      <el-tab-pane label="服务等级" name="sla">
+        <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
+          title="接口服务等级（月度 SLA 报告）"
+          description="仅展示已发布报告；服务端按关联通道过滤，您只能看到总览与与自身相关的章节，其他伙伴数据不可见（C-0-07 行级隔离）。" />
+        <el-table :data="slaReports" size="mini" border v-loading="slaLoading">
+          <el-table-column prop="monthTag" label="月份" width="80" />
+          <el-table-column prop="title" label="报告" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="version" label="版本" width="70" align="center" />
+          <el-table-column prop="publishAt" label="发布时间" width="160" />
+          <el-table-column label="操作" width="130">
+            <template #default="{row}">
+              <el-button type="text" size="mini" @click="openSlaDetail(row)">查看章节</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-if="!slaLoading && !slaReports.length" description="暂无已发布的服务等级报告" />
+
+        <el-dialog v-model="slaDlg" :title="`服务等级章节 - ${slaDetail.monthTag || ''}`" width="760px">
+          <template v-if="slaDetail.id">
+            <el-descriptions :column="4" size="mini" border style="margin-bottom: 10px;">
+              <el-descriptions-item v-for="(v, k) in slaDetail.overview || {}" :key="k" :label="k">{{ v }}</el-descriptions-item>
+            </el-descriptions>
+            <div class="sub-title" style="font-size:13px;font-weight:600;margin-bottom:6px;">
+              与我相关的章节（{{ (slaDetail.chapters || []).length }}）
+            </div>
+            <el-table :data="slaDetail.chapters || []" size="mini" border max-height="300">
+              <el-table-column prop="partnerCode" label="伙伴码" width="140" />
+              <el-table-column label="指标" min-width="300">
+                <template #default="{ row }">
+                  <el-tag v-for="(a, k) in row.metrics || {}" :key="k" size="mini" style="margin-right:4px;">
+                    {{ k }}: avg {{ a.avg ?? '—' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="未达标" width="90" align="center">
+                <template #default="{ row }">{{ (row.unreach || []).length }}</template>
+              </el-table-column>
+            </el-table>
+          </template>
+          <template #footer>
+            <el-button @click="slaDlg = false">关闭</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
+
+      <!-- ============ CPFR 协同（add-cpfr-forecast-replenishment：预测包/反馈/例外/计划确认） ============ -->
+      <el-tab-pane label="CPFR 协同" name="cpfr">
+        <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
+          title="协同预测与补货（CPFR）"
+          description="预测数据包仅供参考、非采购承诺；反馈时限 48h 催办、72h 升级并按上轮量默认采纳。仅可见与您协议相关的数据（行级隔离）。" />
+
+        <el-tabs type="card">
+          <!-- 预测数据包（只读含快照） -->
+          <el-tab-pane label="预测数据包" name="pkg">
+            <el-table :data="cpfrPackages" size="mini" border v-loading="cpfrLoading">
+              <el-table-column prop="periodTag" label="周期" width="90" />
+              <el-table-column prop="itemCode" label="物料" width="110" />
+              <el-table-column prop="itemName" label="名称" min-width="110" />
+              <el-table-column prop="weekOffset" label="周" width="55" align="center" />
+              <el-table-column prop="forecastQty" label="预测量" width="90" align="right" />
+              <el-table-column prop="snapshotStock" label="当前库存" width="90" align="right" />
+              <el-table-column prop="snapshotOnhandPo" label="在途PO" width="90" align="right" />
+              <el-table-column prop="safetyStock" label="安全库存" width="90" align="right" />
+            </el-table>
+            <el-empty v-if="!cpfrLoading && !cpfrPackages.length" description="暂无预测数据包" />
+          </el-tab-pane>
+
+          <!-- 供给能力反馈 -->
+          <el-tab-pane label="供给反馈" name="fb">
+            <el-table :data="cpfrFeedbacks" size="mini" border v-loading="cpfrLoading">
+              <el-table-column prop="periodTag" label="周期" width="90" />
+              <el-table-column prop="itemCode" label="物料" width="110" />
+              <el-table-column prop="weekOffset" label="周" width="55" align="center" />
+              <el-table-column prop="demandQty" label="需求量" width="90" align="right" />
+              <el-table-column prop="status" label="状态" width="90">
+                <template #default="{row}">
+                  <el-tag size="mini" :type="cpfrFbTag(row.status)">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="submitAt" label="反馈时间" width="150" />
+              <el-table-column label="操作" width="120">
+                <template #default="{row}">
+                  <el-button v-if="row.status === '待反馈' || row.status === '已催办'"
+                    type="text" size="mini" @click="openCpfrFeedback(row)">反馈可供量</el-button>
+                  <span v-else class="hint">{{ row.feedbackSource === 'DEFAULT_ROLL' ? '系统默认采纳' : '已反馈' }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-if="!cpfrLoading && !cpfrFeedbacks.length" description="暂无待反馈周期" />
+          </el-tab-pane>
+
+          <!-- 例外协商 -->
+          <el-tab-pane label="例外协商" name="ex">
+            <el-table :data="cpfrExceptions" size="mini" border v-loading="cpfrLoading">
+              <el-table-column prop="periodTag" label="周期" width="90" />
+              <el-table-column prop="itemCode" label="物料" width="110" />
+              <el-table-column prop="weekOffset" label="周" width="55" align="center" />
+              <el-table-column prop="demandQty" label="需求" width="85" align="right" />
+              <el-table-column prop="supplyQty" label="供给" width="85" align="right" />
+              <el-table-column prop="deviationPct" label="分歧率" width="80" align="right">
+                <template #default="{row}">{{ row.deviationPct }}%</template>
+              </el-table-column>
+              <el-table-column label="操作" width="140">
+                <template #default="{row}">
+                  <el-button type="text" size="mini" @click="openCpfrOpinion(row)">提交调整意见</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-if="!cpfrLoading && !cpfrExceptions.length" description="暂无待处理例外项" />
+          </el-tab-pane>
+
+          <!-- 联合补货计划 -->
+          <el-tab-pane label="补货计划" name="plan">
+            <el-table :data="cpfrPlans" size="mini" border v-loading="cpfrLoading">
+              <el-table-column prop="periodTag" label="周期" width="90" />
+              <el-table-column label="状态" width="100">
+                <template #default="{row}">
+                  <el-tag size="mini">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="行" min-width="260">
+                <template #default="{row}">
+                  <div v-for="l in row.lines || []" :key="l.id" class="hint">
+                    {{ l.itemCode }} W{{ l.weekOffset }}：{{ l.qty }}
+                    （{{ {FREEZE:'冻结区',ELASTIC:'弹性区',FREE:'自由区'}[l.zone] || l.zone }}）
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column prop="supplierConfirmAt" label="我方确认" width="150" />
+              <el-table-column label="操作" width="120">
+                <template #default="{row}">
+                  <el-button v-if="!row.supplierConfirmAt" type="text" size="mini"
+                    @click="confirmCpfrPlan(row)">确认计划</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-if="!cpfrLoading && !cpfrPlans.length" description="暂无联合补货计划" />
+          </el-tab-pane>
+        </el-tabs>
+
+        <!-- 反馈对话框 -->
+        <el-dialog v-model="cpfrFbDlg" title="供给能力反馈" width="440px">
+          <el-form label-width="90px" size="mini">
+            <el-form-item label="周期">{{ cpfrFbForm.periodTag }} / W{{ cpfrFbForm.weekOffset }} / {{ cpfrFbForm.itemCode }}</el-form-item>
+            <el-form-item label="需求量"><span>{{ cpfrFbForm.demandQty }}</span></el-form-item>
+            <el-form-item label="可供数量" required>
+              <el-input-number v-model="cpfrFbForm.supplyQty" :min="0" :precision="3" style="width: 100%;" />
+            </el-form-item>
+            <el-form-item label="产能约束">
+              <el-input v-model="cpfrFbForm.capacityNote" placeholder="如：模具检修产能受限" />
+            </el-form-item>
+            <el-form-item label="风险提示">
+              <el-input v-model="cpfrFbForm.riskNote" placeholder="如：原材料交期波动" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="cpfrFbDlg = false">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="submitCpfrFeedback">提交反馈</el-button>
+          </template>
+        </el-dialog>
+
+        <!-- 例外调整意见 -->
+        <el-dialog v-model="cpfrOpinionDlg" title="例外项调整意见" width="420px">
+          <el-form label-width="90px" size="mini">
+            <el-form-item label="需求/供给">
+              <span>{{ cpfrOpinionForm.demandQty }} / {{ cpfrOpinionForm.supplyQty }}（{{ cpfrOpinionForm.deviationPct }}%）</span>
+            </el-form-item>
+            <el-form-item label="调整数量" required>
+              <el-input-number v-model="cpfrOpinionForm.proposedQty" :min="0" :precision="3" style="width: 100%;" />
+            </el-form-item>
+            <el-form-item label="说明">
+              <el-input v-model="cpfrOpinionForm.remark" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="cpfrOpinionDlg = false">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="submitCpfrOpinion">提交意见</el-button>
+          </template>
+        </el-dialog>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 交期确认 -->
@@ -375,6 +557,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
 import { getPortalScorecardsApi, getPortalScorecardApi, portalAppealApi } from '@/api/proc/analysis'
+import { getPortalSlaReportsApi, getPortalSlaReportDetailApi } from '@/api/proc/service-monitoring'
+import {
+  portalPackages as cpfrPackagesApi, portalFeedbacks as cpfrFeedbacksApi,
+  portalSubmitFeedback as cpfrSubmitFeedbackApi,
+  portalExceptions as cpfrExceptionsApi, portalOpinion as cpfrOpinionApi,
+  portalPlans as cpfrPlansApi, portalConfirmPlan as cpfrConfirmPlanApi
+} from '@/api/scm/cpfr'
 import {
   getMyPosApi, getMyPoDetailApi, getMyPoTimelineApi, confirmMyPoApi, changeMyPoApi,
   getMyAsnsApi, getMyAsnDetailApi, createMyAsnApi,
@@ -682,10 +871,108 @@ async function submitAppeal() {
   scDlg.value = false
 }
 
+// ---------------- 服务等级（已发布 SLA 报告，章节级可见） ----------------
+const slaReports = ref([])
+const slaLoading = ref(false)
+const slaDlg = ref(false)
+const slaDetail = ref({})
+
+async function loadSlaReports() {
+  slaLoading.value = true
+  try {
+    const { data } = await getPortalSlaReportsApi()
+    slaReports.value = data || []
+  } catch { slaReports.value = [] } finally { slaLoading.value = false }
+}
+
+async function openSlaDetail(row) {
+  const { data } = await getPortalSlaReportDetailApi(row.id)
+  slaDetail.value = data || {}
+  slaDlg.value = true
+}
+
+// ---------- CPFR 协同（add-cpfr-forecast-replenishment） ----------
+const cpfrLoading = ref(false)
+const cpfrPackages = ref([])
+const cpfrFeedbacks = ref([])
+const cpfrExceptions = ref([])
+const cpfrPlans = ref([])
+const cpfrFbDlg = ref(false)
+const cpfrOpinionDlg = ref(false)
+const cpfrFbForm = reactive({ feedbackId: '', periodTag: '', weekOffset: null, itemCode: '', demandQty: null, supplyQty: 0, capacityNote: '', riskNote: '' })
+const cpfrOpinionForm = reactive({ exceptionId: '', demandQty: null, supplyQty: null, deviationPct: null, proposedQty: 0, remark: '' })
+
+async function loadCpfr() {
+  cpfrLoading.value = true
+  try {
+    const [pkgs, fbs, exs, plans] = await Promise.all([
+      cpfrPackagesApi(), cpfrFeedbacksApi(), cpfrExceptionsApi(), cpfrPlansApi()
+    ])
+    cpfrPackages.value = pkgs.data || []
+    cpfrFeedbacks.value = fbs.data || []
+    cpfrExceptions.value = exs.data || []
+    cpfrPlans.value = plans.data || []
+  } catch { /* 首访无协议时后端返回空集，保持静默 */ } finally { cpfrLoading.value = false }
+}
+
+function openCpfrFeedback(row) {
+  Object.assign(cpfrFbForm, {
+    feedbackId: row.id, periodTag: row.periodTag, weekOffset: row.weekOffset,
+    itemCode: row.itemCode, demandQty: row.demandQty,
+    supplyQty: Number(row.demandQty) || 0, capacityNote: '', riskNote: ''
+  })
+  cpfrFbDlg.value = true
+}
+
+async function submitCpfrFeedback() {
+  submitting.value = true
+  try {
+    await cpfrSubmitFeedbackApi({ ...cpfrFbForm })
+    ElMessage.success('反馈已提交（分歧超阈值将自动生成例外项）')
+    cpfrFbDlg.value = false
+    await loadCpfr()
+  } finally { submitting.value = false }
+}
+
+function openCpfrOpinion(row) {
+  Object.assign(cpfrOpinionForm, {
+    exceptionId: row.id, demandQty: row.demandQty, supplyQty: row.supplyQty,
+    deviationPct: row.deviationPct, proposedQty: Number(row.supplyQty) || 0, remark: ''
+  })
+  cpfrOpinionDlg.value = true
+}
+
+async function submitCpfrOpinion() {
+  submitting.value = true
+  try {
+    await cpfrOpinionApi(cpfrOpinionForm.exceptionId, {
+      proposedQty: cpfrOpinionForm.proposedQty, remark: cpfrOpinionForm.remark
+    })
+    ElMessage.success('调整意见已提交，待计划员终确认')
+    cpfrOpinionDlg.value = false
+    await loadCpfr()
+  } finally { submitting.value = false }
+}
+
+async function confirmCpfrPlan(row) {
+  try {
+    await ElMessageBox.confirm(`确认《${row.periodTag} 联合补货计划》？确认后冻结期数量转为贵司承诺。`, '联合补货计划确认', { type: 'warning' })
+  } catch { return }
+  await cpfrConfirmPlanApi(row.id)
+  ElMessage.success('已确认（账号确认留痕）')
+  await loadCpfr()
+}
+
+function cpfrFbTag(s) {
+  return { '待反馈': 'warning', '已反馈': 'success', '已催办': 'danger', '已升级': 'danger', '默认采纳': 'info' }[s] || 'info'
+}
+
 onMounted(async () => {
   await Promise.all([loadPos(), loadAsns(), loadAlerts(), loadSettlements(), loadStatements()])
   loadWater()
   loadScorecards()
+  loadSlaReports()
+  loadCpfr()
   // 预取已确认 PO 供 ASN 创建
   const { data } = await getMyPosApi({ current: 1, size: 100, status: 'CONFIRMED' })
   confirmedPos.value = data.records || []

@@ -158,7 +158,11 @@ public class ScorecardServiceImpl implements ScorecardService {
         Map<String, Map<String, Object>> delivery = index(collectDao.delivery(start, next));
         Map<String, Map<String, Object>> asn = index(collectDao.asnAccuracy(start, next));
         Map<String, Map<String, Object>> po48 = index(collectDao.poConfirm(start, next));
-        Map<String, Map<String, Object>> cpfr = index(collectDao.replenishTimely(start, next));
+        // 响应三子项（FR-4.9-7-2 对齐，add-supply-performance-menu）：
+        // CPFR 反馈及时率（真 CPFR 表）+ 异常工单响应时长；VMI 补货及时退出维度仅作明细 replenishRate
+        Map<String, Map<String, Object>> cpfrFb = index(collectDao.cpfrFeedbackTimely(start, next));
+        Map<String, Map<String, Object>> ticket = index(collectDao.ticketResponse(start, next));
+        Map<String, Map<String, Object>> replenish = index(collectDao.replenishTimely(start, next));
         List<Map<String, Object>> currBasis = collectDao.costBasis(month);
         List<Map<String, Object>> prevBasis = collectDao.costBasis(prevMonth(month));
         Map<String, Map<String, Object>> costRows = costIndex(currBasis, prevBasis, month);
@@ -250,33 +254,53 @@ public class ScorecardServiceImpl implements ScorecardService {
                 src.put("missing", append(src.get("missing"), "PRICE_COMP_INDEX"));
             }
 
-            // 响应维度 = PO48h×50% + 补货及时×50%（缺失子项按可用项计）
+            // 响应维度 = PO48h 1/3 + CPFR 反馈及时率 1/3 + 异常工单响应折算分 1/3
+            // （FR-4.9-7-2 三子项对齐，add-supply-performance-menu；缺失子项按可用项计）
             BigDecimal rScore = null;
             Map<String, Object> pc = po48.get(sid);
-            Map<String, Object> rp = cpfr.get(sid);
+            Map<String, Object> cf = cpfrFb.get(sid);
+            Map<String, Object> tk = ticket.get(sid);
+            Map<String, Object> rpOld = replenish.get(sid);
             BigDecimal poRate = null;
-            BigDecimal rpRate = null;
+            BigDecimal cpfrRate = null;
+            BigDecimal tkScore = null;
+            BigDecimal tkAvgHours = null;
             if (pc != null && num(pc.get("totalPo")) > 0) {
                 poRate = BigDecimal.valueOf(num(pc.get("confirmed48h")))
                         .multiply(BigDecimal.valueOf(100))
                         .divide(BigDecimal.valueOf(num(pc.get("totalPo"))), 2, RoundingMode.HALF_UP);
             }
-            if (rp != null && num(rp.get("totalCnt")) > 0) {
-                rpRate = BigDecimal.valueOf(num(rp.get("timelyCnt")))
+            if (cf != null && num(cf.get("totalCnt")) > 0) {
+                cpfrRate = BigDecimal.valueOf(num(cf.get("timelyCnt")))
                         .multiply(BigDecimal.valueOf(100))
-                        .divide(BigDecimal.valueOf(num(rp.get("totalCnt"))), 2, RoundingMode.HALF_UP);
+                        .divide(BigDecimal.valueOf(num(cf.get("totalCnt"))), 2, RoundingMode.HALF_UP);
             }
-            if (poRate != null && rpRate != null) {
-                rScore = poRate.add(rpRate).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
-            } else if (poRate != null) {
-                rScore = poRate;
-                src.put("missing", append(src.get("missing"), "SC_RESPONSE_CPFR"));
-            } else if (rpRate != null) {
-                rScore = rpRate;
-                src.put("missing", append(src.get("missing"), "SC_RESPONSE_PO_48H"));
+            if (tk != null && num(tk.get("ticketCnt")) > 0) {
+                tkAvgHours = BigDecimal.valueOf(num(tk.get("avgHours"))).setScale(2, RoundingMode.HALF_UP);
+                // 折算曲线（design D2，偏差表记录）：≤24h=100，线性递减，≥240h=0
+                tkScore = ticketScore(tkAvgHours);
+            }
+            int avail = (poRate != null ? 1 : 0) + (cpfrRate != null ? 1 : 0) + (tkScore != null ? 1 : 0);
+            if (avail > 0) {
+                BigDecimal sum = BigDecimal.ZERO;
+                if (poRate != null) sum = sum.add(poRate);
+                else src.put("missing", append(src.get("missing"), "SC_RESPONSE_PO_48H"));
+                if (cpfrRate != null) sum = sum.add(cpfrRate);
+                else src.put("missing", append(src.get("missing"), "SC_RESPONSE_CPFR"));
+                if (tkScore != null) sum = sum.add(tkScore);
+                else src.put("missing", append(src.get("missing"), "SC_RESPONSE_TICKET"));
+                rScore = sum.divide(BigDecimal.valueOf(avail), 2, RoundingMode.HALF_UP);
             }
             src.put("po48hRate", poRate);
-            src.put("cpfrRate", rpRate);
+            src.put("cpfrRate", cpfrRate);
+            src.put("ticketRespAvgHours", tkAvgHours);
+            src.put("ticketScore", tkScore);
+            // VMI 补货及时率：退出响应维度，仅明细参考（旧明细键 cpfrRate 语义修正为 replenishRate）
+            if (rpOld != null && num(rpOld.get("totalCnt")) > 0) {
+                src.put("replenishRate", BigDecimal.valueOf(num(rpOld.get("timelyCnt")))
+                        .multiply(BigDecimal.valueOf(100))
+                        .divide(BigDecimal.valueOf(num(rpOld.get("totalCnt"))), 2, RoundingMode.HALF_UP));
+            }
 
             // 数据状态：整维缺失 → INCOMPLETE 暂缓发布；其余 OK（子缺失记 MISSING_DIM）
             boolean qMissing = qScore == null;
@@ -848,6 +872,22 @@ public class ScorecardServiceImpl implements ScorecardService {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    /**
+     * 异常工单响应时长折算分（add-supply-performance-menu design D2，偏差表记录）：
+     * 平均响应 ≤24h = 100 分，线性递减，≥240h = 0 分。
+     */
+    private static BigDecimal ticketScore(BigDecimal avgHours) {
+        double h = avgHours.doubleValue();
+        if (h <= 24) {
+            return new BigDecimal("100");
+        }
+        if (h >= 240) {
+            return BigDecimal.ZERO;
+        }
+        double score = 100 * (240 - h) / (240 - 24);
+        return BigDecimal.valueOf(score).setScale(2, RoundingMode.HALF_UP);
     }
 
     private static Object append(Object arr, String v) {

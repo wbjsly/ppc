@@ -34,6 +34,10 @@ public class IntfDelivery extends BaseEntity {
     private String idempotencyKey;
     private String bizCode;
     private String partnerCode;
+    /** 订阅命中快照（add-event-subscription D3：建行时固化，空回落通道 URL） */
+    private String targetUrl;
+    /** 订阅命中快照（建行时固化，空用全局 API_RETRY_MAX） */
+    private Integer retryMax;
     private String status;
     private Integer retryCount;
     /** 下次投递时间（指数退避 1s→2s→4s…） */

@@ -9,7 +9,8 @@
       <!-- ============ Tab1 对账单 ============ -->
       <el-tab-pane label="对账单" name="statement">
         <div class="toolbar">
-          <el-button type="primary" @click="openStatement">登记对账单</el-button>
+          <el-button size="small" type="primary" @click="$router.push('/m/12.6.1')">对账匹配 12.6.1</el-button>
+          <el-button size="small" type="warning" plain @click="$router.push('/m/12.6.2')">差异处理 12.6.2</el-button>
           <el-select v-model="stmtFilters.status" placeholder="状态" clearable style="width: 150px;" @change="loadStatements">
             <el-option label="容差内(ACCEPTED)" value="ACCEPTED" />
             <el-option label="差异冻结(EXCEPTION)" value="EXCEPTION" />
@@ -20,6 +21,9 @@
             <el-option v-for="s in suppliers" :key="s.id" :label="s.supplierName" :value="s.id" />
           </el-select>
           <el-button @click="loadStatements">查询</el-button>
+        </div>
+        <div style="color: #909399; font-size: 12px; margin-bottom: 8px;">
+          登记/系统匹配/双签操作已收口至「对账协同 12.6.1 / 12.6.2」，本页保留只读视图。
         </div>
         <el-table :data="stmtRows" size="small" border v-loading="loading">
           <el-table-column type="expand">
@@ -53,12 +57,6 @@
           <el-table-column label="状态" width="120" align="center">
             <template #default="{ row }">
               <el-tag size="small" :type="stmtTag(row.status)">{{ stmtText(row.status) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="130" fixed="right">
-            <template #default="{ row }">
-              <el-button v-if="canOperate && row.status === 'EXCEPTION'" link type="warning"
-                size="small" @click="doConfirmStatement(row)">双签确认</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -288,34 +286,6 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 登记对账单 -->
-    <el-dialog v-model="stmtVisible" title="登记供应商对账单" width="480px">
-      <el-form label-width="100px">
-        <el-form-item label="供应商" required>
-          <el-select v-model="stmtForm.supplierId" filterable placeholder="选择供应商" style="width: 100%;"
-            @change="v => stmtForm.supplierName = (suppliers.find(s => s.id === v) || {}).supplierName">
-            <el-option v-for="s in suppliers" :key="s.id" :label="s.supplierName" :value="s.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="对账日期" required>
-          <el-date-picker v-model="stmtForm.stmtDate" type="date" value-format="YYYY-MM-DD"
-            placeholder="选择日期" style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="对账金额" required>
-          <el-input-number v-model="stmtForm.stmtAmount" :min="0" :precision="2" style="width: 100%;" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="stmtForm.remark" placeholder="选填（如供应商对账单编号）" />
-        </el-form-item>
-      </el-form>
-      <el-alert type="warning" :closable="false"
-        title="登记后系统自动与该供应商 OPEN 暂估余额比对：差异率 > 0.5% 即冻结付款并生成差异对账单（C-4.2-15，须双签）" />
-      <template #footer>
-        <el-button @click="stmtVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="submitStatement">登记</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 创建付款申请 -->
     <el-dialog v-model="reqVisible" title="创建付款申请" width="720px">
       <el-form label-width="100px">
@@ -514,7 +484,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  getStatementPageApi, createStatementApi, confirmStatementApi,
+  getStatementPageApi,
   getPaymentPageApi, getPaymentDetailApi, createPaymentApi, submitPaymentApi,
   cancelPaymentApi, schedulePaymentApi, waitFundsApi, executePaymentApi,
   getInvoiceCandidatesApi, getDeductCandidatesApi, getWriteoffPageApi,
@@ -570,12 +540,10 @@ function onTab(name) {
   if (name === 'prepayment') { loadPrepayments(); loadCleanup() }
 }
 
-// ---------------- Tab1 对账单 ----------------
+// ---------------- Tab1 对账单（登记/双签已收口至 12.6.1/12.6.2，本页只读） ----------------
 const stmtRows = ref([])
 const stmtTotal = ref(0)
 const stmtFilters = reactive({ supplierId: '', status: '', current: 1, size: 10 })
-const stmtVisible = ref(false)
-const stmtForm = reactive({ supplierId: '', supplierName: '', stmtDate: '', stmtAmount: 0, remark: '' })
 
 async function loadStatements() {
   loading.value = true
@@ -588,45 +556,6 @@ async function loadStatements() {
     stmtRows.value = (res.data && res.data.records) || []
     stmtTotal.value = (res.data && res.data.total) || 0
   } finally { loading.value = false }
-}
-
-function openStatement() {
-  stmtForm.supplierId = ''
-  stmtForm.supplierName = ''
-  stmtForm.stmtDate = todayLocal()
-  stmtForm.stmtAmount = 0
-  stmtForm.remark = ''
-  stmtVisible.value = true
-}
-
-async function submitStatement() {
-  if (!stmtForm.supplierId) { ElMessage.warning('请选择供应商'); return }
-  if (!stmtForm.stmtDate) { ElMessage.warning('请选择对账日期'); return }
-  submitting.value = true
-  try {
-    const res = await createStatementApi({ ...stmtForm })
-    const s = res.data || {}
-    ElMessage[s.status === 'EXCEPTION' ? 'error' : 'success'](
-      s.status === 'EXCEPTION'
-        ? `登记成功：差异 ${s.diffAmount}（差异率 ${s.diffRate}）已冻结该供应商付款，须双签解冻`
-        : `登记成功：差异 ${s.diffAmount} 在容差内，未冻结`)
-    stmtVisible.value = false
-    await loadStatements()
-  } finally { submitting.value = false }
-}
-
-async function doConfirmStatement(row) {
-  try {
-    await ElMessageBox.confirm(
-      `对账单 ${row.stmtNo} 差异 ${row.diffAmount}（差异率 ${row.diffRate}），` +
-      '确认后进入双签（采购员 → 财务），两签齐即解冻付款。是否发起？',
-      '发起双签确认', { type: 'warning' })
-  } catch (e) { return }
-  try {
-    await confirmStatementApi(row.id)
-    ElMessage.success('已发起双签（采购员节点待签），冻结解除前付款申请仍会被阻断')
-    await loadStatements()
-  } catch (e) { /* 拦截器已提示 */ }
 }
 
 // ---------------- Tab2 付款申请 ----------------

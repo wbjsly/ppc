@@ -96,7 +96,7 @@ class IntfRulesUnitTest {
             return 1;
         });
         OpenApiGatewayServiceImpl g = new OpenApiGatewayServiceImpl(channelDao, credentialDao,
-                callLogDao, rateStateDao, alertDao);
+                callLogDao, rateStateDao, alertDao, mock(com.erp.service.intf.TierChangeLogService.class));
         ReflectionTestUtils.setField(g, "auditFailClosed", true);
         ReflectionTestUtils.setField(g, "rateNormal", 100);
         ReflectionTestUtils.setField(g, "rateStrategic", 500);
@@ -281,6 +281,43 @@ class IntfRulesUnitTest {
         assertEquals(1, cap.getValue().getCircuitTripCount());
     }
 
+    /** B'（add-interface-call-console）：securityEvent 先写的 SECURITY_EVENT:* 不得被 complete 回写覆盖 */
+    @Test
+    void completePreservesSecurityEventErrCode() {
+        gateway = newGateway();
+        var d = new com.erp.service.intf.GatewayDecision();
+        d.setAuditId("audit-1");
+        d.setCaller("P-TEST");
+        IntfCallLog row = new IntfCallLog();
+        row.setId("audit-1");
+        row.setErrCode("SECURITY_EVENT:HMAC 签名不匹配");
+        when(callLogDao.selectById("audit-1")).thenReturn(row);
+
+        gateway.complete(d, 401, "UNAUTHENTICATED", 1L);
+
+        assertEquals("SECURITY_EVENT:HMAC 签名不匹配", row.getErrCode(),
+                "安全事件审计留痕不得被决策码覆盖（C-5.5-05）");
+        assertEquals(401, row.getRespCode(), "RESP_CODE 仍承载粗粒度语义");
+        verify(callLogDao).updateById(row);
+    }
+
+    /** B' 对偶面：无既有错误码时正常回填决策码（普通 401/429 拒绝不受影响） */
+    @Test
+    void completeFillsErrCodeWhenAbsent() {
+        gateway = newGateway();
+        var d = new com.erp.service.intf.GatewayDecision();
+        d.setAuditId("audit-2");
+        d.setCaller("P-TEST");
+        IntfCallLog row = new IntfCallLog();
+        row.setId("audit-2");
+        when(callLogDao.selectById("audit-2")).thenReturn(row);
+
+        gateway.complete(d, 429, "RATE_LIMITED", 1L);
+
+        assertEquals("RATE_LIMITED", row.getErrCode(), "既有错误码为空时回填决策码");
+        assertEquals(429, row.getRespCode());
+    }
+
     @Test
     void halfOpenProbeAllowsEveryTwentieth() {
         gateway = newGateway();
@@ -367,7 +404,8 @@ class IntfRulesUnitTest {
         delivered.setStatus(IntfDelivery.ST_DELIVERED);
         delivered.setIdempotencyKey("PO123#PUSH");
         when(dDao.selectById("d1")).thenReturn(delivered);
-        DeliveryServiceImpl svc = new DeliveryServiceImpl(outboxDao, dDao, chDao, tDao, g);
+        var subDao = mock(com.erp.dao.intf.IntfSubscriptionDao.class);
+        DeliveryServiceImpl svc = new DeliveryServiceImpl(outboxDao, dDao, chDao, tDao, subDao, g);
         Map<String, Object> r1 = svc.replay("d1");
         assertEquals(Boolean.TRUE, r1.get("skipped"), "已投递事件重放必须跳过（C-4.9-04）");
 
@@ -420,7 +458,8 @@ class IntfRulesUnitTest {
         ch.setCallbackUrl("http://127.0.0.1:1/dead");
         when(chDao.selectByPartnerCode(anyString())).thenReturn(ch);
 
-        DeliveryServiceImpl svc = new DeliveryServiceImpl(outboxDao, dDao, chDao, tDao, g);
+        var subDao2 = mock(com.erp.dao.intf.IntfSubscriptionDao.class);
+        DeliveryServiceImpl svc = new DeliveryServiceImpl(outboxDao, dDao, chDao, tDao, subDao2, g);
         ReflectionTestUtils.setField(svc, "retryMax", 3);
         ReflectionTestUtils.setField(svc, "ticketDueHours", 24);
         svc.scanAndDeliver();
@@ -442,7 +481,9 @@ class IntfRulesUnitTest {
         PlatformTransactionManager txm = mock(PlatformTransactionManager.class);
         TransactionStatus ts = mock(TransactionStatus.class);
         when(txm.getTransaction(any())).thenReturn(ts);
-        EdiMessageServiceImpl svc = new EdiMessageServiceImpl(msgDao, mapDao, tDao, poDao,
+        EdiMessageServiceImpl svc = new EdiMessageServiceImpl(msgDao, mapDao, tDao,
+                mock(com.erp.dao.intf.IntfMsgRetryTraceDao.class),
+                mock(com.erp.dao.intf.IntfMsgReceiptDao.class), poDao,
                 poSvc, asnSvc, invSvc, g, txm);
         ReflectionTestUtils.setField(svc, "retryMax", 3);
         return svc;

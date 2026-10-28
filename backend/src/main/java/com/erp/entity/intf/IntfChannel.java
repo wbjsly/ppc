@@ -31,6 +31,8 @@ public class IntfChannel extends BaseEntity {
 
     private String partnerCode;
     private String partnerName;
+    /** 关联供应商（erp_mdm_supplier.ID，迁移 182：门户服务等级章节隔离映射，design D5） */
+    private String supplierId;
     /** STRATEGIC / NORMAL / NEW */
     private String partnerTier;
     /** API / EDI */

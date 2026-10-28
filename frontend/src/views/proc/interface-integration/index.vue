@@ -122,14 +122,13 @@
             <el-table-column prop="replayCount" label="重放" width="60" />
             <el-table-column prop="failReason" label="失败原因" min-width="180" show-overflow-tooltip />
             <el-table-column label="操作" width="170">
-              <template #default="{ row }">
-                <el-button size="mini" type="primary" v-if="row.status !== 'DELIVERED'"
-                  @click="doReplay(row)">重放</el-button>
-                <el-button size="mini" type="danger" v-if="row.status === 'DEAD' && isAdmin"
-                  @click="doAbandon(row)">放弃</el-button>
+              <template #default>
+                <!-- add-event-subscription interface-console delta：处理动作收口至 12.2.3（只读+跳转） -->
+                <el-button size="mini" @click="$router.push('/m/12.2.3')">前往 12.2.3 处理</el-button>
               </template>
             </el-table-column>
           </el-table>
+          <div class="muted" style="margin-top:8px">重放 / 死信放弃等处理动作已收口至「事件订阅 12.2.3 消费监控」，本页保留只读台账。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">
@@ -148,20 +147,18 @@
             <el-table-column prop="assignTo" label="分派" width="100" />
             <el-table-column prop="dueAt" label="处置时限" width="160" />
             <el-table-column label="操作" width="200">
-              <template #default="{ row }">
-                <el-button size="mini" type="primary" v-if="row.status !== 'DONE'"
-                  @click="handleTicket(row, true)">重放</el-button>
-                <el-button size="mini" v-if="row.status !== 'DONE'"
-                  @click="handleTicket(row, false)">关闭</el-button>
+              <template #default>
+                <el-button size="mini" @click="$router.push('/m/12.2.3')">前往 12.2.3 处理</el-button>
               </template>
             </el-table-column>
           </el-table>
+          <div class="muted" style="margin-top:8px">工单处置（含可选重放）已收口至「事件订阅 12.2.3 消费监控」。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">
           <template #header>
             <div class="card-head">
-              <span>EDI 报文台账（四级校验：传输层 → 语法层 → 映射层 → 业务层）</span>
+              <span>EDI 报文台账（只读摘要）</span>
               <span>
                 <el-select v-model="msgFilter.status" placeholder="状态" clearable size="small"
                   style="width: 130px;" @change="loadMessages">
@@ -172,35 +169,26 @@
                   <el-option label="入库失败" value="FAILED" />
                   <el-option label="待人工" value="MANUAL" />
                 </el-select>
-                <el-button size="small" @click="openUpload">上传报文</el-button>
-                <el-button size="small" type="primary" @click="openPush">模拟伙伴推送</el-button>
-                <el-button size="small" @click="openRules">映射规则</el-button>
+                <el-button size="small" @click="$router.push('/m/12.4.1')">报文接收 12.4.1</el-button>
+                <el-button size="small" @click="$router.push('/m/12.4.2')">格式校验 12.4.2</el-button>
+                <el-button size="small" @click="$router.push('/m/12.4.3')">映射入库 12.4.3</el-button>
               </span>
             </div>
           </template>
           <el-table :data="messages" size="small" border v-loading="loading">
             <el-table-column prop="msgNo" label="报文号" width="150" />
-            <el-table-column prop="msgType" label="类型" width="90" />
             <el-table-column prop="partnerCode" label="伙伴" width="120" />
+            <el-table-column prop="msgType" label="类型" width="90" />
             <el-table-column prop="status" label="状态" width="110">
               <template #default="{ row }">
                 <el-tag size="mini" :type="msgTag(row.status)">{{ msgText(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="行(成功/失败)" width="120">
-              <template #default="{ row }">{{ row.lineOk }}/{{ row.lineTotal }} / {{ row.lineFail }}</template>
-            </el-table-column>
             <el-table-column prop="bizNo" label="生成单据" width="150" />
-            <el-table-column prop="retryCount" label="重发" width="60" />
+            <el-table-column prop="receivedAt" label="接收时间" width="160" />
             <el-table-column prop="remark" label="说明" min-width="180" show-overflow-tooltip />
-            <el-table-column label="操作" width="170">
-              <template #default="{ row }">
-                <el-button size="mini" @click="viewMessage(row)">校验详情</el-button>
-                <el-button size="mini" type="primary" v-if="row.status !== 'PROCESSED'"
-                  @click="doMsgReplay(row)">重放</el-button>
-              </template>
-            </el-table-column>
           </el-table>
+          <div class="muted" style="margin-top:8px">报文操作（上传/模拟推送/映射规则/重放）已收口至「报文处理 12.4」，本页保留只读摘要。</div>
         </el-card>
       </el-tab-pane>
 
@@ -274,7 +262,13 @@
               <span>API 凭证生命周期（SHA-256 加盐 / 90 天轮换 / 紧急吊销 3 秒生效）</span>
               <span>
                 <el-button size="small" @click="doSweep">到期治理扫描</el-button>
-                <el-button size="small" type="primary" @click="openIssue">签发凭证</el-button>
+                <!-- 配置态收口（add-partner-onboarding spec interface-console ADDED）：
+                     密钥签发等配置动作在 12.1.3 通道开通，本页只读+跳转 -->
+                <el-tooltip content="密钥签发/限流初始配置/证书更新已收口至 12.1.3 通道开通" placement="top">
+                  <el-button size="small" type="primary" @click="$router.push('/m/12.1.3')">
+                    前往通道开通（12.1.3）
+                  </el-button>
+                </el-tooltip>
               </span>
             </div>
           </template>
@@ -335,8 +329,12 @@
         <el-card shadow="never">
           <template #header>
             <div class="card-head">
-              <span>SLA 指标（每分钟采集：可用率 / P95 / 错误率 / 端到端延迟）</span>
-              <el-button size="small" type="primary" @click="doCollect">立即采集</el-button>
+              <span>SLA 指标（每分钟采集：可用率 / P95 / 错误率 / 端到端延迟）—— 只读摘要</span>
+              <span>
+                <el-button size="small" @click="$router.push('/m/12.7.1')">指标采集 12.7.1</el-button>
+                <el-button size="small" @click="$router.push('/m/12.7.2')">告警升级 12.7.2</el-button>
+                <el-button size="small" @click="$router.push('/m/12.7.3')">月度报告 12.7.3</el-button>
+              </span>
             </div>
           </template>
           <el-table :data="metrics" size="small" border>
@@ -376,19 +374,20 @@
             <el-table-column prop="responseDueAt" label="响应截止" width="160" />
             <el-table-column prop="status" label="状态" width="90" />
             <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button size="mini" type="primary" v-if="row.status === 'OPEN'"
-                  @click="doRespond(row)">响应</el-button>
+              <template #default>
+                <!-- add-event-subscription interface-console delta：告警操作收口至 12.2.4（只读+跳转） -->
+                <el-button size="mini" @click="$router.push('/m/12.2.4')">前往 12.2.4</el-button>
               </template>
             </el-table-column>
           </el-table>
+          <div class="muted" style="margin-top:8px">告警确认 / 升级处理已收口至「事件订阅 12.2.4 告警处理」，本页保留只读视图（与 12.2.4 同源）。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">
           <template #header>
             <div class="card-head">
-              <span>月度 SLA 报告（生成 → 审核 → 归档 → 发布，归档前发布硬阻断）</span>
-              <el-button size="small" type="primary" @click="doGenerate">生成月报</el-button>
+              <span>月度 SLA 报告 —— 只读摘要（四链操作已收口至 12.7.3）</span>
+              <el-button size="small" @click="$router.push('/m/12.7.3')">月度报告 12.7.3</el-button>
             </div>
           </template>
           <el-table :data="reports" size="small" border>
@@ -403,16 +402,6 @@
             <el-table-column prop="generatedBy" label="生成作业" width="110" />
             <el-table-column prop="reviewedBy" label="审核人" width="110" />
             <el-table-column prop="archivedAt" label="归档时间" width="165" />
-            <el-table-column label="操作" width="260">
-              <template #default="{ row }">
-                <el-button size="mini" type="success" v-if="row.status === 'GENERATED'"
-                  @click="doReviewReport(row)">审核</el-button>
-                <el-button size="mini" v-if="row.status === 'REVIEWED' && isAdmin"
-                  @click="doArchiveReport(row)">归档</el-button>
-                <el-button size="mini" type="primary" v-if="row.status !== 'PUBLISHED' && isAdmin"
-                  @click="doPublishReport(row)">对外发布</el-button>
-              </template>
-            </el-table-column>
           </el-table>
         </el-card>
       </el-tab-pane>
@@ -545,81 +534,8 @@ async function doScan() {
   const n = (await api.scanDeliveriesApi()).data
   ElMessage.success(`本轮处理 ${n} 条事件`); loadDeliveries(); loadTickets(); loadKpi()
 }
-async function doReplay(row) {
-  const r = (await api.replayDeliveryApi(row.id)).data
-  ElMessage.success(r.skipped ? r.message : `已重放（原幂等键 ${r.idempotencyKey}）`)
-  loadDeliveries()
-}
-async function doAbandon(row) {
-  await ElMessageBox.confirm('放弃该死信将不再投递，确认？', '高危操作', { type: 'warning' })
-  await api.abandonDeliveryApi(row.id, '人工判定放弃')
-  ElMessage.success('已放弃并留痕'); loadDeliveries()
-}
-async function handleTicket(row, replay) {
-  await api.handleTicketApi(row.id, { replay, note: replay ? '' : '人工处理完成' })
-  ElMessage.success(replay ? '已按原幂等键重放' : '工单已关闭')
-  loadTickets(); loadDeliveries()
-}
-function viewMessage(row) {
-  api.getMessageDetailApi(row.id).then(res => {
-    const d = res.data
-    dlg.title = `报文 ${d.message.msgNo} 四级校验详情`
-    dlg.text = JSON.stringify({
-      status: d.message.status, bizType: d.message.bizType, bizNo: d.message.bizNo,
-      idempotencyKey: d.message.idempotencyKey,
-      syntax: d.syntax, mapping: d.mapping, business: d.business
-    }, null, 2)
-    dlg.fields = []; dlg.action = null; dlg.okText = '关闭'; dlg.show = true
-  })
-}
-function openUpload() {
-  openDialog('上传报文（入口②）', [
-    { key: 'partnerCode', label: '伙伴编码', placeholder: 'INTF-DEMO' },
-    { key: 'msgType', label: '报文类型（ORDERS / DESADV / INVOIC）', placeholder: 'ORDERS' },
-    { key: 'raw', label: '报文 JSON', type: 'textarea', rows: 8, placeholder: '{"version":"v1","header":{...},"lines":[...]}' }
-  ], { partnerCode: 'INTF-DEMO', msgType: 'ORDERS', raw: '' },
-    async () => {
-      try {
-        const r = (await api.uploadMessageApi(dlg.form)).data
-        dlg.text = JSON.stringify(r, null, 2); dlg.fields = []; dlg.action = null; dlg.okText = '关闭'
-        loadMessages()
-      } catch (e) { ElMessage.error(e?.response?.data?.message || '上传失败') }
-    }, '', '提交')
-}
-function openPush() {
-  openDialog('模拟伙伴推送（入口③：按伙伴密钥真实签名经开放入口）', [
-    { key: 'partnerCode', label: '伙伴编码', placeholder: 'INTF-DEMO' },
-    { key: 'msgType', label: '报文类型', placeholder: 'ORDERS' },
-    { key: 'raw', label: '报文 JSON', type: 'textarea', rows: 8 }
-  ], { partnerCode: 'INTF-DEMO', msgType: 'ORDERS', raw: '' },
-    async () => {
-      try {
-        const r = (await api.simulatePushApi(dlg.form)).data
-        dlg.text = JSON.stringify(r, null, 2); dlg.fields = []; dlg.action = null; dlg.okText = '关闭'
-        loadMessages(); loadCalls()
-      } catch (e) { ElMessage.error(e?.response?.data?.message || '推送失败') }
-    }, '', '推送')
-}
-function openRules() {
-  openDialog('维护 EDI-ERP 映射规则（伙伴 × 报文类型，缺失即 L1 阻断）', [
-    { key: 'partnerCode', label: '伙伴编码', placeholder: 'INTF-DEMO' },
-    { key: 'msgType', label: '报文类型', placeholder: 'ORDERS' },
-    { key: 'version', label: '契约登记版本', placeholder: 'v1' },
-    { key: 'ruleJson', label: '规则 JSON（dateFields / unitMap / defaults）', type: 'textarea', rows: 6,
-      placeholder: '{"dateFields":["header.orderDate"],"unitMap":{"PCE":"EA"},"defaults":{"currency":"CNY"}}' }
-  ], { partnerCode: 'INTF-DEMO', msgType: 'ORDERS', version: 'v1', ruleJson: '' },
-    async () => {
-      try {
-        await api.saveMapRuleApi(dlg.form)
-        ElMessage.success('映射规则已保存'); dlg.show = false
-      } catch (e) { ElMessage.error(e?.response?.data?.message || '保存失败') }
-    }, '', '保存')
-}
-async function doMsgReplay(row) {
-  const r = (await api.replayMessageApi(row.id)).data
-  ElMessage.success(`重放完成：${r.status}${r.bizNo ? '，单据 ' + r.bizNo : ''}`)
-  loadMessages()
-}
+// 重放/放弃/工单处置已收口至 12.2.3（add-event-subscription interface-console delta，端点保留由 12.2 复用）
+// 报文操作（上传/模拟推送/映射规则/重放/详情）已收口至 12.4.1~3（add-edi-message-console interface-console delta，端点保留）
 
 // ---------------- Tab3 ----------------
 async function loadContracts() {
@@ -753,32 +669,8 @@ async function loadAlerts() {
 async function loadReports() {
   reports.value = ((await api.getReportsApi({ current: 1, size: 20 })).data.records) || []
 }
-async function doCollect() {
-  const n = (await api.collectSlaApi()).data
-  ElMessage.success(`采集完成，写入 ${n} 条指标`); loadMetrics(); loadAlerts()
-}
-async function doRespond(row) {
-  await api.respondAlertApi(row.id); ElMessage.success('已记录响应'); loadAlerts()
-}
-async function doGenerate() {
-  try { const r = (await api.generateReportApi({})).data
-    ElMessage.success(`已生成 ${r.monthTag} 报告（未达标 ${r.unreachCount} 项）`); loadReports()
-  } catch (e) { ElMessage.error(e?.response?.data?.message || '生成失败') }
-}
-async function doReviewReport(row) {
-  const { value } = await ElMessageBox.prompt('审核意见（必填）', '审核月度 SLA 报告',
-    { inputPattern: /.{2,}/, inputErrorMessage: '意见不少于 2 字' })
-  try { await api.reviewReportApi(row.id, value); ElMessage.success('已审核'); loadReports() }
-  catch (e) { ElMessage.error(e?.response?.data?.message || '审核失败') }
-}
-async function doArchiveReport(row) {
-  try { await api.archiveReportApi(row.id); ElMessage.success('已归档（内容只读）'); loadReports() }
-  catch (e) { ElMessage.error(e?.response?.data?.message || '归档失败（仅管理员）') }
-}
-async function doPublishReport(row) {
-  try { await api.publishReportApi(row.id, '全部合作方'); ElMessage.success('已对外发布'); loadReports() }
-  catch (e) { ElMessage.error(e?.response?.data?.message || '发布被阻断（未归档不可发布）') }
-}
+// 采集/月报四链写动作已收口至 12.7.1/12.7.3（add-service-monitoring-console，端点保留）
+// 告警确认已收口至 12.2.4（add-event-subscription interface-console delta）
 
 // ---------------- 标签映射 ----------------
 function dlvTag(s) {

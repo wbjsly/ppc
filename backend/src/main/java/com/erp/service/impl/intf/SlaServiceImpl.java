@@ -123,16 +123,99 @@ public class SlaServiceImpl implements SlaService {
                     "事件投递数据源不可达：" + e.getMessage());
         }
 
+        // 3) 伙伴维度指标行（add-service-monitoring-console design D2）：
+        //    活跃伙伴同口径写行（PARTNER_CODE 预留列），告警仍只挂全局行；零活动伙伴不写行
+        written += collectPartnerRows(start, end, month);
+
         escalateOverdue();
         return written;
     }
 
-    /** 写指标 + 越阈告警（返回 1 表示写入一条指标） */
+    /** 窗口内活跃伙伴（call_log CALLER ∪ delivery PARTNER_CODE）各写一组指标行；单伙伴失败不中断其余 */
+    private int collectPartnerRows(LocalDateTime start, LocalDateTime end, String month) {
+        int written = 0;
+        try {
+            java.util.Set<String> partners = new java.util.LinkedHashSet<>();
+            partners.addAll(callLogDao.selectActiveCallers(start));
+            partners.addAll(deliveryDao.selectActivePartners(start));
+            for (String partner : partners) {
+                try {
+                    int total = callLogDao.countAll(partner, start);
+                    if (total > 0) {
+                        int failed = callLogDao.countAllFailed(partner, start);
+                        Long serverErrLong = callLogDao.selectCount(
+                                new LambdaQueryWrapper<com.erp.entity.intf.IntfCallLog>()
+                                        .eq(com.erp.entity.intf.IntfCallLog::getCaller, partner)
+                                        .ge(com.erp.entity.intf.IntfCallLog::getCallAt, start)
+                                        .ge(com.erp.entity.intf.IntfCallLog::getRespCode, 500));
+                        int serverErr = serverErrLong == null ? 0 : serverErrLong.intValue();
+
+                        BigDecimal errRate = BigDecimal.valueOf(failed).multiply(HUNDRED)
+                                .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+                        written += writePartnerMetric(IntfSlaMetric.KEY_ERROR_RATE, errRate, "%",
+                                ERR_TARGET, errRate, start, end, month, total,
+                                lowerIsBetter(errRate, ERR_TARGET), partner);
+
+                        BigDecimal avail = BigDecimal.valueOf(total - serverErr).multiply(HUNDRED)
+                                .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+                        BigDecimal availTarget = BigDecimal.valueOf(targetAvailability);
+                        written += writePartnerMetric(IntfSlaMetric.KEY_AVAILABILITY, avail, "%",
+                                availTarget, avail, start, end, month, total,
+                                higherIsBetter(avail, availTarget), partner);
+
+                        List<Integer> costs = callLogDao.selectCostsForCaller(partner, start);
+                        if (!costs.isEmpty()) {
+                            int p95 = costs.get((int) Math.ceil(costs.size() * 0.95) - 1);
+                            BigDecimal targetMs = BigDecimal.valueOf(500);
+                            written += writePartnerMetric(IntfSlaMetric.KEY_P95,
+                                    BigDecimal.valueOf(p95), "ms", targetMs,
+                                    BigDecimal.valueOf(p95), start, end, month, costs.size(),
+                                    lowerIsBetter(BigDecimal.valueOf(p95), targetMs), partner);
+                        }
+                    }
+                    Double secs = deliveryDao.selectAvgAckSecondsForPartner(partner, start);
+                    if (secs != null) {
+                        BigDecimal minutes = BigDecimal.valueOf(secs)
+                                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+                        BigDecimal threshold = BigDecimal.valueOf(syncThresholdMinutes);
+                        written += writePartnerMetric(IntfSlaMetric.KEY_E2E_DELAY, minutes, "min",
+                                threshold, minutes, start, end, month,
+                                deliveryDao.countDeliveredForPartner(partner, start),
+                                lowerIsBetter(minutes, threshold), partner);
+                    }
+                } catch (Exception one) {
+                    log.debug("partner metric skipped partner={}: {}", partner, one.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("partner metric collect failed: {}", e.getMessage());
+        }
+        return written;
+    }
+
+    /** 写全局指标 + 越阈告警（返回 1 表示写入一条指标） */
     private int writeMetric(String key, BigDecimal value, String unit, BigDecimal target,
                             BigDecimal compare, LocalDateTime start, LocalDateTime end,
                             String month, int samples, String level) {
+        return writeRow(key, value, unit, target, compare, start, end, month, samples, level,
+                null, true);
+    }
+
+    /** 伙伴维度指标行（design D2）：PARTNER_CODE 落行，不触发告警（告警仅挂全局行防倍增） */
+    private int writePartnerMetric(String key, BigDecimal value, String unit, BigDecimal target,
+                                   BigDecimal compare, LocalDateTime start, LocalDateTime end,
+                                   String month, int samples, String level, String partnerCode) {
+        return writeRow(key, value, unit, target, compare, start, end, month, samples, level,
+                partnerCode, false);
+    }
+
+    private int writeRow(String key, BigDecimal value, String unit, BigDecimal target,
+                         BigDecimal compare, LocalDateTime start, LocalDateTime end,
+                         String month, int samples, String level,
+                         String partnerCode, boolean withAlert) {
         IntfSlaMetric m = new IntfSlaMetric();
         m.setMetricKey(key);
+        m.setPartnerCode(partnerCode);
         m.setApiDomain("open-api");
         m.setWindowStart(start);
         m.setWindowEnd(end);
@@ -145,7 +228,7 @@ public class SlaServiceImpl implements SlaService {
         m.setMonthTag(month);
         metricDao.insert(m);
 
-        if (!IntfSlaMetric.LVL_OK.equals(level)) {
+        if (withAlert && !IntfSlaMetric.LVL_OK.equals(level)) {
             recordAlert(key, level, value, target,
                     metricName(key) + " 实际 " + value + unit + "，目标 " + target + unit + "（" + level + "）");
         }
@@ -279,11 +362,13 @@ public class SlaServiceImpl implements SlaService {
     // ---------------------------------------------------------------- 月报
 
     @Override
-    public Map<String, Object> generateReport(String monthTag) {
+    public Map<String, Object> generateReport(String monthTag, String operator) {
         String month = monthTag == null || monthTag.trim().isEmpty()
                 ? LocalDateTime.now().minusDays(1).format(MONTH_FMT) : monthTag.trim();
+        // 总览/未达标只统计全局行（PARTNER_CODE 为空）——伙伴行入章节，避免重复计数
         List<IntfSlaMetric> metrics = metricDao.selectList(new LambdaQueryWrapper<IntfSlaMetric>()
                 .eq(IntfSlaMetric::getMonthTag, month)
+                .isNull(IntfSlaMetric::getPartnerCode)
                 .orderByAsc(IntfSlaMetric::getMetricKey));
 
         Map<String, Integer> overview = new LinkedHashMap<>();
@@ -301,6 +386,7 @@ public class SlaServiceImpl implements SlaService {
                 u.put("windowStart", m.getWindowStart());
                 u.put("rootCause", m.getRemark() == null ? "待补充根因归类" : m.getRemark());
                 u.put("owner", "接口运维工程师");
+                u.put("partnerCode", m.getPartnerCode());
                 unreach.add(u);
             }
         }
@@ -316,9 +402,15 @@ public class SlaServiceImpl implements SlaService {
         }
         r.setTitle(month + " 月度接口 SLA 报告");
         r.setStatus(IntfSlaReport.ST_GENERATED);
-        r.setMetricsJson(toJson(overview));
+        // design D1：METRICS_JSON 重组为 {overview, chapters[]}（报告表零历史行，形状变更零兼容成本）
+        Map<String, Object> metricsPayload = new LinkedHashMap<>();
+        metricsPayload.put("overview", overview);
+        metricsPayload.put("chapters", buildChapters(month));
+        r.setMetricsJson(toJson(metricsPayload));
         r.setUnreachJson(toJson(unreach));
-        r.setGeneratedBy("sla-job");
+        // 手动调用记实际操作人（调度线程无登录上下文 → 调度器显式传 "sla-job"）；
+        // 互斥检查 generatedBy.equals(currentUser) 从此对人类生效（spec MODIFIED 月报 req）
+        r.setGeneratedBy(operator == null || operator.trim().isEmpty() ? "sla-job" : operator.trim());
         r.setGeneratedAt(LocalDateTime.now());
         r.setReviewedBy(null);
         r.setReviewedAt(null);
@@ -337,8 +429,73 @@ public class SlaServiceImpl implements SlaService {
         return out;
     }
 
+    /** 章节 = 按伙伴聚合当月 PARTNER_CODE 指标行（design D1：METRICS_JSON={overview, chapters[]}） */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> buildChapters(String month) {
+        List<IntfSlaMetric> rows = metricDao.selectList(new LambdaQueryWrapper<IntfSlaMetric>()
+                .eq(IntfSlaMetric::getMonthTag, month)
+                .isNotNull(IntfSlaMetric::getPartnerCode)
+                .orderByAsc(IntfSlaMetric::getPartnerCode, IntfSlaMetric::getMetricKey));
+        Map<String, List<IntfSlaMetric>> byPartner = new LinkedHashMap<>();
+        for (IntfSlaMetric m : rows) {
+            byPartner.computeIfAbsent(m.getPartnerCode(), k -> new ArrayList<>()).add(m);
+        }
+        List<Map<String, Object>> chapters = new ArrayList<>();
+        for (Map.Entry<String, List<IntfSlaMetric>> e : byPartner.entrySet()) {
+            Map<String, Object> ch = new LinkedHashMap<>();
+            ch.put("partnerCode", e.getKey());
+            // 指标聚合：每 metricKey → count/avg/level 分布
+            Map<String, Map<String, Object>> agg = new LinkedHashMap<>();
+            for (IntfSlaMetric m : e.getValue()) {
+                Map<String, Object> a = agg.computeIfAbsent(m.getMetricKey(), k -> {
+                    Map<String, Object> x = new LinkedHashMap<>();
+                    x.put("count", 0);
+                    x.put("valueSum", BigDecimal.ZERO);
+                    x.put("levels", new LinkedHashMap<String, Integer>());
+                    return x;
+                });
+                a.put("count", (Integer) a.get("count") + 1);
+                if (m.getMetricValue() != null) {
+                    a.put("valueSum", ((BigDecimal) a.get("valueSum")).add(m.getMetricValue()));
+                }
+                ((Map<String, Integer>) a.get("levels")).merge(m.getLevel(), 1, Integer::sum);
+            }
+            Map<String, Object> metricOut = new LinkedHashMap<>();
+            for (Map.Entry<String, Map<String, Object>> ae : agg.entrySet()) {
+                Map<String, Object> a = ae.getValue();
+                int cnt = (Integer) a.get("count");
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("count", cnt);
+                out.put("avg", cnt == 0 ? null : ((BigDecimal) a.get("valueSum"))
+                        .divide(BigDecimal.valueOf(cnt), 4, RoundingMode.HALF_UP));
+                out.put("levels", a.get("levels"));
+                metricOut.put(ae.getKey(), out);
+            }
+            ch.put("metrics", metricOut);
+            // 该伙伴未达标子项（level≠OK）
+            List<Map<String, Object>> unreach = new ArrayList<>();
+            for (IntfSlaMetric m : e.getValue()) {
+                if (!IntfSlaMetric.LVL_OK.equals(m.getLevel())) {
+                    Map<String, Object> u = new LinkedHashMap<>();
+                    u.put("metricKey", m.getMetricKey());
+                    u.put("actual", m.getMetricValue());
+                    u.put("target", m.getTargetValue());
+                    u.put("level", m.getLevel());
+                    u.put("windowStart", m.getWindowStart());
+                    u.put("partnerCode", m.getPartnerCode());
+                    u.put("rootCause", m.getRemark() == null ? "待补充根因归类" : m.getRemark());
+                    unreach.add(u);
+                }
+            }
+            ch.put("unreach", unreach);
+            chapters.add(ch);
+        }
+        return chapters;
+    }
+
     @Override
     public Map<String, Object> reviewReport(String reportId, String opinion) {
+        requireReviewer();
         IntfSlaReport r = requireReport(reportId);
         if (opinion == null || opinion.trim().length() < 2) {
             throw new ServiceException(400, "审核意见必填，不可留空（SOP-5.5-D 步骤4）");
@@ -399,6 +556,21 @@ public class SlaServiceImpl implements SlaService {
                 "scope", scope);
     }
 
+    /** 审核角色 = 集成架构师（spec：报告 MUST 经集成架构师审核），ADMIN 沿全局惯例直通 */
+    private void requireReviewer() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder
+                        .getContext().getAuthentication();
+        if (auth == null) {
+            throw new ServiceException(401, "未登录");
+        }
+        boolean ok = IntfGuard.isAdmin() || auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_INTF_ARCH".equals(a.getAuthority()));
+        if (!ok) {
+            throw new ServiceException(403, "报告审核仅限集成架构师（ROLE_INTF_ARCH）或管理员");
+        }
+    }
+
     private void recordViolation(IntfSlaReport r) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime window = now.withSecond(0).withNano(0).withMinute((now.getMinute() / 5) * 5);
@@ -420,10 +592,20 @@ public class SlaServiceImpl implements SlaService {
     // ---------------------------------------------------------------- 查询
 
     @Override
-    public Page<IntfSlaMetric> metrics(long current, long size, String metricKey, String monthTag) {
+    public Page<IntfSlaMetric> metrics(long current, long size, String metricKey, String monthTag,
+                                       String partnerCode) {
         LambdaQueryWrapper<IntfSlaMetric> qw = new LambdaQueryWrapper<>();
         qw.eq(metricKey != null && !metricKey.trim().isEmpty(), IntfSlaMetric::getMetricKey, metricKey == null ? "" : metricKey.trim());
         qw.eq(monthTag != null && !monthTag.trim().isEmpty(), IntfSlaMetric::getMonthTag, monthTag == null ? "" : monthTag.trim());
+        // 伙伴维度筛选：null=全部；空串=全局行；值=该伙伴（design D2）
+        if (partnerCode != null) {
+            String p = partnerCode.trim();
+            if (p.isEmpty()) {
+                qw.isNull(IntfSlaMetric::getPartnerCode);
+            } else {
+                qw.eq(IntfSlaMetric::getPartnerCode, p);
+            }
+        }
         qw.orderByDesc(IntfSlaMetric::getWindowStart);
         return metricDao.selectPage(new Page<>(current, size), qw);
     }

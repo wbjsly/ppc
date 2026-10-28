@@ -5,6 +5,7 @@ import com.erp.entity.BaseEntity;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -24,6 +25,7 @@ public class PoCoopLog extends BaseEntity {
     public static final String ACT_CHANGE_ACCEPTED = "CHANGE_ACCEPTED";
     public static final String ACT_LOCK = "LOCK";
     public static final String ACT_UNLOCK = "UNLOCK";
+    public static final String ACT_NEGOTIATE = "NEGOTIATE";
 
     public static final String SRC_PORTAL = "PORTAL";
     public static final String SRC_OFFLINE = "OFFLINE";
@@ -44,4 +46,7 @@ public class PoCoopLog extends BaseEntity {
     private String detail;
     private String remark;
     private LocalDateTime actionAt;
+    /** 结构化数量变更建议（spec 增补：原 qtyNote 只是自由文本；不写回 PO） */
+    private BigDecimal qtySuggested;
+    private String qtyReason;
 }

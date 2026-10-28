@@ -49,6 +49,26 @@ public interface IntfDeliveryDao extends BaseMapper<IntfDelivery> {
             "WHERE d.STATUS = 'DELIVERED' AND d.ACK_AT IS NOT NULL AND d.ACK_AT >= #{from} AND d.DEL_FLAG = '0'")
     Double selectAvgAckSeconds(@Param("from") java.time.LocalDateTime from);
 
+    /** 端到端延迟（伙伴维度，add-service-monitoring-console design D2） */
+    @Select("SELECT AVG(TIMESTAMPDIFF(SECOND, o.OCCURRED_AT, d.ACK_AT)) FROM erp_intf_delivery d " +
+            "JOIN erp_ops_outbox o ON o.EVENT_ID = d.EVENT_ID " +
+            "WHERE d.STATUS = 'DELIVERED' AND d.ACK_AT IS NOT NULL AND d.ACK_AT >= #{from} " +
+            "AND d.PARTNER_CODE = #{partner} AND d.DEL_FLAG = '0'")
+    Double selectAvgAckSecondsForPartner(@Param("partner") String partner,
+                                         @Param("from") java.time.LocalDateTime from);
+
+    /** 窗口内活跃投递伙伴（伙伴指标行数据源，design D2）：ACK 或最近尝试落在窗口内 */
+    @Select("SELECT DISTINCT PARTNER_CODE FROM erp_intf_delivery " +
+            "WHERE PARTNER_CODE IS NOT NULL AND PARTNER_CODE != '' AND DEL_FLAG = '0' " +
+            "AND (ACK_AT >= #{from} OR LAST_AT >= #{from})")
+    List<String> selectActivePartners(@Param("from") java.time.LocalDateTime from);
+
     @Select("SELECT COUNT(*) FROM erp_intf_delivery WHERE STATUS = 'DELIVERED' AND ACK_AT >= #{from} AND DEL_FLAG = '0'")
     int countDeliveredSince(@Param("from") java.time.LocalDateTime from);
+
+    /** 伙伴维度已投递样本数（伙伴 e2e 指标行 sampleCount，design D2） */
+    @Select("SELECT COUNT(*) FROM erp_intf_delivery WHERE STATUS = 'DELIVERED' AND ACK_AT >= #{from} " +
+            "AND PARTNER_CODE = #{partner} AND DEL_FLAG = '0'")
+    int countDeliveredForPartner(@Param("partner") String partner,
+                                 @Param("from") java.time.LocalDateTime from);
 }

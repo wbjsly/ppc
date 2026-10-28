@@ -17,6 +17,7 @@ import com.erp.entity.intf.IntfSlaAlert;
 import com.erp.entity.intf.IntfTicket;
 import com.erp.security.IntfGuard;
 import com.erp.service.intf.OpenApiGatewayService;
+import com.erp.service.intf.TierChangeLogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
@@ -43,11 +44,12 @@ public class IntfConsoleController {
     private final IntfSlaAlertDao alertDao;
     private final IntfTicketDao ticketDao;
     private final OpenApiGatewayService gateway;
+    private final TierChangeLogService tierChangeLog;
 
     public IntfConsoleController(IntfCallLogDao callLogDao, IntfChannelDao channelDao,
                                  IntfCredentialDao credentialDao, IntfDeliveryDao deliveryDao,
                                  IntfSlaAlertDao alertDao, IntfTicketDao ticketDao,
-                                 OpenApiGatewayService gateway) {
+                                 OpenApiGatewayService gateway, TierChangeLogService tierChangeLog) {
         this.callLogDao = callLogDao;
         this.channelDao = channelDao;
         this.credentialDao = credentialDao;
@@ -55,6 +57,7 @@ public class IntfConsoleController {
         this.alertDao = alertDao;
         this.ticketDao = ticketDao;
         this.gateway = gateway;
+        this.tierChangeLog = tierChangeLog;
     }
 
     @Operation(summary = "运行总览 KPI（台账实时聚合，无数据显示 0 并标「暂无数据」）")
@@ -145,6 +148,7 @@ public class IntfConsoleController {
             throw new ServiceException(400, "tier 仅支持 STRATEGIC / NORMAL / NEW / LOWEST");
         }
         String before = ch.getRateTier();
+        Integer beforeLimit = ch.getLimitPerMin();
         ch.setRateTier(tier);
         ch.setLimitPerMin(gateway.limitForTier(tier));
         if (IntfChannel.TIER_LOWEST.equals(tier)) {
@@ -152,19 +156,34 @@ public class IntfConsoleController {
             ch.setDowngradeFrom(before);
         }
         channelDao.updateById(ch);
+        // 档位变更历史（spec 12.3.2：手动调档同源留痕，design D1 单入口）
+        tierChangeLog.record(ch.getPartnerCode(), ch.getPartnerCode(),
+                com.erp.entity.intf.IntfTierChangeLog.TYPE_MANUAL, before, tier,
+                beforeLimit, ch.getLimitPerMin(), "管理员手动调档（2.8.3 运行总览）",
+                IntfGuard.currentUser());
         return R.ok(Map.<String, Object>of("id", ch.getId(), "rateTier", tier,
                 "limitPerMin", ch.getLimitPerMin(), "before", before));
     }
 
-    @Operation(summary = "调用审计日志（按调用方/接口/时间，敏感字段已脱敏）")
+    @Operation(summary = "调用审计日志（按调用方/接口/时间/状态码分组，敏感字段已脱敏）")
     @GetMapping("/call-logs")
     public R<Page<IntfCallLog>> callLogs(@RequestParam(defaultValue = "1") long current,
                                          @RequestParam(defaultValue = "20") long size,
                                          @RequestParam(required = false) String caller,
-                                         @RequestParam(required = false) String path) {
+                                         @RequestParam(required = false) String path,
+                                         @RequestParam(required = false) String respGroup) {
         LambdaQueryWrapper<IntfCallLog> qw = new LambdaQueryWrapper<>();
         qw.eq(caller != null && !caller.trim().isEmpty(), IntfCallLog::getCaller, caller == null ? "" : caller.trim());
         qw.like(path != null && !path.trim().isEmpty(), IntfCallLog::getApiPath, path == null ? "" : path.trim());
+        // 12.3.3 明细增强：状态码分组 2xx/4xx/5xx（只读扩展，三组互斥、与全量可对账）
+        if (respGroup != null && !respGroup.trim().isEmpty()) {
+            switch (respGroup.trim()) {
+                case "2xx" -> qw.between(IntfCallLog::getRespCode, 200, 299);
+                case "4xx" -> qw.between(IntfCallLog::getRespCode, 400, 499);
+                case "5xx" -> qw.between(IntfCallLog::getRespCode, 500, 599);
+                default -> { /* 未知分组不追加过滤 */ }
+            }
+        }
         qw.orderByDesc(IntfCallLog::getCallAt);
         return R.ok(callLogDao.selectPage(new Page<>(current, size), qw));
     }

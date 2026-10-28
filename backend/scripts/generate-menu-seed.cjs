@@ -339,6 +339,38 @@ const EXTRA_PERM = {
   ...leaf(['M11-12', 'M11-12-1', 'M11-12-3'], 'ROLE_PMO,ROLE_PM,ROLE_ADMIN'),
   ...leaf(['M11-12-2'], 'ROLE_FINANCE,ROLE_FIN_MGR,ROLE_PMO,ROLE_ADMIN'),
   ...leaf(['M11-12-4'], 'ROLE_PMO,ROLE_ADMIN'),
+  // M12-1 门户入驻 12.1.1~3（change add-partner-onboarding：注册=PURCHASER；审核+质量+合规；通道=INTF_OPS）
+  ...leaf(['M12-1', 'M12-1-1'], 'ROLE_PURCHASER,ROLE_ADMIN'),
+  ...leaf(['M12-1-2'], 'ROLE_PURCHASER,ROLE_QUALITY_MGR,ROLE_COMPLIANCE,ROLE_ADMIN'),
+  ...leaf(['M12-1-3'], 'ROLE_INTF_OPS,ROLE_ADMIN'),
+  // M12-2 事件订阅 12.2.1~4（change add-event-subscription：事件定义=INTF_ARCH；订阅/监控/告警=INTF_OPS）
+  // 父节点取四叶并集（避免 SidebarMenu 父判定把子叶提升为孤儿）
+  ...leaf(['M12-2'], 'ROLE_INTF_ARCH,ROLE_INTF_OPS,ROLE_ADMIN'),
+  ...leaf(['M12-2-1'], 'ROLE_INTF_ARCH,ROLE_ADMIN'),
+  ...leaf(['M12-2-2', 'M12-2-3', 'M12-2-4'], 'ROLE_INTF_OPS,ROLE_ADMIN'),
+  // M12-3 接口调用 12.3.1~3（change add-interface-call-console：三叶统一 OPS+ADMIN，
+  // 本操作台无高危写动作；父=三叶并集防孤儿）
+  ...leaf(['M12-3', 'M12-3-1', 'M12-3-2', 'M12-3-3'], 'ROLE_INTF_OPS,ROLE_ADMIN'),
+  // M12-4 报文处理 12.4.1~3（change add-edi-message-console：三叶 OPS+ADMIN；
+  // 映射规则保存为端点层 admin-only，菜单不额外分化；父=三叶并集防孤儿）
+  ...leaf(['M12-4', 'M12-4-1', 'M12-4-2', 'M12-4-3'], 'ROLE_INTF_OPS,ROLE_ADMIN'),
+  // M12.5 订单协同 12.5.1~3（change add-po-collaboration-console：
+  // 12.5.1/2=PM/ADMIN/WAREHOUSE（读三角色，写动作服务层收敛）；12.5.3=PM/ADMIN（与 2.8.1 一致）；
+  // 父 M12-5=三叶并集防孤儿）
+  ...leaf(['M12-5', 'M12-5-1', 'M12-5-2'], 'ROLE_PM,ROLE_ADMIN,ROLE_WAREHOUSE'),
+  ...leaf(['M12-5-3'], 'ROLE_PM,ROLE_ADMIN'),
+  // M12-6 对账协同（add-reconciliation-console：双签须财务节点，父=两叶并集防孤儿）
+  ...leaf(['M12-6', 'M12-6-1', 'M12-6-2'], 'ROLE_PM,ROLE_FINANCE_MGR,ROLE_ADMIN'),
+  // M12-7 服务监控（add-service-monitoring-console：12.7.3 审核须集成架构师，父=三叶并集防孤儿）
+  ...leaf(['M12-7'], 'ROLE_INTF_OPS,ROLE_INTF_ARCH,ROLE_ADMIN'),
+  ...leaf(['M12-7-1', 'M12-7-2'], 'ROLE_INTF_OPS,ROLE_ADMIN'),
+  ...leaf(['M12-7-3'], 'ROLE_INTF_OPS,ROLE_INTF_ARCH,ROLE_ADMIN'),
+  // M12-8 预测补货（add-cpfr-forecast-replenishment：SCMDIR 协议管理 + PMGR 审批/升级 + PM 计划员；
+  // 父节点=两叶同权防孤儿）
+  ...leaf(['M12-8', 'M12-8-1', 'M12-8-2'], 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_ADMIN'),
+  // M12-9 供应绩效（add-supply-performance-menu：SCM 域入口并集含 SCMDIR/PMGR + 财务/GM 视角；
+  // 记分卡接口细规则不动，本 PERM 只控菜单可见面；父=两叶同权防孤儿）
+  ...leaf(['M12-9', 'M12-9-1', 'M12-9-2'], 'ROLE_SCMDIR,ROLE_PMGR,ROLE_PM,ROLE_FINANCE_MGR,ROLE_GM,ROLE_ADMIN'),
   // M10-10 绩效管理 10.10.1~10.10.4（change add-payroll-management）
   ...leaf(['M10-10', 'M10-10-1', 'M10-10-2', 'M10-10-3', 'M10-10-4'],
     'ROLE_HR,ROLE_HR_MGR,ROLE_FINANCE,ROLE_FIN_MGR,ROLE_ADMIN'),

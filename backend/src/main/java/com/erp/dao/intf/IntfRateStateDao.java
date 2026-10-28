@@ -29,6 +29,14 @@ public interface IntfRateStateDao extends BaseMapper<IntfRateState> {
             "WHERE CALLER = #{caller} AND WINDOW_MIN = #{windowMin}")
     int markOver(@Param("caller") String caller, @Param("windowMin") String windowMin);
 
+    /** 12.3.2 状态总览：每个调用方最新统计窗口（design D5 只读端点） */
+    @Select("SELECT r.* FROM erp_intf_rate_state r JOIN (" +
+            "  SELECT CALLER AS c, MAX(WINDOW_MIN) AS mw FROM erp_intf_rate_state " +
+            "  WHERE DEL_FLAG = '0' GROUP BY CALLER) t " +
+            "ON r.CALLER = t.c AND r.WINDOW_MIN = t.mw AND r.DEL_FLAG = '0' " +
+            "ORDER BY (r.LAST_OVER_AT IS NULL), r.LAST_OVER_AT DESC LIMIT 100")
+    java.util.List<IntfRateState> selectLatestWindows();
+
     /** 连续 N 个窗口内出现超限的窗口数（含当前窗口） */
     @Select("SELECT COUNT(DISTINCT WINDOW_MIN) FROM erp_intf_rate_state " +
             "WHERE CALLER = #{caller} AND OVER_COUNT > 0 AND WINDOW_MIN IN (#{w1}, #{w2}, #{w3})")
