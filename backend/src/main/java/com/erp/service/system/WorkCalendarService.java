@@ -41,6 +41,29 @@ public interface WorkCalendarService {
     /** 解绑 */
     void unbindWcShift(String id);
 
+    // ---------- 法定假日同步与源头维护（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+    /**
+     * 同步法定假日（HR 假日表 → 工作日历，单向）：STATUTORY/RESTDAY → 非工作日、
+     * WORKDAY（调休上班）→ 工作日，备注带假日名；全量映射幂等可重跑，HR 表无记录的
+     * 日期不触碰；同步动作写审计留痕。仅 ADMIN。
+     *
+     * @return 影响行数（实际 upsert 的日历行数）
+     */
+    int syncHolidays();
+
+    /** HR 假日列表（按日期升序；读取登录即可） */
+    List<com.erp.entity.hr.HrHolidayCalendar> listHolidays();
+
+    /** 新增 HR 假日：TYPE 限 STATUTORY/RESTDAY/WORKDAY、日期唯一（违者 422）；仅 ADMIN */
+    com.erp.entity.hr.HrHolidayCalendar createHoliday(com.erp.entity.hr.HrHolidayCalendar h);
+
+    /** 修改 HR 假日（日期不可改；校验同新增）；仅 ADMIN */
+    com.erp.entity.hr.HrHolidayCalendar updateHoliday(com.erp.entity.hr.HrHolidayCalendar h);
+
+    /** 删除 HR 假日（物理删——源头维护语义，无下游引用占位）；仅 ADMIN */
+    void deleteHoliday(String id);
+
     // ---------- 排程/负荷共用的时段展开（capacity-load spec Fallback 与班次绑定需求） ----------
 
     /**

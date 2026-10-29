@@ -49,3 +49,30 @@ export function bindWcShiftApi(wcCode, shiftCode) {
 export function unbindWcShiftApi(id) {
   return request.delete(`/system/calendar/wc-shifts/${id}`)
 }
+
+// ---------- 法定假日同步与源头维护（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+/** 法定假日列表（HR 假日表，按日期升序） */
+export function getHolidaysApi() {
+  return request.get('/system/calendar/holidays')
+}
+
+/** 新增法定假日（TYPE 限 STATUTORY/RESTDAY/WORKDAY；日期唯一） */
+export function createHolidayApi(row) {
+  return request.post('/system/calendar/holidays', row)
+}
+
+/** 修改法定假日（日期不可改） */
+export function updateHolidayApi(id, row) {
+  return request.put(`/system/calendar/holidays/${id}`, row)
+}
+
+/** 删除法定假日 */
+export function deleteHolidayApi(id) {
+  return request.delete(`/system/calendar/holidays/${id}`)
+}
+
+/** 同步法定假日到工作日历（幂等；返回变更行数） */
+export function syncHolidaysApi() {
+  return request.post('/system/calendar/holidays/sync')
+}

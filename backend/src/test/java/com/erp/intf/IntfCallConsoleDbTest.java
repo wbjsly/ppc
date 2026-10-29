@@ -243,13 +243,15 @@ class IntfCallConsoleDbTest {
     /** 3.4b：审计聚合 调用量/成功率/4xx/5xx/P95（spec 12.3.3） */
     @Test
     void auditAggregatesCountsAndP95() {
+        // 时间边界防护：聚合窗口从"当天 0 点"起算，造数锚定当天 10:00（避免午夜附近 now()-minusMinutes 跨日出窗）
+        java.time.LocalDateTime anchor = java.time.LocalDate.now().atTime(10, 0);
         for (int i = 0; i < 20; i++) {
-            insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-OK-" + i, 200, null, 100, now().minusMinutes(i + 1));
+            insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-OK-" + i, 200, null, 100, anchor.minusMinutes(i + 1));
         }
         for (int i = 0; i < 2; i++) {
-            insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-ERR-" + i, 500, null, 200, now().minusMinutes(i + 1));
+            insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-ERR-" + i, 500, null, 200, anchor.minusMinutes(i + 1));
         }
-        insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-4XX", 404, null, 50, now().minusMinutes(1));
+        insertCall("ICC-AGG", "/api/open/ping", "ICC-REQ-AGG-4XX", 404, null, 50, anchor.minusMinutes(25));
 
         var rows = callConsole.auditAggregates(
                 java.time.LocalDate.now(), java.time.LocalDate.now(), "ICC-AGG").getData();

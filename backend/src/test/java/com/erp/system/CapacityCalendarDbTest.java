@@ -66,10 +66,16 @@ class CapacityCalendarDbTest {
         // 日历保留物理唯一键（生产只有 upsert 无删除路径）→ 测试清理必须物理删，
         // 否则逻辑删墓碑会撞 UK_ADMIN_CAL_DATE
         jdbc.update("DELETE FROM erp_admin_work_calendar WHERE CAL_DATE >= ?", D1);
-        wcShiftDao.delete(new LambdaQueryWrapper<WcShift>()
-                .like(WcShift::getWcCode, "CALWC"));
-        shiftDao.delete(new LambdaQueryWrapper<ShiftTemplate>()
-                .like(ShiftTemplate::getShiftCode, "CALSH"));
+        // 班次/绑定物理删：erp_admin_shift 有 UK_ADMIN_SHIFT_CODE（194 迁移），
+        // 逻辑删墓碑会占码导致后续 createShift 撞唯一键
+        jdbc.update("DELETE FROM erp_mrp_wc_shift WHERE WC_CODE LIKE 'CALWC%'");
+        jdbc.update("DELETE FROM erp_admin_shift WHERE SHIFT_CODE LIKE 'CALSH%'");
+        // 假日测试数据（hr_holiday 无触发器；日历测试日期 2028-*）
+        jdbc.update("DELETE FROM hr_holiday_calendar WHERE HOLIDAY_DATE >= ?", HD1);
+        jdbc.update("DELETE FROM erp_admin_work_calendar WHERE CAL_DATE >= ?", HD1);
+        // 同步审计（hr_change_log 触发器豁免三段式）
+        jdbc.execute("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SYNC'; "
+                + "SET @audit_bypass=0");
     }
 
     private ShiftTemplate shift(String code, String hours) {
@@ -106,6 +112,99 @@ class CapacityCalendarDbTest {
         ServiceException dup = assertThrows(ServiceException.class,
                 () -> service.createShift(shift("CALSH-A", "8")));
         assertEquals(422, dup.getCode(), "编码重复 → 422");
+    }
+
+    @Test
+    void logicalDeletedCodeStillBlockedByUniqueKey() {
+        // 逻辑删墓碑占码（selectCount 带 DEL_FLAG='0' 查不到）→ insert 撞
+        // UK_ADMIN_SHIFT_CODE → DuplicateKeyException 兜底转 422（spec 班次编码唯一场景）
+        service.createShift(shift("CALSH-TOMB", "8"));
+        jdbc.update("UPDATE erp_admin_shift SET DEL_FLAG='1' WHERE SHIFT_CODE='CALSH-TOMB'");
+        ServiceException e = assertThrows(ServiceException.class,
+                () -> service.createShift(shift("CALSH-TOMB", "8")));
+        assertEquals(422, e.getCode(), "逻辑删占码 → 唯一键兜底 422：" + e.getMessage());
+    }
+
+    // ---------- 法定假日同步与源头维护（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+    /** 假日测试日期（种子范围 2026-2027 之外） */
+    private static final LocalDate HD1 = LocalDate.of(2028, 10, 1);   // STATUTORY
+    private static final LocalDate HD2 = LocalDate.of(2028, 10, 9);   // WORKDAY 调休上班
+    private static final LocalDate MANUAL = LocalDate.of(2028, 11, 11); // HR 表无记录的人工行
+
+    private void seedHoliday(LocalDate d, String name, String type) {
+        jdbc.update("INSERT INTO hr_holiday_calendar (ID,HOLIDAY_DATE,NAME,TYPE,CREATE_BY,DEL_FLAG,VER_NO) "
+                        + "VALUES (?,?,?,?,'caltest','0',0)",
+                "calhd-" + d, d, name, type);
+    }
+
+    @Test
+    void syncHolidaysMapsTypesIdempotentAndKeepsManualRows() {
+        seedHoliday(HD1, "测试元旦", "STATUTORY");
+        seedHoliday(HD2, "测试调休", "WORKDAY");
+        // 人工维护行（HR 表无记录）
+        service.upsertDate(MANUAL, "1", "人工维护行");
+
+        int affected = service.syncHolidays();
+        assertTrue(affected >= 2, "至少映射两条假日（实际 " + affected + "）");
+
+        WorkCalendar stat = calendarDao.selectOne(new LambdaQueryWrapper<WorkCalendar>()
+                .eq(WorkCalendar::getCalDate, HD1));
+        assertEquals("0", stat.getIsWorkday(), "STATUTORY → 非工作日");
+        assertTrue(stat.getRemark().contains("测试元旦"), "备注带假日名：" + stat.getRemark());
+
+        WorkCalendar makeup = calendarDao.selectOne(new LambdaQueryWrapper<WorkCalendar>()
+                .eq(WorkCalendar::getCalDate, HD2));
+        assertEquals("1", makeup.getIsWorkday(), "WORKDAY 调休上班 → 工作日");
+        assertTrue(makeup.getRemark().contains("调休上班"), "备注标注调休语义：" + makeup.getRemark());
+
+        // 人工行不被触碰（spec：HR 表无记录的日期不改动）
+        WorkCalendar manual = calendarDao.selectOne(new LambdaQueryWrapper<WorkCalendar>()
+                .eq(WorkCalendar::getCalDate, MANUAL));
+        assertEquals("1", manual.getIsWorkday());
+        assertEquals("人工维护行", manual.getRemark());
+
+        // 幂等：二次同步 0 变更（首次已把全部 HR 记录映射到位）
+        assertEquals(0, service.syncHolidays(), "重复同步幂等（0 变更）");
+
+        // 同步动作审计留痕
+        Integer audits = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SYNC'",
+                Integer.class);
+        assertTrue(audits >= 1, "同步审计落库");
+    }
+
+    @Test
+    void holidayCrudValidatesTypeAndDateUnique() {
+        // 非法 TYPE → 422
+        com.erp.entity.hr.HrHolidayCalendar bad = new com.erp.entity.hr.HrHolidayCalendar();
+        bad.setHolidayDate(HD1); bad.setName("坏类型"); bad.setType("HOLIDAY");
+        ServiceException e1 = assertThrows(ServiceException.class, () -> service.createHoliday(bad));
+        assertEquals(422, e1.getCode(), "非法 TYPE → 422：" + e1.getMessage());
+
+        // 合法创建
+        com.erp.entity.hr.HrHolidayCalendar h = new com.erp.entity.hr.HrHolidayCalendar();
+        h.setHolidayDate(HD1); h.setName("可改假日"); h.setType("RESTDAY");
+        service.createHoliday(h);
+        assertNotNull(h.getId(), "创建落库");
+
+        // 重复日期 → 422
+        com.erp.entity.hr.HrHolidayCalendar dup = new com.erp.entity.hr.HrHolidayCalendar();
+        dup.setHolidayDate(HD1); dup.setName("重复"); dup.setType("STATUTORY");
+        ServiceException e2 = assertThrows(ServiceException.class, () -> service.createHoliday(dup));
+        assertEquals(422, e2.getCode(), "重复日期 → 422");
+
+        // 修改：日期不可改（入参改日期被忽略）
+        h.setName("改名后");
+        com.erp.entity.hr.HrHolidayCalendar updated = service.updateHoliday(h);
+        assertEquals("改名后", updated.getName());
+        assertEquals(HD1, updated.getHolidayDate(), "日期不可改");
+
+        // 物理删后同日可重建（无墓碑占位）
+        service.deleteHoliday(h.getId());
+        com.erp.entity.hr.HrHolidayCalendar again = new com.erp.entity.hr.HrHolidayCalendar();
+        again.setHolidayDate(HD1); again.setName("重建"); again.setType("STATUTORY");
+        service.createHoliday(again); // 唯一键不撞 → 无异常即通过
     }
 
     @Test

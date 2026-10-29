@@ -2,7 +2,9 @@ package com.erp.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.erp.common.ServiceException;
+import com.erp.dao.system.MenuPermOverrideDao;
 import com.erp.dao.system.SysMenuDao;
+import com.erp.entity.system.MenuPermOverride;
 import com.erp.entity.system.SysMenu;
 import com.erp.service.SysMenuService;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +19,11 @@ import java.util.stream.Collectors;
 public class SysMenuServiceImpl implements SysMenuService {
 
     private final SysMenuDao menuDao;
+    private final MenuPermOverrideDao overrideDao;
 
-    public SysMenuServiceImpl(SysMenuDao menuDao) {
+    public SysMenuServiceImpl(SysMenuDao menuDao, MenuPermOverrideDao overrideDao) {
         this.menuDao = menuDao;
+        this.overrideDao = overrideDao;
     }
 
     @Override
@@ -37,19 +41,46 @@ public class SysMenuServiceImpl implements SysMenuService {
             return all;
         }
         Set<String> roleSet = roles.stream()
-                .map(String::toUpperCase)
+                .map(r -> r.toUpperCase(Locale.ROOT))
                 .collect(Collectors.toSet());
+
+        // override 合并（add-role-permission-console design D2）：读时单点合并「基线 ∪ override」
+        // override 为绝对指令：ADD=强制包含 / REMOVE=强制排除；仅存差异格，行数=实际改动数
+        Map<String, Map<String, String>> ovr = new HashMap<>();
+        for (MenuPermOverride row : overrideDao.selectByRoles(new ArrayList<>(roleSet))) {
+            ovr.computeIfAbsent(row.getMenuId(), k -> new HashMap<>())
+                    .put(row.getRoleCode().toUpperCase(Locale.ROOT), row.getAction());
+        }
+
         return all.stream()
                 .filter(m -> {
-                    if (m.getPerm() == null || m.getPerm().isEmpty()) {
-                        return true;
+                    Map<String, String> cell = ovr.get(m.getId());
+                    for (String role : roleSet) {
+                        String action = cell == null ? null : cell.get(role);
+                        if (MenuPermOverride.ACT_ADD.equals(action)) {
+                            return true;
+                        }
+                        if (MenuPermOverride.ACT_REMOVE.equals(action)) {
+                            continue; // 该角色被强制排除，看其余角色
+                        }
+                        if (baselineHas(m, role)) {
+                            return true;
+                        }
                     }
-                    return Arrays.stream(m.getPerm().split(","))
-                            .map(String::trim)
-                            .map(String::toUpperCase)
-                            .anyMatch(roleSet::contains);
+                    return false;
                 })
                 .collect(Collectors.toList());
+    }
+
+    /** 基线成员判定（空 PERM = 全员可见，沿既有语义） */
+    private boolean baselineHas(SysMenu m, String roleUpper) {
+        if (m.getPerm() == null || m.getPerm().isEmpty()) {
+            return true;
+        }
+        return Arrays.stream(m.getPerm().split(","))
+                .map(String::trim)
+                .map(r -> r.toUpperCase(Locale.ROOT))
+                .anyMatch(roleUpper::equals);
     }
 
     @Override

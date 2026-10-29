@@ -37,13 +37,22 @@ public class WorkCalendarServiceImpl implements WorkCalendarService {
     private final ShiftTemplateDao shiftDao;
     private final WcShiftDao wcShiftDao;
     private final SysParamService sysParam;
+    private final com.erp.dao.hr.HrHolidayCalendarDao holidayDao;
+    private final com.erp.security.AuditLogWriter auditLogWriter;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     public WorkCalendarServiceImpl(WorkCalendarDao calendarDao, ShiftTemplateDao shiftDao,
-                                   WcShiftDao wcShiftDao, SysParamService sysParam) {
+                                   WcShiftDao wcShiftDao, SysParamService sysParam,
+                                   com.erp.dao.hr.HrHolidayCalendarDao holidayDao,
+                                   com.erp.security.AuditLogWriter auditLogWriter,
+                                   org.springframework.jdbc.core.JdbcTemplate jdbc) {
         this.calendarDao = calendarDao;
         this.shiftDao = shiftDao;
         this.wcShiftDao = wcShiftDao;
         this.sysParam = sysParam;
+        this.holidayDao = holidayDao;
+        this.auditLogWriter = auditLogWriter;
+        this.jdbc = jdbc;
     }
 
     @Override
@@ -106,7 +115,13 @@ public class WorkCalendarServiceImpl implements WorkCalendarService {
         s.setStatus(s.getStatus() == null || s.getStatus().isEmpty() ? "1" : s.getStatus());
         s.setCreateBy(SecurityUtils.getCurrentUserId());
         s.setUpdateBy(SecurityUtils.getCurrentUserId());
-        shiftDao.insert(s);
+        try {
+            shiftDao.insert(s);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 唯一键兜底（194 迁移）：逻辑删行占码时 selectCount（带 DEL_FLAG='0'）查不到，
+            // insert 撞 UK_ADMIN_SHIFT_CODE —— 统一转 422 与前置校验同口径
+            throw new ServiceException(422, "班次编码已存在：" + s.getShiftCode());
+        }
         return s;
     }
 
@@ -183,6 +198,133 @@ public class WorkCalendarServiceImpl implements WorkCalendarService {
     public void unbindWcShift(String id) {
         requireAdmin("维护工作中心班次绑定");
         wcShiftDao.deleteById(id);
+    }
+
+    // ---------- 法定假日同步与源头维护（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+    @Override
+    @Transactional
+    public int syncHolidays() {
+        requireAdmin("同步法定假日");
+        List<com.erp.entity.hr.HrHolidayCalendar> holidays = holidayDao.selectList(
+                new LambdaQueryWrapper<com.erp.entity.hr.HrHolidayCalendar>()
+                        .orderByAsc(com.erp.entity.hr.HrHolidayCalendar::getHolidayDate));
+        String operator = SecurityUtils.getCurrentUserId();
+        int affected = 0;
+        for (com.erp.entity.hr.HrHolidayCalendar h : holidays) {
+            // STATUTORY/RESTDAY → 非工作日；WORKDAY（调休上班）→ 工作日（design D1 映射）
+            boolean workday = com.erp.entity.hr.HrHolidayCalendar.TYPE_WORKDAY.equals(h.getType());
+            String remark = h.getName() + "（" + typeLabel(h.getType()) + "）";
+            WorkCalendar exist = calendarDao.selectOne(new LambdaQueryWrapper<WorkCalendar>()
+                    .eq(WorkCalendar::getCalDate, h.getHolidayDate()));
+            if (exist != null) {
+                if (!exist.getIsWorkday().equals(workday ? "1" : "0")
+                        || !remark.equals(exist.getRemark())) {
+                    exist.setIsWorkday(workday ? "1" : "0");
+                    exist.setRemark(remark);
+                    exist.setUpdateBy(operator);
+                    calendarDao.updateById(exist);
+                    affected++;
+                }
+            } else {
+                WorkCalendar row = new WorkCalendar();
+                row.setCalDate(h.getHolidayDate());
+                row.setIsWorkday(workday ? "1" : "0");
+                row.setRemark(remark);
+                row.setCreateBy(operator);
+                row.setUpdateBy(operator);
+                calendarDao.insert(row);
+                affected++;
+            }
+        }
+        // 同步动作留痕（spec：同步动作留痕操作人与时间）
+        auditLogWriter.write("hr-holiday", "HOLIDAY_SYNC", null,
+                "同步 " + holidays.size() + " 条假日，变更 " + affected + " 行",
+                "HR 法定假日 → 工作日历单向同步");
+        log.info("法定假日同步：HR {} 条 → 工作日历变更 {} 行 by {}", holidays.size(), affected, operator);
+        return affected;
+    }
+
+    private static String typeLabel(String type) {
+        return switch (type == null ? "" : type) {
+            case com.erp.entity.hr.HrHolidayCalendar.TYPE_STATUTORY -> "法定假";
+            case com.erp.entity.hr.HrHolidayCalendar.TYPE_RESTDAY -> "休息日";
+            case com.erp.entity.hr.HrHolidayCalendar.TYPE_WORKDAY -> "调休上班";
+            default -> type;
+        };
+    }
+
+    @Override
+    public List<com.erp.entity.hr.HrHolidayCalendar> listHolidays() {
+        return holidayDao.selectList(new LambdaQueryWrapper<com.erp.entity.hr.HrHolidayCalendar>()
+                .orderByAsc(com.erp.entity.hr.HrHolidayCalendar::getHolidayDate));
+    }
+
+    @Override
+    @Transactional
+    public com.erp.entity.hr.HrHolidayCalendar createHoliday(
+            com.erp.entity.hr.HrHolidayCalendar h) {
+        requireAdmin("维护法定假日");
+        validateHoliday(h, true);
+        if (holidayDao.selectByDate(h.getHolidayDate()) != null) {
+            throw new ServiceException(422, "假日日期已存在：" + h.getHolidayDate());
+        }
+        h.setId(null);
+        h.setCreateBy(SecurityUtils.getCurrentUserId());
+        h.setUpdateBy(SecurityUtils.getCurrentUserId());
+        try {
+            holidayDao.insert(h);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // UK_HR_HOLIDAY_DATE 兜底（与前置校验同口径）
+            throw new ServiceException(422, "假日日期已存在：" + h.getHolidayDate());
+        }
+        return h;
+    }
+
+    @Override
+    @Transactional
+    public com.erp.entity.hr.HrHolidayCalendar updateHoliday(
+            com.erp.entity.hr.HrHolidayCalendar h) {
+        requireAdmin("维护法定假日");
+        com.erp.entity.hr.HrHolidayCalendar old = holidayDao.selectById(h.getId());
+        if (old == null) {
+            throw new ServiceException(404, "假日记录不存在：" + h.getId());
+        }
+        h.setHolidayDate(old.getHolidayDate()); // 日期不可改（主数据治理基线）
+        validateHoliday(h, false);
+        h.setUpdateBy(SecurityUtils.getCurrentUserId());
+        holidayDao.updateById(h);
+        return holidayDao.selectById(h.getId());
+    }
+
+    @Override
+    @Transactional
+    public void deleteHoliday(String id) {
+        requireAdmin("维护法定假日");
+        com.erp.entity.hr.HrHolidayCalendar old = holidayDao.selectById(id);
+        if (old == null) {
+            throw new ServiceException(404, "假日记录不存在：" + id);
+        }
+        // 物理删：UK_HR_HOLIDAY_DATE 不区分逻辑删——墓碑占日期会让同日重建撞唯一键
+        jdbc.update("DELETE FROM hr_holiday_calendar WHERE ID = ?", id);
+        log.info("法定假日删除 {} {}（{}）by {}", id, old.getHolidayDate(), old.getName(),
+                SecurityUtils.getCurrentUserId());
+    }
+
+    private void validateHoliday(com.erp.entity.hr.HrHolidayCalendar h, boolean create) {
+        if (create && h.getHolidayDate() == null) {
+            throw new ServiceException(422, "假日日期必填");
+        }
+        if (h.getName() == null || h.getName().trim().isEmpty()) {
+            throw new ServiceException(422, "假日名称必填");
+        }
+        String type = h.getType();
+        if (!com.erp.entity.hr.HrHolidayCalendar.TYPE_STATUTORY.equals(type)
+                && !com.erp.entity.hr.HrHolidayCalendar.TYPE_RESTDAY.equals(type)
+                && !com.erp.entity.hr.HrHolidayCalendar.TYPE_WORKDAY.equals(type)) {
+            // spec：TYPE 限三值
+            throw new ServiceException(422, "假日类型仅接受 STATUTORY/RESTDAY/WORKDAY：" + type);
+        }
     }
 
     // ---------- 排程/负荷共用读口径（capacity-load spec：FALLBACK 降级 + 班次展开） ----------

@@ -11,8 +11,12 @@
       <el-button size="small" type="success" :disabled="!isAdmin" @click="openEdit(null)">
         维护选中日
       </el-button>
+      <el-button size="small" type="warning" :disabled="!isAdmin" :loading="syncing"
+                 @click="doSync">
+        同步法定假日
+      </el-button>
       <el-tag v-if="!isAdmin" type="info" size="small">当前角色只读</el-tag>
-      <span class="tip">未维护日期由参数 KITTING_CALENDAR_FALLBACK 兜底判定（WEEKDAY=工作日/周末休）；节假日每年 11 月按国务院安排补标（D13 运维）</span>
+      <span class="tip">未维护日期由参数 KITTING_CALENDAR_FALLBACK 兜底判定（WEEKDAY=工作日/周末休）；法定假日以 HR 假日日历为源，点「同步法定假日」拉取（幂等，下方假日子区可维护源头）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="440"
@@ -61,13 +65,74 @@
         <el-button type="primary" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 法定假日源头维护（HR 假日日历；同步按钮把这里的数据映射到上方工作日历） -->
+    <el-divider content-position="left">法定假日源头（HR 假日日历 — 点「同步法定假日」映射到工作日历）</el-divider>
+    <div class="toolbar">
+      <el-button size="small" type="primary" @click="loadHolidays">刷新</el-button>
+      <el-button size="small" type="success" :disabled="!isAdmin" @click="openHolidayEdit(null)">
+        新增假日
+      </el-button>
+    </div>
+    <el-table :data="holidays" v-loading="holidayLoading" border stripe size="small" max-height="260">
+      <el-table-column prop="holidayDate" label="日期" width="130" align="center" />
+      <el-table-column label="星期" width="80" align="center">
+        <template #default="{ row }">{{ weekday(row.holidayDate) }}</template>
+      </el-table-column>
+      <el-table-column prop="name" label="假日名称" min-width="140" />
+      <el-table-column label="类型" width="110" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.type === 'WORKDAY' ? 'success' : (row.type === 'STATUTORY' ? 'danger' : 'warning')"
+                  size="small">{{ typeLabel(row.type) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+      <el-table-column label="操作" width="130" align="center">
+        <template #default="{ row }">
+          <el-button size="small" type="primary" link :disabled="!isAdmin"
+                     @click="openHolidayEdit(row)">修改</el-button>
+          <el-button size="small" type="danger" link :disabled="!isAdmin"
+                     @click="removeHoliday(row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-empty v-if="!holidayLoading && holidays.length === 0" description="无假日记录" :image-size="50" />
+
+    <el-dialog v-model="holidayVisible" :title="holidayId ? '修改法定假日' : '新增法定假日'" width="420px">
+      <el-form label-width="90px" size="small">
+        <el-form-item label="日期">
+          <el-date-picker v-model="holidayDate" type="date" value-format="YYYY-MM-DD"
+                          :disabled="!!holidayId" placeholder="选择日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="假日名称">
+          <el-input v-model="holidayName" placeholder="如：元旦 / 国庆节" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-radio-group v-model="holidayType">
+            <el-radio value="STATUTORY">法定假</el-radio>
+            <el-radio value="RESTDAY">休息日</el-radio>
+            <el-radio value="WORKDAY">调休上班</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="holidayRemark" maxlength="128" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="holidayVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveHoliday">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onActivated } from 'vue'
-import { ElMessage } from 'element-plus'
-import { getCalendarDatesApi, upsertCalendarDateApi } from '@/api/system/calendar'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getCalendarDatesApi, upsertCalendarDateApi,
+  getHolidaysApi, createHolidayApi, updateHolidayApi, deleteHolidayApi, syncHolidaysApi
+} from '@/api/system/calendar'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -79,6 +144,17 @@ const editVisible = ref(false)
 const editDate = ref('')
 const editWorkday = ref('1')
 const editRemark = ref('')
+
+// 法定假日源头维护（close-work-calendar-gaps）
+const holidays = ref([])
+const holidayLoading = ref(false)
+const holidayVisible = ref(false)
+const holidayId = ref('')
+const holidayDate = ref('')
+const holidayName = ref('')
+const holidayType = ref('STATUTORY')
+const holidayRemark = ref('')
+const syncing = ref(false)
 
 const isAdmin = computed(() => {
   const roles = userStore.userInfo?.roles || []
@@ -135,8 +211,85 @@ async function save() {
   }
 }
 
-onMounted(() => { range.value = defaultRange(); load() })
-onActivated(() => { if (range.value.length !== 2) range.value = defaultRange(); load() })
+// ---------- 法定假日源头维护与同步（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+function typeLabel(type) {
+  return { STATUTORY: '法定假', RESTDAY: '休息日', WORKDAY: '调休上班' }[type] || type
+}
+
+async function loadHolidays() {
+  holidayLoading.value = true
+  try {
+    const res = await getHolidaysApi()
+    holidays.value = res.data || []
+  } finally {
+    holidayLoading.value = false
+  }
+}
+
+function openHolidayEdit(row) {
+  holidayId.value = row ? row.id : ''
+  holidayDate.value = row ? row.holidayDate : ''
+  holidayName.value = row ? row.name : ''
+  holidayType.value = row ? row.type : 'STATUTORY'
+  holidayRemark.value = row ? (row.remark || '') : ''
+  holidayVisible.value = true
+}
+
+async function saveHoliday() {
+  if (!holidayDate.value || !holidayName.value) {
+    ElMessage.warning('日期与假日名称必填')
+    return
+  }
+  try {
+    const payload = { holidayDate: holidayDate.value, name: holidayName.value,
+      type: holidayType.value, remark: holidayRemark.value }
+    if (holidayId.value) {
+      await updateHolidayApi(holidayId.value, payload)
+    } else {
+      await createHolidayApi(payload)
+    }
+    ElMessage.success('已保存')
+    holidayVisible.value = false
+    await loadHolidays()
+  } catch (e) {
+    ElMessage.error((e && (e.msg || e.message)) || '保存失败')
+  }
+}
+
+async function removeHoliday(row) {
+  try {
+    await ElMessageBox.confirm(`确认删除假日「${row.name}」（${row.holidayDate}）？`, '删除法定假日',
+      { type: 'warning' })
+  } catch { return }
+  try {
+    await deleteHolidayApi(row.id)
+    ElMessage.success('已删除')
+    await loadHolidays()
+  } catch (e) {
+    ElMessage.error((e && (e.msg || e.message)) || '删除失败')
+  }
+}
+
+async function doSync() {
+  syncing.value = true
+  try {
+    const res = await syncHolidaysApi()
+    const affected = res.data?.affected ?? 0
+    ElMessage.success(`同步完成：变更 ${affected} 行（幂等重跑安全）`)
+    await Promise.all([load(), loadHolidays()])
+  } catch (e) {
+    ElMessage.error((e && (e.msg || e.message)) || '同步失败')
+  } finally {
+    syncing.value = false
+  }
+}
+
+onMounted(() => { range.value = defaultRange(); load(); loadHolidays() })
+onActivated(() => {
+  if (range.value.length !== 2) range.value = defaultRange()
+  load(); loadHolidays()
+})
 </script>
 
 <style scoped>

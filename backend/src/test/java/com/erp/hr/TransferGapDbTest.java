@@ -60,12 +60,12 @@ class TransferGapDbTest {
         jdbc.update("INSERT INTO hr_grade (ID, GRADE_NO, NAME, SERIES, SAL_MIN, SAL_MAX, STATUS, CREATE_BY, DEL_FLAG, VER_NO) "
                 + "VALUES ('tgap-grade', 'TG-G1', 'TGAP 职级', '管理序列', 10000, 18000, '1', 'junit', '0', 0)");
         var p1 = orgService.createPosition(Map.of("name", "TGAP 岗位A", "deptId", deptId,
-                "rolesJson", "[\"ROLE_HR\"]"));
+                "rolesJson", "[\"ROLE_PLANNER\"]"));
         bandPosId = p1.getId();
         // createPosition 不透传 gradeId → 建后直连挂职级
         jdbc.update("UPDATE hr_position SET GRADE_ID='tgap-grade' WHERE ID=?", bandPosId);
         var p2 = orgService.createPosition(Map.of("name", "TGAP 岗位B", "deptId", deptId,
-                "rolesJson", "[\"ROLE_HR\"]"));
+                "rolesJson", "[\"ROLE_PLANNER\"]"));
         noBandPosId = p2.getId();
     }
 
@@ -82,7 +82,7 @@ class TransferGapDbTest {
                 + "AND BIZ_ID LIKE 'tgap-%'");
         jdbc.update("DELETE FROM hr_social_change WHERE EMP_ID LIKE 'tgap-%'");
         jdbc.update("DELETE FROM hr_remind WHERE EMP_ID LIKE 'tgap-%'");
-        jdbc.update("DELETE FROM hr_change_log WHERE EMP_ID LIKE 'tgap-%'");
+        jdbc.update("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'tgap-%'; SET @audit_bypass=0");
         jdbc.update("DELETE FROM hr_transfer WHERE EMP_ID LIKE 'tgap-%' OR ID LIKE 'tgap-%'");
         jdbc.update("DELETE FROM hr_employee WHERE ID LIKE 'tgap-%'");
         jdbc.update("DELETE FROM hr_position WHERE ID LIKE 'tgap-%'");

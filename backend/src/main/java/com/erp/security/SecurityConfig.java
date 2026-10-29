@@ -24,10 +24,13 @@ public class SecurityConfig {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final OpenApiAuthFilter openApiAuthFilter;
+    private final com.erp.dao.system.SysUserDao sysUserDao;
 
-    public SecurityConfig(JwtTokenProvider jwtTokenProvider, OpenApiGatewayService openApiGatewayService) {
+    public SecurityConfig(JwtTokenProvider jwtTokenProvider, OpenApiGatewayService openApiGatewayService,
+                          com.erp.dao.system.SysUserDao sysUserDao) {
         this.jwtTokenProvider = jwtTokenProvider;
         this.openApiAuthFilter = new OpenApiAuthFilter(openApiGatewayService);
+        this.sysUserDao = sysUserDao;
     }
 
     @Bean
@@ -48,6 +51,39 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/system/menus/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/system/menus/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.DELETE, "/api/system/menus/**").hasRole("ADMIN")
+                // 账号运维操作台（add-account-lifecycle-console，spec account-lifecycle R6）：
+                // 全端点限 ADMIN（重置密码/角色调整/强停/归档为高危动作，归档另有二次确认）
+                .antMatchers("/api/system/accounts/**").hasRole("ADMIN")
+                // 角色权限矩阵（add-role-permission-console，spec role-permission-management）：
+                // 矩阵读写、角色写、例外申请单限 ADMIN；GET /api/system/roles 保持 authenticated
+                // （既有角色下拉消费方不因本轮收紧）
+                .antMatchers(HttpMethod.POST, "/api/system/roles/**").hasRole("ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/system/roles/**").hasRole("ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/system/roles/**").hasRole("ADMIN")
+                .antMatchers("/api/system/perm-matrix/**").hasRole("ADMIN")
+                .antMatchers("/api/system/position-baselines/**").hasRole("ADMIN")
+                // 权限审批（add-permission-approval-flow，spec permission-approval）：
+                // 申请单/预检互斥/台账/窗口 限 ADMIN，置于域兜底之前
+                .antMatchers("/api/system/perm-requests/**").hasRole("ADMIN")
+                .antMatchers("/api/system/sod-rules/**").hasRole("ADMIN")
+                .antMatchers("/api/system/grant-ledger/**").hasRole("ADMIN")
+                .antMatchers("/api/system/change-windows/**").hasRole("ADMIN")
+                // 紧急权限（add-break-glass-console，spec break-glass-management）限 ADMIN
+                .antMatchers("/api/system/break-glass/**").hasRole("ADMIN")
+                // 权限复核（add-access-review-console，spec access-review）限 ADMIN
+                .antMatchers("/api/system/uar/**").hasRole("ADMIN")
+                // 审计日志（add-audit-log-console，spec audit-log-management）：
+                // 检索/脱敏规则限 ADMIN；取证双签端点 authenticated（签署人持 UAR_AUDITOR/DPO
+                // 角色不必是 ADMIN，角色校验在 Service 内，沿 16.3 D3 节点级授权先例）
+                .antMatchers("/api/system/audit-logs/**").hasRole("ADMIN")
+                .antMatchers("/api/system/mask-rules/**").hasRole("ADMIN")
+                .antMatchers("/api/system/forensic/requests/*/sign-audit").authenticated()
+                .antMatchers("/api/system/forensic/requests/*/sign-dpo").authenticated()
+                .antMatchers("/api/system/forensic/**").hasRole("ADMIN")
+                // 越权检测（add-authz-detection-console，spec authz-detection）限 ADMIN
+                .antMatchers("/api/system/authz-incidents/**").hasRole("ADMIN")
+                // 服务报告（add-sla-report-console，spec sla-report-management）限 ADMIN
+                .antMatchers("/api/system/sla-reports/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/legal-entities/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/legal-entities/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/cost-centers/**").hasRole("ADMIN")
@@ -121,25 +157,12 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/qms/gauges/**").hasAnyRole("ADMIN", "QUALITY_ENG")
                 .antMatchers(HttpMethod.PUT, "/api/qms/gauges/**").hasAnyRole("ADMIN", "QUALITY_ENG")
                 .antMatchers(HttpMethod.POST, "/api/qms/spc/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG")
-                // 审批底座：待办/签署入口按角色放行，节点角色不符由服务层 403
-                // （付款/预付款分级审批新增 ROLE_FINANCE_MGR / ROLE_GM 签署节点，add-payment-management）
-                // （商机 5 阶段审批新增 ROLE_SALES_MGR；SO 审批/特殊价格会签预留 SALES_DIRECTOR/CREDIT_ADMIN，add-sales-lead-to-cash）
-                // （BOM 发布签署新增 ROLE_PROCESS_MGR，add-bom-management）
-                .antMatchers(HttpMethod.POST, "/api/qms/approvals/**").hasAnyRole("ADMIN", "INSPECTOR", "QUALITY_ENG", "QUALITY_MGR",
-                        "TECH_OWNER", "QUALITY_DIRECTOR", "SQE", "WAREHOUSE", "PM", "RECEIVER",
-                        "FINANCE_MGR", "GM", "SALES_MGR", "SALES_DIRECTOR", "CREDIT_ADMIN", "PROCESS_MGR",
-                        // 工单审批签署（add-work-order-management：MoApprove 节点 = 计划主管，各变更向名单追加先例）
-                        "PLAN_MGR",
-                        // 红冲/作废审批签署（add-red-invoice-void：税务专员主管=FINANCE_MGR 已在列，此处补财务经理）
-                        "FINANCE", "FIN_MGR",
-                        // HR 审批签署（add-employee-archive：入职开通/锁定特批/转正/调岗/离职节点）
-                        "HR", "HR_MGR",
-                        // 项目基线/预算变更审批签署（add-project-initiation：PmBaseline=PmBudgetChange 节点角色）
-                        "PMO",
-                        // 超预算解冻审批签署（add-cost-collection-freeze：BR-4.8-22 第三级分管领导）
-                        "EXEC",
-                        // 伙伴入驻三节点签署（add-partner-onboarding：采购初审/质量复审/合规终审）
-                        "PURCHASER", "COMPLIANCE")
+                // 审批底座签署入口（add-permission-approval-flow design D3 修订）：
+                // 原按角色 allowlist 放行（历轮逐增已 20+ 角色）无法表达"按人节点"
+                // （直属主管等无角色签署人），改为仅要求登录；真正的授权在引擎
+                // pass() 节点级执行（角色节点比角色 / 按人节点比 SIGNER / 禁自签 /
+                // ACTIVE 与乐观锁），业务层 403 语义不变
+                .antMatchers(HttpMethod.POST, "/api/qms/approvals/**").authenticated()
                 // 2.6.1 质量退货：具体路径在前（出库过账 WAREHOUSE），兜底创建/编辑 ADMIN
                 .antMatchers(HttpMethod.POST, "/api/proc/returns/*/postings").hasAnyRole("ADMIN", "WAREHOUSE")
                 // 非质量退货创建（2.6.2，spec other-return）：采购侧发起，收窄为 ADMIN/PM（须先于下方粗规则）
@@ -438,7 +461,7 @@ public class SecurityConfig {
             })
             .and()
             .addFilterBefore(openApiAuthFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterAfter(new JwtAuthenticationFilter(jwtTokenProvider), OpenApiAuthFilter.class);
+            .addFilterAfter(new JwtAuthenticationFilter(jwtTokenProvider, sysUserDao), OpenApiAuthFilter.class);
         return http.build();
     }
 }

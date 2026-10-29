@@ -108,6 +108,201 @@ const routes = [
         meta: { title: '菜单管理', group: '系统管理', perm: 'ROLE_ADMIN' }
       },
       {
+        // 16.1.1 入职开通（add-account-lifecycle-console：一页面四 Tab，meta.tab 定位）
+        path: '/m/16.1.1',
+        name: 'AccountOnboard',
+        component: () => import('@/views/system/account/index.vue'),
+        meta: { title: '入职开通', group: '系统管理', tab: 'onboard', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.1.2 在岗变更
+        path: '/m/16.1.2',
+        name: 'AccountTransfer',
+        component: () => import('@/views/system/account/index.vue'),
+        meta: { title: '在岗变更', group: '系统管理', tab: 'transfer', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.1.3 离职回收
+        path: '/m/16.1.3',
+        name: 'AccountExit',
+        component: () => import('@/views/system/account/index.vue'),
+        meta: { title: '离职回收', group: '系统管理', tab: 'exit', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.1.4 账号归档（只读；归档不可恢复 C-0-05）
+        path: '/m/16.1.4',
+        name: 'AccountArchive',
+        component: () => import('@/views/system/account/index.vue'),
+        meta: { title: '账号归档', group: '系统管理', tab: 'archive', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.2.1 角色管理（add-role-permission-console：一页面三 Tab，meta.tab 定位）
+        path: '/m/16.2.1',
+        name: 'RoleManagement',
+        component: () => import('@/views/system/permission/index.vue'),
+        meta: { title: '角色管理', group: '系统管理', tab: 'roles', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.2.2 权限矩阵
+        path: '/m/16.2.2',
+        name: 'PermissionMatrix',
+        component: () => import('@/views/system/permission/index.vue'),
+        meta: { title: '权限矩阵', group: '系统管理', tab: 'matrix', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.2.3 岗位基线
+        path: '/m/16.2.3',
+        name: 'PositionBaseline',
+        component: () => import('@/views/system/permission/index.vue'),
+        meta: { title: '岗位基线', group: '系统管理', tab: 'baseline', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.3.1 权限申请（add-permission-approval-flow：一页面三 Tab，meta.tab 定位）
+        path: '/m/16.3.1',
+        name: 'PermRequest',
+        component: () => import('@/views/system/permission-request/index.vue'),
+        meta: { title: '权限申请', group: '系统管理', tab: 'requests', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.3.2 职责预检
+        path: '/m/16.3.2',
+        name: 'SodPrecheck',
+        component: () => import('@/views/system/permission-request/index.vue'),
+        meta: { title: '职责预检', group: '系统管理', tab: 'precheck', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.3.3 到期回收
+        path: '/m/16.3.3',
+        name: 'GrantReclaim',
+        component: () => import('@/views/system/permission-request/index.vue'),
+        meta: { title: '到期回收', group: '系统管理', tab: 'reclaim', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.4.1 窗口维护（add-change-window-console：周周期列表 + 在窗状态条）
+        path: '/m/16.4.1',
+        name: 'ChangeWindowMaintain',
+        component: () => import('@/views/system/change-window/index.vue'),
+        meta: { title: '窗口维护', group: '系统管理', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.4.2 升级审批（permission-request 页窗口外升级 Tab）
+        path: '/m/16.4.2',
+        name: 'ChangeWindowEscalation',
+        component: () => import('@/views/system/permission-request/index.vue'),
+        meta: { title: '升级审批', group: '系统管理', tab: 'outwindow', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.4.3 双人复核（permission-request 页复核台账 Tab，只读证据面）
+        path: '/m/16.4.3',
+        name: 'ChangeWindowDualReview',
+        component: () => import('@/views/system/permission-request/index.vue'),
+        meta: { title: '双人复核', group: '系统管理', tab: 'review', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.5.1 紧急申请（add-break-glass-console：一页面三 Tab，meta.tab 定位）
+        path: '/m/16.5.1',
+        name: 'BreakGlassRequest',
+        component: () => import('@/views/system/break-glass/index.vue'),
+        meta: { title: '紧急申请', group: '系统管理', tab: 'requests', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.5.2 双人审批
+        path: '/m/16.5.2',
+        name: 'BreakGlassApproval',
+        component: () => import('@/views/system/break-glass/index.vue'),
+        meta: { title: '双人审批', group: '系统管理', tab: 'approvals', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.5.3 事后审计
+        path: '/m/16.5.3',
+        name: 'BreakGlassAudit',
+        component: () => import('@/views/system/break-glass/index.vue'),
+        meta: { title: '事后审计', group: '系统管理', tab: 'audits', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.6.1 季度任务（add-access-review-console：一页面四 Tab，meta.tab 定位）
+        path: '/m/16.6.1',
+        name: 'UarTasks',
+        component: () => import('@/views/system/access-review/index.vue'),
+        meta: { title: '季度任务', group: '系统管理', tab: 'tasks', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.6.2 快照比对
+        path: '/m/16.6.2',
+        name: 'UarSnapshots',
+        component: () => import('@/views/system/access-review/index.vue'),
+        meta: { title: '快照比对', group: '系统管理', tab: 'snapshots', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.6.3 回收执行
+        path: '/m/16.6.3',
+        name: 'UarReclaim',
+        component: () => import('@/views/system/access-review/index.vue'),
+        meta: { title: '回收执行', group: '系统管理', tab: 'reclaim', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.6.4 复核报告
+        path: '/m/16.6.4',
+        name: 'UarReports',
+        component: () => import('@/views/system/access-review/index.vue'),
+        meta: { title: '复核报告', group: '系统管理', tab: 'reports', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.7.1 日志检索（audit-log 页检索 Tab，含防篡改尝试记录）
+        path: '/m/16.7.1',
+        name: 'AuditLogSearch',
+        component: () => import('@/views/system/audit-log/index.vue'),
+        meta: { title: '日志检索', group: '系统管理', tab: 'search', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.7.2 取证导出（调阅申请 + 双签 + 封条包 + 分片下载）
+        path: '/m/16.7.2',
+        name: 'AuditForensic',
+        component: () => import('@/views/system/audit-log/index.vue'),
+        meta: { title: '取证导出', group: '系统管理', tab: 'forensic', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.7.3 脱敏策略（正则规则 CRUD，即刻生效）
+        path: '/m/16.7.3',
+        name: 'AuditMaskRules',
+        component: () => import('@/views/system/audit-log/index.vue'),
+        meta: { title: '脱敏策略', group: '系统管理', tab: 'mask', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.8.1 拒绝告警（403 风暴触发 + 处置三动作）
+        path: '/m/16.8.1',
+        name: 'AuthzAlerts',
+        component: () => import('@/views/system/authz-detection/index.vue'),
+        meta: { title: '拒绝告警', group: '系统管理', tab: 'alerts', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.8.2 临时降权（降权名单 + 到期/手动恢复）
+        path: '/m/16.8.2',
+        name: 'AuthzRestrictions',
+        component: () => import('@/views/system/authz-detection/index.vue'),
+        meta: { title: '临时降权', group: '系统管理', tab: 'restrictions', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.9.1 月度报告（五类指标推导 + 按月生成 + 指标详情）
+        path: '/m/16.9.1',
+        name: 'SlaMonthlyReports',
+        component: () => import('@/views/system/sla-report/index.vue'),
+        meta: { title: '月度报告', group: '系统管理', tab: 'reports', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 16.9.2 归档发布（版本锁定 + BR-5.6-16 发布门禁 + CSV 下载）
+        path: '/m/16.9.2',
+        name: 'SlaArchivePublish',
+        component: () => import('@/views/system/sla-report/index.vue'),
+        meta: { title: '归档发布', group: '系统管理', tab: 'publish', perm: 'ROLE_ADMIN' }
+      },
+      {
+        // 修改密码（add-account-lifecycle-console：首次登录/重置后强制；守卫放行此路由）
+        path: '/my/change-password',
+        name: 'ChangePassword',
+        component: () => import('@/views/my/change-password.vue'),
+        meta: { title: '修改密码', group: '我的' }
+      },      {
         path: '/m/1.1.1',
         name: 'LegalEntity',
         component: () => import('@/views/mdm/legal-entity/index.vue'),
@@ -2920,6 +3115,13 @@ router.beforeEach(async (to, from, next) => {
       next({ path: '/login' })
       return
     }
+  }
+
+  // 强制改密拦截（add-account-lifecycle-console design D3）：
+  // mustChangePwd=true 时除改密页/登录页外一律重定向（无标记时改密页同样可达，自主改密不拦）
+  if (userStore.userInfo?.mustChangePwd && to.path !== '/my/change-password') {
+    next({ path: '/my/change-password' })
+    return
   }
 
   // 门户/内部双向隔离（spec supplier-portal-account，C-4.9-06 前端第一道防线）

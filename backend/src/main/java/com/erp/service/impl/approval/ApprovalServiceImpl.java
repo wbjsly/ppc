@@ -42,6 +42,7 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     private final SysUserDao sysUserDao;
     private final List<ApprovalCallback> callbacks;
     private final Map<String, ApprovalCallback> callbackMap = new HashMap<>();
+    private final ViolationAuditWriter violationAudit;
 
     @Value("${app.qms.approval-remind-hours:72}")
     private int remindHours;
@@ -52,11 +53,13 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     public ApprovalServiceImpl(ApprovalInstanceDao instanceDao,
                                ApprovalTaskDao taskDao,
                                SysUserDao sysUserDao,
-                               List<ApprovalCallback> callbacks) {
+                               List<ApprovalCallback> callbacks,
+                               ViolationAuditWriter violationAudit) {
         this.instanceDao = instanceDao;
         this.taskDao = taskDao;
         this.sysUserDao = sysUserDao;
         this.callbacks = callbacks;
+        this.violationAudit = violationAudit;
         for (ApprovalCallback cb : callbacks) {
             for (String type : cb.supportedBizTypes()) {
                 callbackMap.put(type, cb);
@@ -101,8 +104,8 @@ public class ApprovalServiceImpl implements ApprovalEngine {
                 throw new ServiceException(422, "审批链存在空节点组");
             }
             for (ApprovalNodeSpec spec : group) {
-                if (!hasText(spec.getRoleRequired())) {
-                    throw new ServiceException(422, "审批节点缺少角色");
+                if (!hasText(spec.getRoleRequired()) && !spec.isPersonNode()) {
+                    throw new ServiceException(422, "审批节点缺少角色或指定签署人");
                 }
                 ApprovalTask task = new ApprovalTask();
                 task.setApprId(inst.getId());
@@ -110,6 +113,9 @@ public class ApprovalServiceImpl implements ApprovalEngine {
                 task.setNodeType(spec.getNodeType());
                 task.setRoleRequired(spec.getRoleRequired());
                 task.setNodeName(spec.getNodeName());
+                // 按人节点（add-permission-approval-flow D3）：SIGNER 预置指定签署人，
+                // 签署前即为"待办归属"，签署时覆盖为实际签署人（二者恒等，已强制校验）
+                task.setSigner(spec.isPersonNode() ? spec.getSignerUserId() : null);
                 // 首个 SEQ 立即激活，其余等前置 SEQ 全过后激活（UPDATE_DATE 随之刷新）
                 task.setStatus(seqNo == 1 ? "ACTIVE" : "PENDING");
                 task.setRemindCount(0);
@@ -221,12 +227,16 @@ public class ApprovalServiceImpl implements ApprovalEngine {
         }
         boolean isAdmin = roles.stream().anyMatch(r -> "ROLE_ADMIN".equalsIgnoreCase(r));
 
-        // 1) 可签节点（ACTIVE，SIGN/JOINT）
+        // 1) 可签节点（ACTIVE，SIGN/JOINT）：角色节点按角色聚合；按人节点（SIGNER 非空）
+        //    仅出现在指定签署人自己的待办（add-permission-approval-flow design D3）
         LambdaQueryWrapper<ApprovalTask> signQw = new LambdaQueryWrapper<ApprovalTask>()
                 .eq(ApprovalTask::getStatus, "ACTIVE")
                 .in(ApprovalTask::getNodeType, Arrays.asList("SIGN", "JOINT"));
         if (!isAdmin) {
-            signQw.in(ApprovalTask::getRoleRequired, roles);
+            String me = SecurityUtils.getCurrentUserId();
+            signQw.and(w -> w.eq(ApprovalTask::getSigner, me)
+                    .or(o -> o.isNull(ApprovalTask::getSigner)
+                            .in(ApprovalTask::getRoleRequired, roles)));
         }
         List<ApprovalTask> signTasks = taskDao.selectList(signQw);
 
@@ -298,6 +308,8 @@ public class ApprovalServiceImpl implements ApprovalEngine {
                     .last("LIMIT 1"));
             row.put("nodeName", active == null ? null : active.getNodeName());
             row.put("roleRequired", active == null ? null : active.getRoleRequired());
+            // 按人节点待办归属（null = 角色节点；design D3）
+            row.put("designatedSigner", active == null ? null : active.getSigner());
             out.add(row);
         }
         return out;
@@ -419,16 +431,31 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     /**
      * 同人闭环拦截（C-0-03，spec wave-management C-4.4-08 改批审批 design D4 第二道；
      * spec expiry-management 需求④ 评估单同人防闭环沿用）：
-     * WaveAdjust / ExpiryEval 实例的发起人不可签署自己的发起任务（提交时已排除
+     * WaveAdjust / ExpiryEval / CountDiff 实例的发起人不可签署自己的发起任务（提交时已排除
      * 「角色无他人」场景，此处兜底发起人自签；其余 bizType 行为不变）。
+     *
+     * <p>PermRequest（add-permission-approval-flow，BR-5.6-01 / C-5.6-07）与
+     * BreakGlassRequest（add-break-glass-console，C-0-03 双签禁自签禁互代）：发起人自签
+     * MUST 403 并记录职责分离违规日志（hr_change_log，EMP_ID 锚发起人）。
      */
     private void rejectSelfSign(ApprovalInstance inst, String action) {
-        if (!"WaveAdjust".equals(inst.getBizType())
-                && !"ExpiryEval".equals(inst.getBizType())
-                && !"CountDiff".equals(inst.getBizType())) {
+        String biz = inst.getBizType();
+        String me = SecurityUtils.getCurrentUserId();
+        if ("PermRequest".equals(biz) || "BreakGlassRequest".equals(biz)) {
+            if (me != null && me.equals(inst.getApplyBy())) {
+                // REQUIRES_NEW 独立事务：主事务随 throw 回滚，违规日志须存活
+                violationAudit.recordSelfSignViolation(inst.getApplyBy(), biz,
+                        inst.getBizId(), me, action);
+                throw new ServiceException(403, "禁止自签：申请发起人不可" + action
+                        + "自己的审批（C-0-03），请由链上其他审批人签署");
+            }
             return;
         }
-        String me = SecurityUtils.getCurrentUserId();
+        if (!"WaveAdjust".equals(biz)
+                && !"ExpiryEval".equals(biz)
+                && !"CountDiff".equals(biz)) {
+            return;
+        }
         if (me != null && me.equals(inst.getApplyBy())) {
             throw new ServiceException(422, "禁止同人闭环：发起人不可"
                     + action + "自己提交的审批（C-0-03），请由另一名有权限的成员签署");
@@ -436,6 +463,16 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     }
 
     private void requireNodeRole(ApprovalTask task) {
+        // 按人节点（design D3）：ACTIVE 态 SIGNER 非空 = 指定签署人，仅其本人可签；
+        // 角色节点 SIGNER 为空，走原角色匹配（ADMIN 越权口径不变）
+        if (hasText(task.getSigner())) {
+            String me = SecurityUtils.getCurrentUserId();
+            if (me == null || !me.equals(task.getSigner())) {
+                throw new ServiceException(403, "该节点为按人节点，仅指定签署人可签（"
+                        + displayName(task.getSigner()) + "）");
+            }
+            return;
+        }
         List<String> roles = currentRoles();
         if (roles.isEmpty()) {
             throw new ServiceException(401, "未登录");

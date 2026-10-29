@@ -84,7 +84,7 @@ class OrgStructureDbTest {
                 + "WHERE i.BIZ_TYPE = 'HrOrgChange'");
         jdbc.update("DELETE FROM erp_sys_approval WHERE BIZ_TYPE = 'HrOrgChange'");
         jdbc.update("DELETE FROM hr_org_change WHERE CREATE_BY LIKE 'junit%' OR CREATE_BY = 'approval'");
-        jdbc.update("DELETE FROM hr_change_log WHERE CHANGE_BY LIKE 'junit%'");
+        jdbc.update("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE CHANGE_BY LIKE 'junit%'; SET @audit_bypass=0");
         jdbc.update("DELETE FROM hr_onboarding WHERE OFFER_NO LIKE 'ORG-%'");
         jdbc.update("DELETE FROM hr_employee WHERE EMP_NO LIKE 'ORG-%' OR EMP_NO LIKE 'ORGOUT%' "
                 + "OR EMP_NO LIKE 'ORGMGR%' OR EMP_NO LIKE 'ORGE%' OR ID LIKE 'org-emp-%'");

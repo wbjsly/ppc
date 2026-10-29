@@ -48,6 +48,10 @@ public class AuthServiceImpl implements AuthService {
             throw new ServiceException(403, "用户已禁用");
         }
 
+        // 最后登录时间（add-account-lifecycle-console design D3）
+        user.setLastLoginAt(java.time.LocalDateTime.now());
+        sysUserDao.updateById(user);
+
         List<String> roleCodes = sysUserRoleDao.getUserRoleCodes(user.getId());
 
         Map<String, Object> result = new HashMap<>();
@@ -57,7 +61,48 @@ public class AuthServiceImpl implements AuthService {
         result.put("username", user.getUsername());
         result.put("nickName", user.getNickName());
         result.put("roles", roleCodes);
+        result.put("mustChangePwd", "1".equals(user.getMustChangePwd()));
         return result;
+    }
+
+    @Override
+    public Map<String, Object> changePassword(String authHeader, String oldPwd, String newPwd) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new ServiceException(401, "未登录");
+        }
+        String userId;
+        try {
+            userId = jwtTokenProvider.getSubjectFromToken(authHeader.substring(7));
+        } catch (Exception e) {
+            throw new ServiceException(401, "无效的token");
+        }
+        SysUser user = sysUserDao.selectById(userId);
+        if (user == null) {
+            throw new ServiceException(404, "用户不存在");
+        }
+        if (!passwordEncoder.matches(oldPwd, user.getPassword())) {
+            throw new ServiceException(422, "原密码不正确");
+        }
+        if (!isValidPassword(newPwd)) {
+            throw new ServiceException(422, "新密码须 ≥8 位且含大小写字母、数字、特殊字符");
+        }
+        if (passwordEncoder.matches(newPwd, user.getPassword())) {
+            throw new ServiceException(422, "新密码不得与原密码相同");
+        }
+        user.setPassword(passwordEncoder.encode(newPwd));
+        user.setMustChangePwd("0");
+        sysUserDao.updateById(user);
+        Map<String, Object> out = new HashMap<>();
+        out.put("userId", userId);
+        out.put("mustChangePwd", false);
+        return out;
+    }
+
+    /** 密码复杂度（design D3）：≥8 位且含大小写字母、数字、特殊字符 */
+    static boolean isValidPassword(String pwd) {
+        return pwd != null && pwd.length() >= 8
+                && pwd.matches(".*[a-z].*") && pwd.matches(".*[A-Z].*")
+                && pwd.matches(".*\\d.*") && pwd.matches(".*[^a-zA-Z0-9].*");
     }
 
     @Override
@@ -87,6 +132,7 @@ public class AuthServiceImpl implements AuthService {
         info.put("nickName", user.getNickName());
         info.put("roles", roleCodes);
         info.put("permissions", Collections.emptyList());
+        info.put("mustChangePwd", "1".equals(user.getMustChangePwd()));
         return info;
     }
 }

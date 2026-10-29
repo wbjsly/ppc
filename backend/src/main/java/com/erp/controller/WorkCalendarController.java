@@ -99,4 +99,43 @@ public class WorkCalendarController {
         service.unbindWcShift(id);
         return R.ok();
     }
+
+    // ---------- 法定假日同步与源头维护（close-work-calendar-gaps，spec capacity-load ADDED） ----------
+
+    @GetMapping("/holidays")
+    @Operation(summary = "法定假日列表（HR 假日表，按日期升序）")
+    public R<List<com.erp.entity.hr.HrHolidayCalendar>> listHolidays() {
+        return R.ok(service.listHolidays());
+    }
+
+    @PostMapping("/holidays")
+    @Operation(summary = "新增法定假日", description = "TYPE 限 STATUTORY/RESTDAY/WORKDAY；日期唯一（违者 422）")
+    public R<com.erp.entity.hr.HrHolidayCalendar> createHoliday(
+            @RequestBody com.erp.entity.hr.HrHolidayCalendar h) {
+        return R.ok(service.createHoliday(h));
+    }
+
+    @PutMapping("/holidays/{id}")
+    @Operation(summary = "修改法定假日（日期不可改）")
+    public R<com.erp.entity.hr.HrHolidayCalendar> updateHoliday(
+            @PathVariable String id,
+            @RequestBody com.erp.entity.hr.HrHolidayCalendar h) {
+        h.setId(id);
+        return R.ok(service.updateHoliday(h));
+    }
+
+    @DeleteMapping("/holidays/{id}")
+    @Operation(summary = "删除法定假日")
+    public R<Void> deleteHoliday(@PathVariable String id) {
+        service.deleteHoliday(id);
+        return R.ok();
+    }
+
+    @PostMapping("/holidays/sync")
+    @Operation(summary = "同步法定假日到工作日历",
+            description = "HR 假日表 → 工作日历单向：STATUTORY/RESTDAY→非工作日、WORKDAY 调休上班→工作日；幂等可重跑；返回变更行数")
+    public R<Map<String, Object>> syncHolidays() {
+        int affected = service.syncHolidays();
+        return R.ok(Map.of("affected", affected));
+    }
 }

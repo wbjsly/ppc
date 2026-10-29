@@ -1,4 +1,5 @@
 #!/bin/zsh
+export PYTHONIOENCODING=utf-8  # J() 打印中文防 ASCII 管道静默失败（段66）
 # add-asset-capitalization 全链路 API 冒烟（任务 8.2，可重跑）
 # 链路：清理→登录→分类（种子+CRUD+409）→CIP（项目→归集三类→完工→BR-08 部分转资）→
 #       在建转资全链（申请→提交→审批通过→建卡+凭证→锁定）→BR-07 原值超差阻断→
@@ -3032,11 +3033,11 @@ SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk-hrs
 EA_TODAY=$(date +%F)
 EA_FUTURE=$(date -v+40d +%F 2>/dev/null || date -d '+40 days' +%F)
 
-# 32.1 部门/岗位（角色映射 ROLE_HR）
+# 32.1 部门/岗位（角色映射 ROLE_PLANNER——ROLE_HR 属特权清单，岗位基线 L1 硬阻断会拒收）
 EA_DEPT=$(C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/json' \
   -d '{"name":"冒烟部门"}' $B/api/hr/depts | J "d['data']['id']")
 EA_POS=$(C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"冒烟岗位\",\"deptId\":\"$EA_DEPT\",\"rolesJson\":\"[\\\"ROLE_HR\\\"]\"}" \
+  -d "{\"name\":\"冒烟岗位\",\"deptId\":\"$EA_DEPT\",\"rolesJson\":\"[\\\"ROLE_PLANNER\\\"]\"}" \
   $B/api/hr/positions | J "d['data']['id']")
 [ -n "$EA_POS" ] && [ "$EA_POS" != "None" ] && ok "部门/岗位建立（$EA_POS）" || bad "部门岗位失败"
 
@@ -3206,7 +3207,7 @@ SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE LIKE 'Hr%'" >/dev/null 2>&1
 SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON ur.USER_ID=u.ID WHERE u.USERNAME LIKE 'EMP20%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'EMP20%'" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID IN (SELECT ID FROM (SELECT ID FROM hr_employee WHERE EMP_NO LIKE 'EMP20%') t1)" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID IN (SELECT ID FROM (SELECT ID FROM hr_employee WHERE EMP_NO LIKE 'EMP20%') t1); SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE FROM hr_exit WHERE EMP_NO LIKE 'EMP20%' OR ID LIKE 'smk%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_transfer WHERE ID LIKE 'smk%' OR EMP_NAME LIKE '冒烟%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_onboarding WHERE ONB_NO LIKE 'ONB-%'" >/dev/null 2>&1
@@ -3359,7 +3360,7 @@ ok "合并幂等重入不报错"
 SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='HrOrgChange'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='HrOrgChange'" >/dev/null 2>&1
 SQL "DELETE FROM hr_org_change WHERE CREATE_BY IN ('user-admin','smoke')" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID LIKE 'org-emp-%' OR EMP_ID LIKE 'smk-og-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'org-emp-%' OR EMP_ID LIKE 'smk-og-%'; SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE FROM hr_employee WHERE ID IN ('smk-og-e1','smk-og-sub','$OG_MGR_EMP') OR EMP_NO LIKE 'SMKOG%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_onboarding WHERE OFFER_NO='SMK-OG-OFFER'" >/dev/null 2>&1
 SQL "DELETE FROM hr_grade WHERE NAME='冒烟职级'" >/dev/null 2>&1
@@ -3684,7 +3685,7 @@ SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'JUNIT-%' OR EMP_NO LIKE 'JPF-%' 
 SQL "DELETE FROM hr_social_change WHERE EMP_NO LIKE 'SMKTF-%' OR EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_transfer WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_exit WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-tf-%'; SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE FROM hr_remind WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_payroll_run_item WHERE PERIOD='202612'" >/dev/null 2>&1
 SQL "DELETE FROM hr_payroll_run WHERE PERIOD='202612'" >/dev/null 2>&1
@@ -3740,7 +3741,10 @@ python3 -c "import sys; sys.exit(0 if float('$TF_SNE2' or 0) > 0 else 1)" 2>/dev
 SQL "INSERT IGNORE INTO hr_grade (ID,GRADE_NO,NAME,SERIES,SAL_MIN,SAL_MAX,STATUS,CREATE_BY,DEL_FLAG,VER_NO)
      VALUES ('smk-tf-grade','SMKTF-G','冒烟职级','序列',10000,18000,'1','smoke','0',0)" >/dev/null 2>&1
 SQL "INSERT IGNORE INTO hr_position (ID,POS_NO,NAME,DEPT_ID,GRADE_ID,ROLES_JSON,STATUS,CREATE_BY,DEL_FLAG,VER_NO)
-     VALUES ('smk-tf-pos','SMKTFPOS','冒烟调岗岗','smk-at-dept','smk-tf-grade','[\\"ROLE_HR\\"]','1','smoke','0',0)" >/dev/null 2>&1
+     VALUES ('smk-tf-pos','SMKTFPOS','冒烟调岗岗','smk-at-dept','smk-tf-grade','[\\"ROLE_PLANNER\\"]','1','smoke','0',0)" >/dev/null 2>&1
+# 裸 SQL 造岗不走 API 同步 → 手补基线行（角色映射读基线表，ROLE_HR 属特权清单已换非特权）
+SQL "INSERT IGNORE INTO erp_admin_position_baseline (ID,POS_ID,ROLE_CODES,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('posb-smk-tf-pos','smk-tf-pos','[\\"ROLE_PLANNER\\"]','smoke',NOW(),'0',0)" >/dev/null 2>&1
 TF_TRF=$(C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/json' \
   -d "{\"empId\":\"smk-tf-emp\",\"toPosId\":\"smk-tf-pos\",\"effectiveDate\":\"$(date -v+7d +%Y-%m-%d)\",\"salaryAdvice\":\"22000\",\"reason\":\"冒烟超带宽\"}" \
   $B/api/hr/transfers/post | J "d['data']['id']")
@@ -3804,7 +3808,7 @@ SQL "DELETE FROM erp_sys_approval_task WHERE APPR_ID IN (SELECT ID FROM (SELECT 
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_exit WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_transfer WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-tf-%'; SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE FROM hr_remind WHERE EMP_ID LIKE 'smk-tf-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user_role WHERE USER_ID='smk-tf-user'" >/dev/null 2>&1
 SQL "DELETE FROM erp_admin_user WHERE ID='smk-tf-user'" >/dev/null 2>&1
@@ -3822,7 +3826,7 @@ SQL "DELETE FROM erp_fin_voucher_line WHERE VOUCHER_ID IN (SELECT ID FROM (SELEC
 SQL "DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='SECONDMENT'" >/dev/null 2>&1
 SQL "DELETE FROM hr_social_change WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_remind WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-sec-%'; SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_attachment WHERE BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
 SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
@@ -3963,7 +3967,7 @@ SQL "DELETE FROM erp_fin_voucher WHERE SOURCE_TYPE='SECONDMENT'" >/dev/null 2>&1
 SQL "DELETE a FROM erp_sys_attachment a WHERE a.BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_social_change WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_remind WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
-SQL "DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk-sec-%'; SET @audit_bypass=0" >/dev/null 2>&1
 SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_sys_approval WHERE BIZ_ID LIKE 'smk-sec%'" >/dev/null 2>&1
 SQL "DELETE FROM hr_secondment WHERE EMP_ID LIKE 'smk-sec-%'" >/dev/null 2>&1
@@ -6768,6 +6772,1176 @@ R59=$(SQL "SELECT CAST(R_SCORE AS CHAR) FROM erp_scm_scorecard_result WHERE MONT
 CONTAINS "段59 响应三等权 50" "${R59:-x}" "50.00"
 
 echo "段 59 供应绩效 12.9 追加完成"
+
+# ============================================================
+# 段 60：账号生命周期 16.1（add-account-lifecycle-console）
+# 链路：造号(MUST_CHANGE_PWD=1)→复杂度 422→改密清除标记→sweep 强停+快照→
+#       旧 token 401→停用 91 天归档→错用户名 422→归档不可恢复
+# ============================================================
+
+# 60.0 隔离清理（SMK60 前缀）
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk60-%'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM hr_exit WHERE EXIT_NO LIKE 'SMK60-%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK60%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk60-%'" >/dev/null 2>&1
+
+# 60.1 造员工+账号（MUST_CHANGE_PWD=1，模拟 HR 建号口径）+ 离职记录（最后工作日 3 天前）
+U60="smk60-$RANDOM"
+SQL "INSERT INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,MUST_CHANGE_PWD,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT '$U60','$U60',PASSWORD,'冒烟账号生命周期','1','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+E60="smk60-emp-$RANDOM"
+SQL "INSERT INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('$E60','SMK60E$RANDOM','冒烟离职员工','110101199001010011','在职','2026-01-01','$U60','STD','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO hr_exit (ID,EXIT_NO,EMP_ID,EMP_NAME,EMP_NO,QUIT_DATE,SOURCE,NOTICE_OK,STATUS,ACCOUNT_DONE,DEL_FLAG,VER_NO)
+     VALUES ('smk60-exit','SMK60-EXIT-1','$E60','冒烟离职员工','SMK60E',DATE_SUB(CURDATE(), INTERVAL 3 DAY),'离职','1','已完成','1','0',0)" >/dev/null 2>&1
+EQ "段60 造号 MUST_CHANGE_PWD=1" "$(SQL "SELECT MUST_CHANGE_PWD FROM erp_admin_user WHERE USERNAME='$U60'")" "1"
+
+# 60.2 改密：复杂度不足 422 → 达标清除标记
+T60=$(C -H 'Content-Type: application/json' -d "{\"username\":\"$U60\",\"password\":\"Admin@123\"}" $B/api/auth/login | J "d['data']['token']")
+[ -n "${T60:-}" ] && ok "段60 新账号登录" || bad "段60 登录失败"
+EQ "段60 login 返回 mustChangePwd" "$(C -H "Authorization: Bearer $T60" $B/api/auth/info | J "str(d['data']['mustChangePwd'])")" "True"
+EQ "段60 复杂度不足 422" "$(BIZ -X POST -H "Authorization: Bearer $T60" -H 'Content-Type: application/json' \
+  -d '{"oldPwd":"Admin@123","newPwd":"Abcdefg1"}' $B/api/auth/change-password)" "422"
+EQ "段60 改密成功 200" "$(BIZ -X POST -H "Authorization: Bearer $T60" -H 'Content-Type: application/json' \
+  -d '{"oldPwd":"Admin@123","newPwd":"New@Pass12"}' $B/api/auth/change-password)" "200"
+EQ "段60 标记清除" "$(SQL "SELECT MUST_CHANGE_PWD FROM erp_admin_user WHERE USERNAME='$U60'")" "0"
+
+# 60.3 sweep：离职 3 天（>24h）→ 强停 + 快照 + 告警审计
+EQ "段60 sweep 200" "$(BIZ -X POST -H "$(A $TADM)" $B/api/system/accounts/sweep)" "200"
+EQ "段60 强停生效" "$(SQL "SELECT STATUS FROM erp_admin_user WHERE USERNAME='$U60'")" "0"
+EQ "段60 强停快照审计" "$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE EMP_ID=(SELECT ID FROM erp_admin_user WHERE USERNAME='$U60') AND FIELD_NAME='ACCOUNT_DISABLED'")" "1"
+EQ "段60 BR-5.6-09 告警审计" "$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE EMP_ID=(SELECT ID FROM erp_admin_user WHERE USERNAME='$U60') AND FIELD_NAME='SWEEP_ALERT'")" "1"
+EQ "段60 幂等（重复 sweep 无新增）" "$(C -X POST -H "$(A $TADM)" $B/api/system/accounts/sweep | J "str(d['data']['disabled'])")" "0"
+
+# 60.4 停用后旧 token 401（JWT 状态校验 design D2）
+EQ "段60 停用 token 401" "$(HTTP -H "Authorization: Bearer $T60" $B/api/auth/info)" "401"
+
+# 60.5 归档：错用户名 422 → 正确归档 → 不可恢复
+UID60=$(SQL "SELECT ID FROM erp_admin_user WHERE USERNAME='$U60'")
+EQ "段60 错确认 422" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"confirmUsername":"wrong"}' $B/api/system/accounts/$UID60/archive)" "422"
+EQ "段60 正确归档 200" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"confirmUsername\":\"$U60\"}" $B/api/system/accounts/$UID60/archive)" "200"
+EQ "段60 归档态+时间落库" "$(SQL "SELECT COUNT(*) FROM erp_admin_user WHERE ID='$UID60' AND STATUS='2' AND ARCHIVED_AT IS NOT NULL")" "1"
+EQ "段60 归档不可恢复（再归档 422）" "$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"confirmUsername\":\"$U60\"}" $B/api/system/accounts/$UID60/archive)" "422"
+EQ "段60 归档后强停 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/system/accounts/$UID60/disable)" "422"
+
+# 60.6 路由与页面源码断言
+EQ "段60 路由四条" "$(grep -cE '/m/16.1.1|/m/16.1.2|/m/16.1.3|/m/16.1.4' frontend/src/router/index.js)" "4"
+EQ "段60 Tab 白名单存在" "$(grep -c 'TAB_WHITELIST' frontend/src/views/system/account/index.vue)" "2"
+EQ "段60 强制改密守卫存在" "$(grep -c 'mustChangePwd' frontend/src/router/index.js)" "2"
+EQ "段60 无令牌 401" "$(HTTP $B/api/system/accounts)" "401"
+
+echo "段 60 账号生命周期 16.1 追加完成"
+
+# ==================================================================== 段 61：角色权限 16.2（add-role-permission-console）
+echo "== 段 61 角色权限 16.2（M16-2）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PermRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PermRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID='smk61-win'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID IN ('smk61-user','smk61-u1','smk61-appr'); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID IN (SELECT ID FROM (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk61-%') t); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk61-%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK61%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk61-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_menu_perm_override WHERE ROLE_CODE='ROLE_SMK61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_role WHERE ROLE_CODE='ROLE_SMK61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_position_baseline WHERE POS_ID LIKE 'smk61-pos%'" >/dev/null 2>&1
+
+# ---- 61.1 角色 CRUD ----
+R61=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"ROLE_SMK61","roleName":"冒烟测试角色","sortOrder":99}' $B/api/system/roles | J "d['code']")
+EQ "段61 新建角色" "$R61" "200"
+R61D=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"ROLE_SMK61","roleName":"重复"}' $B/api/system/roles)
+EQ "段61 重复编码 422" "$R61D" "422"
+R61P=$(C -H "$(A $TADM)" "$B/api/system/roles/page?keyword=ROLE_SMK61" | J "d['data']['records'][0]['roleCode']")
+EQ "段61 角色分页可查" "$R61P" "ROLE_SMK61"
+
+# ---- 61.2 矩阵勾选可见 / 取消隐藏（真实登录验证 menus/user）----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk61-user','smk61',PASSWORD,'冒烟61','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+R61RID=$(SQL "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_SMK61'")
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) VALUES ('smk61-ur','smk61-user','$R61RID')" >/dev/null 2>&1
+T61=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk61","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "$T61" ] && [ "$T61" != "None" ] && ok "段61 矩阵验证用户登录" || bad "段61 用户登录失败"
+
+M61=$(C -H "$(A $T61)" $B/api/system/menus/user | grep -c '"id":"M16-1"')
+EQ "段61 勾选前基线不可见" "$M61" "0"
+C61=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"ROLE_SMK61","menuId":"M16-1","checked":true}' $B/api/system/perm-matrix/cells)
+EQ "段61 矩阵勾选写入" "$C61" "200"
+O61=$(SQL "SELECT ACTION FROM erp_admin_menu_perm_override WHERE ROLE_CODE='ROLE_SMK61' AND MENU_ID='M16-1'")
+EQ "段61 覆盖行=ADD" "$O61" "ADD"
+P61=$(SQL "SELECT PERM FROM erp_admin_menu WHERE ID='M16-1'")
+CONTAINS "段61 基线 PERM 不被改写" "$P61" "ROLE_ADMIN"
+M61B=$(C -H "$(A $T61)" $B/api/system/menus/user | grep -c '"id":"M16-1"')
+EQ "段61 勾选后可见" "$M61B" "1"
+C61U=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"ROLE_SMK61","menuId":"M16-1","checked":false}' $B/api/system/perm-matrix/cells)
+EQ "段61 取消勾选" "$C61U" "200"
+O61N=$(SQL "SELECT COUNT(*) FROM erp_admin_menu_perm_override WHERE ROLE_CODE='ROLE_SMK61' AND MENU_ID='M16-1'")
+EQ "段61 取消后覆盖格清空" "$O61N" "0"
+M61C=$(C -H "$(A $T61)" $B/api/system/menus/user | grep -c '"id":"M16-1"')
+EQ "段61 取消后隐藏" "$M61C" "0"
+
+# ---- 61.3 岗位基线 L1 硬阻断 ----
+B61BAD=$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCodes":["ROLE_ADMIN"]}' $B/api/system/position-baselines/smk61-pos-1)
+EQ "段61 基线含超管 422" "$B61BAD" "422"
+B61MSG=$(MSG -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCodes":["ROLE_PM"]}' $B/api/system/position-baselines/smk61-pos-1)
+CONTAINS "段61 L1 指明违规角色" "$B61MSG" "ROLE_PM"
+B61OK=$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCodes":["ROLE_PLANNER"]}' $B/api/system/position-baselines/smk61-pos-1)
+EQ "段61 非特权基线保存" "$B61OK" "200"
+
+# ---- 61.4 超基线授予 → 例外审批 → 生效 ----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk61-u1','smk61u1',PASSWORD,'冒烟61账号','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,POS_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk61-emp1','SMK61E1','冒烟61员工','SMK61ID-0001','在职',CURDATE(),'smk61-u1','smk61-pos-1','STD','smoke','0',0)" >/dev/null 2>&1
+# 例外链 = DEPT_HEAD 回落 + 特权会签（FIN_MGR ∈ 特权清单）；签署人须非申请人
+# （BR-5.6-01）→ 双角色审批账号；特权生效须在变更窗口内（design D5）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk61-appr','smk61appr',PASSWORD,'冒烟61审批','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk61-appr-dr','smk61-appr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DEPT_HEAD'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk61-appr-ad','smk61-appr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_ADMIN'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_change_window (ID,NAME,DAY_OF_WEEK,START_TIME,END_TIME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) VALUES ('smk61-win','SMK61全天窗口',(WEEKDAY(NOW())+1),'00:00:00','23:59:59','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+T61APPR=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk61appr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+RID61P=$(SQL "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_PLANNER'")
+RID61F=$(SQL "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_FINANCE_MGR'")
+A61=$(C -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"roleIds\":[\"$RID61P\"]}" $B/api/system/accounts/smk61-u1/roles | J "d['data']['after'][0]")
+EQ "段61 基线内直授生效" "$A61" "ROLE_PLANNER"
+G61=$(C -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"roleIds\":[\"$RID61P\",\"$RID61F\"],\"reason\":\"冒烟例外特批用途说明\"}" $B/api/system/accounts/smk61-u1/roles)
+G61S=$(echo "$G61" | J "d['data']['status']")
+EQ "段61 超基线转审批" "$G61S" "PENDING_APPROVAL"
+REQ61=$(echo "$G61" | J "d['data']['requestId']")
+F61=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk61-u1' AND r.ROLE_CODE='ROLE_FINANCE_MGR'")
+EQ "段61 审批前角色未生效" "$F61" "0"
+G61D=$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"roleIds\":[\"$RID61P\",\"$RID61F\"],\"reason\":\"重复提交应当被系统拒绝\"}" $B/api/system/accounts/smk61-u1/roles)
+EQ "段61 重复申请 422" "$G61D" "422"
+# KIND=EXCEPTION 改道断言（add-permission-approval-flow D7）
+G61K=$(SQL "SELECT KIND FROM erp_admin_perm_request WHERE ID='$REQ61'")
+EQ "段61 例外单 KIND=EXCEPTION" "$G61K" "EXCEPTION"
+# 双节点签署（DEPT_HEAD 回落 + 特权会签），签署人 smk61-appr ≠ 申请人 TADM
+T61A=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$REQ61' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+[ -n "$T61A" ] && C -X POST -H "$(A $T61APPR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T61A\",\"opinion\":\"冒烟同意\"}" $B/api/qms/approvals/pass >/dev/null
+T61B=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$REQ61' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+[ -n "$T61B" ] && C -X POST -H "$(A $T61APPR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T61B\",\"opinion\":\"冒烟同意\"}" $B/api/qms/approvals/pass >/dev/null
+F61B=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk61-u1' AND r.ROLE_CODE='ROLE_FINANCE_MGR'")
+EQ "段61 审批通过生效" "$F61B" "1"
+G61ST=$(SQL "SELECT STATUS FROM erp_admin_perm_request WHERE ID='$REQ61'")
+EQ "段61 申请单 ACTIVE（立即生效）" "$G61ST" "ACTIVE"
+G61OP=$(SQL "SELECT t.OPINION FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$REQ61' AND t.OPINION IS NOT NULL ORDER BY t.SEQ LIMIT 1")
+CONTAINS "段61 审批意见留痕" "$G61OP" "冒烟同意"
+G61LG=$(SQL "SELECT COUNT(*) FROM erp_admin_grant_ledger WHERE APPLY_ID='$REQ61' AND SOURCE='EXCEPTION'")
+[ "${G61LG:-0}" -ge 1 ] && ok "段61 台账落行（来源 EXCEPTION）" || bad "例外台账缺失（$G61LG）"
+G61AU=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE EMP_ID='smk61-u1' AND FIELD_NAME='PERMISSION_GRANTED'")
+[ "${G61AU:-0}" -ge 1 ] && ok "段61 审计快照（PERMISSION_GRANTED）" || bad "审计快照缺失（$G61AU）"
+
+# ---- 61.5 删除护栏 ----
+D61=$(BIZ -X DELETE -H "$(A $TADM)" $B/api/system/roles/$R61RID)
+EQ "段61 被绑定禁删 422" "$D61" "422"
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID='smk61-user'" >/dev/null 2>&1
+D61B=$(BIZ -X DELETE -H "$(A $TADM)" $B/api/system/roles/$R61RID)
+EQ "段61 解绑后删除成功" "$D61B" "200"
+
+# ---- 页面结构（16.2 前端）----
+EQ "段61 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/permission/index.vue)" "3"
+EQ "段61 矩阵边界说明" "$(grep -c '矩阵仅改菜单可见性' frontend/src/views/system/permission/index.vue)" "1"
+EQ "段61 三条路由" "$(grep -c /m/16.2 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_ID='$REQ61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_ID='$REQ61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID='smk61-win'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID IN ('smk61-user','smk61-u1','smk61-appr'); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID IN ('smk61-user','smk61-u1','smk61-appr')" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE ID='smk61-emp1'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk61-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_menu_perm_override WHERE ROLE_CODE='ROLE_SMK61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_role WHERE ROLE_CODE='ROLE_SMK61'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_position_baseline WHERE POS_ID LIKE 'smk61-pos%'" >/dev/null 2>&1
+
+echo "段 61 角色权限 16.2 追加完成"
+
+# ==================================================================== 段 62：权限审批 16.3（add-permission-approval-flow）
+echo "== 段 62 权限审批 16.3（M16-3）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PermRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk62-t1','smk62-t2','smk62-t3','smk62-t4','smk62-t5'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PermRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk62-t1','smk62-t2','smk62-t3','smk62-t4','smk62-t5'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk62-t1','smk62-t2','smk62-t3','smk62-t4','smk62-t5')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID IN ('smk62-t1','smk62-t2','smk62-t3','smk62-t4','smk62-t5')" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID='smk62-win'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk62-%'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE TARGET_USER LIKE 'smk62-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk62-%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK62%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk62-%'" >/dev/null 2>&1
+
+# ---- 造数：申请/主管/审批人/五个目标用户 ----
+for U in "smk62-app:smk62app:冒烟62申请" "smk62-mgr:smk62mgr:冒烟62主管" "smk62-appr:smk62appr:冒烟62审批" \
+         "smk62-t1:smk62t1:冒烟62目标1" "smk62-t2:smk62t2:冒烟62目标2" "smk62-t3:smk62t3:冒烟62目标3" \
+         "smk62-t4:smk62t4:冒烟62目标4" "smk62-t5:smk62t5:冒烟62目标5"; do
+  UID62="${U%%:*}"; REST="${U#*:}"; UN62="${REST%%:*}"; NN62="${REST#*:}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UID62','$UN62',PASSWORD,'$NN62','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+done
+# 审批人双角色（DEPT_HEAD 回落节点 + 特权会签），签署人 ≠ 申请人（BR-5.6-01）
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk62-appr-dr','smk62-appr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DEPT_HEAD'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk62-appr-ad','smk62-appr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_ADMIN'" >/dev/null 2>&1
+# 全天窗口前置（add-change-window-console：62.3/62.4 普通/敏感链断言基于窗口内提交，
+# 窗口外会追加 CCB 三方会签节点）——原 62.6 的种子提前到造数区，62.6 INSERT IGNORE 保留无害
+SQL "INSERT IGNORE INTO erp_change_window (ID,NAME,DAY_OF_WEEK,START_TIME,END_TIME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) VALUES ('smk62-win','SMK62全天窗口',(WEEKDAY(NOW())+1),'00:00:00','23:59:59','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+# 员工链：t1 → mgr（按人主管节点）；t2-t5 无汇报线（回落 DEPT_HEAD 节点）
+SQL "INSERT IGNORE INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk62-emp-mgr','SMK62MGR','冒烟62主管','SMK62ID-M','在职',CURDATE(),'smk62-mgr','STD','smoke','0',0)" >/dev/null 2>&1
+for T in 1 2 3 4 5; do
+  RT=$([ "$T" = "1" ] && echo "'smk62-emp-mgr'" || echo "NULL")
+  SQL "INSERT IGNORE INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,REPORT_TO_EMP_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+       VALUES ('smk62-emp-t$T','SMK62T$T','冒烟62目标$T','SMK62ID-$T','在职',CURDATE(),'smk62-t$T',$RT,'STD','smoke','0',0)" >/dev/null 2>&1
+done
+
+T62APP=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk62app","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T62MGR=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk62mgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T62APPR=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk62appr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+
+# ---- 62.1 普通申请四连校验（spec step1，4×422）----
+Q621=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t1","roleCodes":["ROLE_PLANNER"],"dataScope":"LE-002/OU-01","reason":"申请","validMonths":12}' $B/api/system/perm-requests)
+EQ "段62 理由过短 422" "$Q621" "422"
+Q622=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t1","roleCodes":["ROLE_PLANNER"],"reason":"业务理由足够长度的申请","validMonths":12}' $B/api/system/perm-requests)
+EQ "段62 数据范围缺失 422" "$Q622" "422"
+Q623=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t1","roleCodes":["ROLE_PLANNER"],"dataScope":"LE-002/OU-01","reason":"业务理由足够长度的申请","validMonths":18}' $B/api/system/perm-requests)
+EQ "段62 有效期超 12 月 422" "$Q623" "422"
+Q624=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t1","roleCodes":["ROLE_ADMIN"],"dataScope":"LE-002/OU-01","reason":"特权申请缺少工单号场景","validMonths":12}' $B/api/system/perm-requests)
+EQ "段62 特权缺工单 422" "$Q624" "422"
+
+# ---- 62.2 预检沙盘（SoD 互斥实时返回）----
+CF62=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCodes":["ROLE_PURCHASER","ROLE_PM"]}' $B/api/system/sod-rules/precheck | J "len(d['data']['conflicts'])")
+EQ "段62 沙盘互斥命中" "$CF62" "1"
+
+# ---- 62.3 普通申请 → 按人主管签 → 生效落台账 ----
+R62=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t1","roleCodes":["ROLE_PLANNER"],"dataScope":"LE-002/OU-PROC","reason":"补货计划查看需要该角色权限","validMonths":12}' $B/api/system/perm-requests | J "d['data']['id']")
+[ -n "$R62" ] && [ "$R62" != "None" ] && ok "段62 普通申请提交（$R62）" || bad "普通申请提交失败"
+C62N=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R62'")
+EQ "段62 普通链单节点" "$C62N" "1"
+C62S=$(SQL "SELECT t.SIGNER FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R62' AND t.SEQ=1")
+EQ "段62 按人主管节点" "$C62S" "smk62-mgr"
+P62T=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R62' AND t.STATUS='ACTIVE' LIMIT 1")
+C -X POST -H "$(A $T62MGR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$P62T\",\"opinion\":\"同意申请\"}" $B/api/qms/approvals/pass >/dev/null
+R62ST=$(SQL "SELECT STATUS FROM erp_admin_perm_request WHERE ID='$R62'")
+EQ "段62 审批通过即生效" "$R62ST" "ACTIVE"
+R62LG=$(SQL "SELECT COUNT(*) FROM erp_admin_grant_ledger WHERE APPLY_ID='$R62' AND STATUS='ACTIVE'")
+EQ "段62 生效落台账" "$R62LG" "1"
+R62UR=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk62-t1' AND r.ROLE_CODE='ROLE_PLANNER'")
+EQ "段62 角色投影写入" "$R62UR" "1"
+
+# ---- 62.4 风险路由链形态（敏感两级 / 特权三节点 / SoD 合规官）----
+S62=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t2","roleCodes":["ROLE_COST_ACCOUNTANT"],"dataScope":"LE-002/OU-FIN","reason":"成本数据核对需要该敏感权限","validMonths":6}' $B/api/system/perm-requests | J "d['data']['id']")
+S62N=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$S62'")
+EQ "段62 敏感两级链" "$S62N" "2"
+S62O=$(SQL "SELECT t.ROLE_REQUIRED FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$S62' AND t.SEQ=2")
+EQ "段62 数据Owner节点" "$S62O" "ROLE_FINANCE_MGR"
+
+H62=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t3","roleCodes":["ROLE_COST_ACCOUNTANT","ROLE_ADMIN"],"dataScope":"LE-002/OU-FIN","reason":"故障处置需成本与超管权限","ticketNo":"INC-2026-1029-0062","validMonths":1}' $B/api/system/perm-requests | J "d['data']['id']")
+H62N=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$H62'")
+EQ "段62 特权三节点" "$H62N" "3"
+H62J=$(SQL "SELECT t.NODE_TYPE FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$H62' AND t.SEQ=3")
+EQ "段62 特权会签节点" "$H62J" "JOINT"
+
+D62=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk62-t4","roleCodes":["ROLE_PURCHASER","ROLE_PM"],"dataScope":"LE-002/OU-PROC","reason":"采购与审批互斥预检验证申请","ticketNo":"INC-2026-1029-0063","validMonths":3}' $B/api/system/perm-requests | J "d['data']['id']")
+D62N=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$D62'")
+EQ "段62 SoD 链三节点" "$D62N" "3"
+D62C=$(SQL "SELECT t.ROLE_REQUIRED FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$D62' AND t.SEQ=3")
+EQ "段62 SoD 追加合规官" "$D62C" "ROLE_COMPLIANCE"
+
+# ---- 62.5 手动回收 + 到期扫描（幂等端点）----
+L62=$(SQL "SELECT ID FROM erp_admin_grant_ledger WHERE APPLY_ID='$R62' LIMIT 1")
+RC62=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/grant-ledger/$L62/reclaim)
+EQ "段62 手动回收" "$RC62" "200"
+R62ST2=$(SQL "SELECT STATUS FROM erp_admin_grant_ledger WHERE ID='$L62'")
+EQ "段62 台账已回收" "$R62ST2" "RECLAIMED"
+R62UR2=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk62-t1' AND r.ROLE_CODE='ROLE_PLANNER'")
+EQ "段62 回收移除投影" "$R62UR2" "0"
+R62EX=$(SQL "SELECT STATUS FROM erp_admin_perm_request WHERE ID='$R62'")
+EQ "段62 回收回写申请单" "$R62EX" "EXPIRED"
+RC62I=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/grant-ledger/$L62/reclaim)
+EQ "段62 回收幂等" "$RC62I" "200"
+SW62=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/grant-ledger/sweep)
+EQ "段62 到期扫描端点" "$SW62" "200"
+
+# ---- 62.6 例外改道（16.2 adjust-roles → KIND=EXCEPTION，D7）----
+SQL "INSERT IGNORE INTO erp_change_window (ID,NAME,DAY_OF_WEEK,START_TIME,END_TIME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) VALUES ('smk62-win','SMK62全天窗口',(WEEKDAY(NOW())+1),'00:00:00','23:59:59','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+RID62P=$(SQL "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_PLANNER'")
+RID62F=$(SQL "SELECT ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_FINANCE_MGR'")
+E62=$(C -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"roleIds\":[\"$RID62P\",\"$RID62F\"],\"reason\":\"超基线例外改道验证申请\"}" $B/api/system/accounts/smk62-t5/roles)
+E62S=$(echo "$E62" | J "d['data']['status']")
+EQ "段62 超基线转例外单" "$E62S" "PENDING_APPROVAL"
+EREQ62=$(echo "$E62" | J "d['data']['requestId']")
+E62K=$(SQL "SELECT KIND FROM erp_admin_perm_request WHERE ID='$EREQ62'")
+EQ "段62 KIND=EXCEPTION" "$E62K" "EXCEPTION"
+E62D=$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"roleIds\":[\"$RID62P\",\"$RID62F\"],\"reason\":\"重复提交例外申请应当被拒\"}" $B/api/system/accounts/smk62-t5/roles)
+EQ "段62 例外重复提交 422" "$E62D" "422"
+# 双节点签署（DEPT_HEAD 回落 + 特权会签），签署人为 smk62-appr（≠ 申请人 TADM）
+ET1=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$EREQ62' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+C -X POST -H "$(A $T62APPR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$ET1\",\"opinion\":\"同意例外\"}" $B/api/qms/approvals/pass >/dev/null
+ET2=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$EREQ62' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+[ -n "$ET2" ] && C -X POST -H "$(A $T62APPR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$ET2\",\"opinion\":\"同意例外\"}" $B/api/qms/approvals/pass >/dev/null
+E62FM=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk62-t5' AND r.ROLE_CODE='ROLE_FINANCE_MGR'")
+EQ "段62 例外通过生效" "$E62FM" "1"
+E62ST=$(SQL "SELECT STATUS FROM erp_admin_perm_request WHERE ID='$EREQ62'")
+EQ "段62 例外单 ACTIVE" "$E62ST" "ACTIVE"
+E62LG=$(SQL "SELECT COUNT(*) FROM erp_admin_grant_ledger WHERE APPLY_ID='$EREQ62' AND SOURCE='EXCEPTION' AND ROLE_CODE='ROLE_FINANCE_MGR'")
+EQ "段62 例外台账来源" "$E62LG" "1"
+E62AU=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE EMP_ID='smk62-t5' AND FIELD_NAME='PERMISSION_GRANTED'")
+[ "${E62AU:-0}" -ge 1 ] && ok "段62 例外审计快照" || bad "例外审计缺失（$E62AU）"
+
+# ---- 62.7 页面结构（16.3 前端；16.4 复用本页新增窗口外升级/双人复核两 Tab）----
+EQ "段62 页面五 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/permission-request/index.vue)" "5"
+EQ "段62 三条路由" "$(grep -c /m/16.3 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PermRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID LIKE 'smk62-t%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PermRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID LIKE 'smk62-t%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID LIKE 'smk62-t%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID LIKE 'smk62-t%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID='smk62-win'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk62-%'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE TARGET_USER LIKE 'smk62-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID LIKE 'smk62-%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK62%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID LIKE 'smk62-%'" >/dev/null 2>&1
+
+echo "段 62 权限审批 16.3 追加完成"
+
+# ==================================================================== 段 63：变更窗口 16.4（add-change-window-console）
+echo "== 段 63 变更窗口 16.4（M16-4）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PermRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PermRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk63-t1','smk63-appr','smk63-ccb')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID IN ('smk63-t1','smk63-appr','smk63-ccb')" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID IN ('smk63-win2')" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk63_win_backup" >/dev/null 2>&1
+
+# ---- 造数：目标用户 + 部门负责人签署人 + CCB 三方签署人 ----
+for U in "smk63-t1:smk63t1:冒烟63目标1" "smk63-t2:smk63t2:冒烟63目标2" "smk63-appr:smk63appr:冒烟63审批" "smk63-ccb:smk63ccb:冒烟63CCB"; do
+  UID63="${U%%:*}"; REST="${U#*:}"; UN63="${REST%%:*}"; NN63="${REST#*:}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UID63','$UN63',PASSWORD,'$NN63','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+done
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk63-appr-dr','smk63-appr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DEPT_HEAD'" >/dev/null 2>&1
+for CR in ROLE_CCB_OPS ROLE_CCB_ARCH ROLE_CCB_BIZ; do
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT CONCAT('smk63-ccb-',SUBSTRING('$CR',6)),'smk63-ccb',ID FROM erp_admin_role WHERE ROLE_CODE='$CR'" >/dev/null 2>&1
+done
+T63APPR=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk63appr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T63CCB=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk63ccb","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+
+# ---- 63.1 窗口维护 API（16.4.1：新建/列表/删除，ADMIN 直改）----
+W63=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK63测试窗口","dayOfWeek":3,"startTime":"22:00","endTime":"23:30","status":"1"}' $B/api/system/change-windows)
+EQ "段63 窗口新建" "$W63" "200"
+W63ID=$(SQL "SELECT ID FROM erp_change_window WHERE NAME='SMK63测试窗口' LIMIT 1")
+[ -n "$W63ID" ] && ok "段63 窗口落库（$W63ID）" || bad "窗口未落库"
+W63V=$(BIZ -X DELETE -H "$(A $TADM)" $B/api/system/change-windows/$W63ID)
+EQ "段63 窗口删除" "$W63V" "200"
+# 非法输入 422（开始不早于结束）
+W63B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK63非法窗口","dayOfWeek":3,"startTime":"23:00","endTime":"22:00","status":"1"}' $B/api/system/change-windows)
+EQ "段63 窗口时刻非法 422" "$W63B" "422"
+
+# ---- 63.2 窗口外普通申请 → OUT_WINDOW=1 + CCB 三方会签（C-5.6-03）----
+# 备份并停用全部窗口（强制窗口外，结束后恢复）
+SQL "CREATE TABLE smk63_win_backup AS SELECT * FROM erp_change_window" >/dev/null 2>&1
+SQL "UPDATE erp_change_window SET STATUS='0' WHERE STATUS='1'" >/dev/null 2>&1
+R63=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk63-t1","roleCodes":["ROLE_PLANNER"],"dataScope":"LE-002/OU-PROC","reason":"窗口外升级链冒烟验证申请","validMonths":12}' $B/api/system/perm-requests | J "d['data']['id']")
+[ -n "$R63" ] && [ "$R63" != "None" ] && ok "段63 窗口外申请提交（$R63）" || bad "窗口外申请提交失败"
+OW63=$(SQL "SELECT OUT_WINDOW FROM erp_admin_perm_request WHERE ID='$R63'")
+EQ "段63 OUT_WINDOW 标记" "$OW63" "1"
+CC63=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R63' AND t.ROLE_REQUIRED IN ('ROLE_CCB_OPS','ROLE_CCB_ARCH','ROLE_CCB_BIZ')")
+EQ "段63 CCB 三节点追加" "$CC63" "3"
+# 列表 outWindow 过滤
+LF63=$(C -H "$(A $TADM)" "$B/api/system/perm-requests?outWindow=true" | J "len([x for x in d['data'] if x['id']=='$R63'])")
+EQ "段63 outWindow=true 命中" "$LF63" "1"
+LF63B=$(C -H "$(A $TADM)" "$B/api/system/perm-requests?outWindow=false" | J "len([x for x in d['data'] if x['id']=='$R63'])")
+EQ "段63 outWindow=false 排除" "$LF63B" "0"
+
+# ---- 63.3 全链签署：DEPT_HEAD 回落 → CCB 三方 → 生效 ----
+S63A=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R63' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+C -X POST -H "$(A $T63APPR)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$S63A\",\"opinion\":\"冒烟部门同意\"}" $B/api/qms/approvals/pass >/dev/null
+for k in 1 2 3; do
+  S63C=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R63' AND t.STATUS='ACTIVE' ORDER BY t.SEQ LIMIT 1")
+  [ -n "$S63C" ] && C -X POST -H "$(A $T63CCB)" -H 'Content-Type: application/json' \
+    -d "{\"taskId\":\"$S63C\",\"opinion\":\"冒烟CCB会签\"}" $B/api/qms/approvals/pass >/dev/null
+done
+S63ST=$(SQL "SELECT STATUS FROM erp_admin_perm_request WHERE ID='$R63'")
+EQ "段63 全签后 ACTIVE" "$S63ST" "ACTIVE"
+S63UR=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk63-t1' AND r.ROLE_CODE='ROLE_PLANNER'")
+EQ "段63 窗口外生效投影" "$S63UR" "1"
+
+# ---- 63.4 复核台账（16.4.3：三方签署明细证据面）----
+LG63=$(C -H "$(A $TADM)" $B/api/system/perm-requests/out-window-ledger | J "len([x for x in d['data'] if x['id']=='$R63'])")
+EQ "段63 台账入账" "$LG63" "1"
+LG63S=$(C -H "$(A $TADM)" $B/api/system/perm-requests/out-window-ledger | J "len([s for x in d['data'] if x['id']=='$R63' for s in x['ccbSigns'] if s['signStatus']=='PASSED'])")
+EQ "段63 台账三方已签明细" "$LG63S" "3"
+
+# ---- 63.5 特权窗口外不追加 CCB（双轨 D5）----
+R63P=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetUserId":"smk63-t2","roleCodes":["ROLE_ADMIN"],"dataScope":"LE-002/OU-IT","reason":"特权窗口外双轨验证申请","ticketNo":"INC-2026-1029-0063","validMonths":1}' $B/api/system/perm-requests | J "d['data']['id']")
+CC63P=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R63P' AND t.ROLE_REQUIRED IN ('ROLE_CCB_OPS','ROLE_CCB_ARCH','ROLE_CCB_BIZ')")
+EQ "段63 特权无 CCB 节点" "$CC63P" "0"
+OW63P=$(SQL "SELECT OUT_WINDOW FROM erp_admin_perm_request WHERE ID='$R63P'")
+EQ "段63 特权 OUT_WINDOW=0" "$OW63P" "0"
+
+# ---- 63.6 页面结构（16.4 前端）----
+EQ "段63 窗口维护页存在" "$(grep -c '变更窗口维护' frontend/src/views/system/change-window/index.vue)" "1"
+EQ "段63 三条路由" "$(grep -c /m/16.4 frontend/src/router/index.js)" "3"
+EQ "段63 升级/复核两 Tab" "$(grep -cE 'el-tab-pane label=\"(窗口外升级|双人复核)\"' frontend/src/views/system/permission-request/index.vue)" "2"
+
+# ---- 段尾清理（恢复窗口快照）----
+SQL "UPDATE erp_change_window w JOIN smk63_win_backup b ON w.ID=b.ID SET w.STATUS=b.STATUS" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk63_win_backup" >/dev/null 2>&1
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='PermRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='PermRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2'))" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_perm_request WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID IN ('smk63-t1','smk63-t2')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN ('smk63-t1','smk63-appr','smk63-ccb')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE ID IN ('smk63-t1','smk63-appr','smk63-ccb')" >/dev/null 2>&1
+SQL "DELETE FROM erp_change_window WHERE ID IN ('smk63-win2') OR NAME='SMK63测试窗口'" >/dev/null 2>&1
+
+echo "段 63 变更窗口 16.4 追加完成"
+
+# ==================================================================== 段 64：紧急权限 16.5（add-break-glass-console）
+echo "== 段 64 紧急权限 16.5（M16-5）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='BreakGlassRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='BreakGlassRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_audit WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_incident WHERE INC_NO LIKE 'INC-SMK64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_template WHERE CODE LIKE 'SMK64-%'" >/dev/null 2>&1
+
+# ---- 造数：目标 + 双签人（值班经理/安全管理员沿 admin 种子角色）----
+for U in "smk64-t1:smk64t1:冒烟64目标1" "smk64-duty:smk64duty:冒烟64值班" "smk64-sec:smk64sec:冒烟64安全"; do
+  UID64="${U%%:*}"; REST="${U#*:}"; UN64="${REST%%:*}"; NN64="${REST#*:}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UID64','$UN64',PASSWORD,'$NN64','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+done
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk64-duty-dr','smk64-duty',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DUTY_MGR'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk64-sec-ad','smk64-sec',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_ADMIN'" >/dev/null 2>&1
+T64DUTY=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk64duty","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T64SEC=$(C -X POST -H 'Content-Type: application/json' -d '{"username":"smk64sec","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+
+# ---- 64.1 工单与模板维护 ----
+INC64=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"incNo":"INC-SMK64-001","title":"冒烟64生产死锁故障"}' $B/api/system/break-glass/incidents)
+EQ "段64 工单创建" "$INC64" "200"
+INC64ID=$(SQL "SELECT ID FROM erp_ops_incident WHERE INC_NO='INC-SMK64-001'")
+TPL64=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK64-DBA-01","name":"冒烟64应急模板","rolesJson":"[\"ROLE_PLANNER\"]"}' $B/api/system/break-glass/templates)
+EQ "段64 模板创建" "$TPL64" "200"
+TPL64ID=$(SQL "SELECT ID FROM erp_admin_bg_template WHERE CODE='SMK64-DBA-01'")
+# 模板含特权角色 422
+TPL64B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK64-BAD","name":"违规模板","rolesJson":"[\"ROLE_ADMIN\"]"}' $B/api/system/break-glass/templates)
+EQ "段64 模板特权角色 422" "$TPL64B" "422"
+
+# ---- 64.2 工单校验阻断（BR-5.6-05）----
+BG64B1=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"targetUserId\":\"smk64-t1\",\"templateId\":\"$TPL64ID\",\"durationHours\":2,\"screenDeclare\":\"YES\",\"reason\":\"未关联工单应被阻断的申请\"}" $B/api/system/break-glass/requests)
+EQ "段64 无工单 422" "$BG64B1" "422"
+SQL "UPDATE erp_ops_incident SET STATUS='CLOSED' WHERE ID='$INC64ID'" >/dev/null 2>&1
+BG64B2=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"targetUserId\":\"smk64-t1\",\"templateId\":\"$TPL64ID\",\"incidentId\":\"$INC64ID\",\"durationHours\":2,\"screenDeclare\":\"YES\",\"reason\":\"工单已关闭应被阻断的申请\"}" $B/api/system/break-glass/requests)
+EQ "段64 关闭工单 422" "$BG64B2" "422"
+SQL "UPDATE erp_ops_incident SET STATUS='PROCESSING' WHERE ID='$INC64ID'" >/dev/null 2>&1
+# 时长超上限 422（默认上限 2）
+BG64B3=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"targetUserId\":\"smk64-t1\",\"templateId\":\"$TPL64ID\",\"incidentId\":\"$INC64ID\",\"durationHours\":5,\"screenDeclare\":\"YES\",\"reason\":\"时长超上限应被阻断的申请\"}" $B/api/system/break-glass/requests)
+EQ "段64 时长超限 422" "$BG64B3" "422"
+
+# ---- 64.3 双签全链：缺一不生效 → 全过即刻生效（豁免窗口）----
+R64=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"targetUserId\":\"smk64-t1\",\"templateId\":\"$TPL64ID\",\"incidentId\":\"$INC64ID\",\"durationHours\":2,\"screenDeclare\":\"YES\",\"reason\":\"生产死锁抢修需要应急权限处置\"}" $B/api/system/break-glass/requests | J "d['data']['id']")
+[ -n "$R64" ] && [ "$R64" != "None" ] && ok "段64 申请提交（$R64）" || bad "BG 申请提交失败"
+C64N=$(SQL "SELECT COUNT(*) FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R64'")
+EQ "段64 双签两节点" "$C64N" "2"
+# 值班经理单签 → 不生效
+T64A=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R64' AND t.STATUS='ACTIVE' AND t.ROLE_REQUIRED='ROLE_DUTY_MGR'")
+C -X POST -H "$(A $T64DUTY)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T64A\",\"opinion\":\"冒烟值班同意\"}" $B/api/qms/approvals/pass >/dev/null
+R64ST1=$(SQL "SELECT STATUS FROM erp_admin_bg_request WHERE ID='$R64'")
+EQ "段64 缺一签仍审批中" "$R64ST1" "PENDING_APPROVAL"
+# 安全管理员补签 → 即刻生效（无窗口也生效，豁免 D3）
+T64B=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_ID='$R64' AND t.STATUS='ACTIVE' LIMIT 1")
+C -X POST -H "$(A $T64SEC)" -H 'Content-Type: application/json' \
+  -d "{\"taskId\":\"$T64B\",\"opinion\":\"冒烟安全会签\"}" $B/api/qms/approvals/pass >/dev/null
+R64ST2=$(SQL "SELECT STATUS FROM erp_admin_bg_request WHERE ID='$R64'")
+EQ "段64 全签即刻 ACTIVE（豁免窗口）" "$R64ST2" "ACTIVE"
+R64UR=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk64-t1' AND r.ROLE_CODE='ROLE_PLANNER'")
+EQ "段64 生效投影" "$R64UR" "1"
+R64SRC=$(SQL "SELECT SOURCE FROM erp_admin_grant_ledger WHERE APPLY_ID='$R64' LIMIT 1")
+EQ "段64 台账来源 BG" "$R64SRC" "BREAK_GLASS"
+
+# ---- 64.4 提前归还（豁免基线守卫）+ 审计生成 + 签署闭环 ----
+RC64=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/break-glass/requests/$R64/reclaim)
+EQ "段64 提前归还" "$RC64" "200"
+R64UR2=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk64-t1' AND r.ROLE_CODE='ROLE_PLANNER'")
+EQ "段64 回收移除投影" "$R64UR2" "0"
+R64ST3=$(SQL "SELECT STATUS FROM erp_admin_bg_request WHERE ID='$R64'")
+EQ "段64 申请单 RECLAIMED" "$R64ST3" "RECLAIMED"
+A64=$(SQL "SELECT ID FROM erp_admin_bg_audit WHERE APPLY_ID='$R64'")
+[ -n "$A64" ] && ok "段64 审计自动生成（$A64）" || bad "审计未生成"
+# 逾期告警：回拨回收时间 25h → sweep 提醒一次；12h 内二次 sweep 不重复
+SQL "UPDATE erp_admin_bg_audit SET RECLAIM_AT=DATE_SUB(NOW(), INTERVAL 25 HOUR) WHERE ID='$A64'" >/dev/null 2>&1
+SW64=$(C -X POST -H "$(A $TADM)" $B/api/system/break-glass/audits/sweep-overdue | J "d['data']['reminded']")
+[ "${SW64:-0}" -ge 1 ] && ok "段64 逾期告警触发" || bad "逾期告警未触发（$SW64）"
+SW64B=$(C -X POST -H "$(A $TADM)" $B/api/system/break-glass/audits/sweep-overdue | J "d['data']['reminded']")
+EQ "段64 12h 内不重复提醒" "$SW64B" "0"
+# 签署闭环
+SG64=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"conclusion":"NO_VIOLATION"}' $B/api/system/break-glass/audits/$A64/sign)
+EQ "段64 签署闭环" "$SG64" "200"
+SG64C=$(SQL "SELECT CONCLUSION FROM erp_admin_bg_audit WHERE ID='$A64'")
+EQ "段64 结论落库" "$SG64C" "NO_VIOLATION"
+SG64B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"conclusion":"VIOLATION"}' $B/api/system/break-glass/audits/$A64/sign)
+EQ "段64 重复签署 422" "$SG64B" "422"
+R64ST4=$(SQL "SELECT STATUS FROM erp_admin_bg_request WHERE ID='$R64'")
+EQ "段64 申请单 AUDITED" "$R64ST4" "AUDITED"
+
+# ---- 64.5 页面结构（16.5 前端）----
+EQ "段64 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/break-glass/index.vue)" "3"
+EQ "段64 三条路由" "$(grep -c /m/16.5 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='BreakGlassRequest' AND i.BIZ_ID IN (SELECT ID FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='BreakGlassRequest' AND BIZ_ID IN (SELECT ID FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_audit WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_request WHERE TARGET_USER_ID LIKE 'smk64-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='BreakGlassRequest'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_incident WHERE INC_NO LIKE 'INC-SMK64%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_bg_template WHERE CODE LIKE 'SMK64-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk64-%'; SET @audit_bypass=0" >/dev/null 2>&1
+
+echo "段 64 紧急权限 16.5 追加完成"
+
+# ==================================================================== 段 65：权限复核 16.6（add-access-review-console）
+echo "== 段 65 权限复核 16.6（M16-6）开始 =="
+
+# ---- 段首清理（可重跑；UAR 表仅测试/冒烟写入）----
+SQL "DELETE FROM erp_admin_uar_report" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_uar_item" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_uar_task" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk65%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk65%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK65%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_grant_ledger WHERE TARGET_USER_ID LIKE 'smk65-%'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk65-%'; SET @audit_bypass=0" >/dev/null 2>&1
+
+# ---- 造数：主管（DEPT_HEAD 兜底 + 按人双态）+ 目标（普通+特权+敏感三类）----
+for U in "smk65-mgr:smk65mgr:冒烟65主管" "smk65-priv:smk65priv:冒烟65特权" "smk65-sens:smk65sens:冒烟65敏感" "smk65-plain:smk65plain:冒烟65普通"; do
+  UID65="${U%%:*}"; REST="${U#*:}"; UN65="${REST%%:*}"; NN65="${REST#*:}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UID65','$UN65',PASSWORD,'$NN65','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+done
+SQL "INSERT IGNORE INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk65-emp-mgr','SMK65MGR','冒烟65主管','SMK65ID-M','在职',CURDATE(),'smk65-mgr','STD','smoke','0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO hr_employee (ID,EMP_NO,NAME,ID_CARD_NO,EMP_STATUS,HIRE_DATE,USER_ID,REPORT_TO_EMP_ID,ATTEND_SCHEME,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk65-emp-plain','SMK65PLN','冒烟65普通','SMK65ID-P','在职',CURDATE(),'smk65-plain','smk65-emp-mgr','STD','smoke','0',0)" >/dev/null 2>&1
+# 目标角色：普通 PLANNER / 特权 ROLE_ADMIN（工单号无关，UAR 无审批链）/ 敏感 COST_ACCOUNTANT
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk65-ur-p','smk65-plain',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_PLANNER'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk65-ur-v','smk65-priv',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_ADMIN'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk65-ur-s','smk65-sens',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_COST_ACCOUNTANT'" >/dev/null 2>&1
+
+# ---- 65.1 生成分层（普通偏离 + 特权 + 敏感进清单；基线内自动通过）----
+# 给 plain 造基线含 PLANNER → 普通基线内应自动通过不产生 item（分层反证）
+SQL "INSERT IGNORE INTO erp_admin_position_baseline (ID,POS_ID,ROLE_CODES,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk65-bl','smk65-pos','[\"ROLE_PLANNER\"]','smoke','0',0)" >/dev/null 2>&1
+SQL "UPDATE hr_employee SET POS_ID='smk65-pos' WHERE USER_ID='smk65-plain'" >/dev/null 2>&1
+G65=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/generate)
+EQ "段65 任务生成" "$G65" "200"
+T65=$(SQL "SELECT ID FROM erp_admin_uar_task ORDER BY CREATE_DATE DESC LIMIT 1")
+[ -n "$T65" ] && ok "段65 任务落库（$T65）" || bad "UAR 任务未落库"
+I65P=$(SQL "SELECT COUNT(*) FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-priv'")
+[ "${I65P:-0}" -ge 1 ] && ok "段65 特权账号 100% 进清单" || bad "特权账号未进清单"
+I65S=$(SQL "SELECT COUNT(*) FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-sens'")
+[ "${I65S:-0}" -ge 1 ] && ok "段65 敏感账号 100% 进清单" || bad "敏感账号未进清单"
+I65N=$(SQL "SELECT COUNT(*) FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-plain'")
+EQ "段65 普通基线内自动通过" "$I65N" "0"
+# 同周期重复生成 422
+G65D=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/generate)
+EQ "段65 同周期重复生成 422" "$G65D" "422"
+# 复核人回落：priv 无汇报线 → ADMIN 兜底
+I65RV=$(SQL "SELECT COALESCE(REVIEWER_ROLE,'-') FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-priv' LIMIT 1")
+EQ "段65 无汇报线 ADMIN 兜底" "$I65RV" "ROLE_ADMIN"
+
+# ---- 65.2 快照三异常 + 判定 422/403 + 逐项 ----
+# plain 无写操作 → UNUSED（虽然基线内不进清单，此处换 sens 验证：sens 无写操作 + 无基线 → UNUSED+BEYOND）
+I65SNAP=$(SQL "SELECT SNAPSHOT_JSON FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-sens' LIMIT 1")
+CONTAINS "段65 快照 UNUSED 标记" "$I65SNAP" "UNUSED"
+CONTAINS "段65 快照超基线标记" "$I65SNAP" "BEYOND_BASELINE"
+IT65=$(SQL "SELECT ID FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-sens' LIMIT 1")
+# 判定 422：理由过短（敏感角色保留须理由）
+J65B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"judgment":"KEEP","reason":"留"}' $B/api/system/uar/items/$IT65/judge)
+EQ "段65 保留理由过短 422" "$J65B" "422"
+# 判定 OK：RECLAIM（无理由要求）
+J65=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"judgment":"RECLAIM"}' $B/api/system/uar/items/$IT65/judge)
+EQ "段65 判定收回" "$J65" "200"
+# 特权项也判收回（测回收绕守卫——admin 角色无台账走直删）
+IT65V=$(SQL "SELECT ID FROM erp_admin_uar_item WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-priv' LIMIT 1")
+BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"judgment":"RECLAIM"}' $B/api/system/uar/items/$IT65V/judge >/dev/null
+
+# ---- 65.3 回收执行 ----
+RC65=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/items/$IT65/reclaim)
+EQ "段65 回收执行" "$RC65" "200"
+F65=$(SQL "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_role r ON r.ID=ur.ROLE_ID WHERE ur.USER_ID='smk65-sens' AND r.ROLE_CODE='ROLE_COST_ACCOUNTANT'")
+EQ "段65 回收移除投影（无台账直删）" "$F65" "0"
+E65=$(SQL "SELECT EXEC_STATUS FROM erp_admin_uar_item WHERE ID='$IT65'")
+EQ "段65 项置已执行" "$E65" "EXECUTED"
+# 幂等
+RC65I=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/items/$IT65/reclaim)
+EQ "段65 回收幂等" "$RC65I" "200"
+
+# ---- 65.4 报告：汇总 + ADMIN 确认 + 内审会签归档 ----
+# 先把剩余项判完（100% 覆盖）
+SQL "UPDATE erp_admin_uar_item SET JUDGMENT='KEEP', JUDGE_REASON='冒烟全量保留业务理由', JUDGED_AT=NOW(), EXEC_STATUS='SKIPPED', UPDATE_DATE=NOW() WHERE TASK_ID='$T65' AND JUDGMENT IS NULL" >/dev/null 2>&1
+SM65=$(C -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/$T65/summarize | J "int(d['data']['coverageRate'])")
+EQ "段65 覆盖率 100" "$SM65" "100"
+# 单签不归档：未确认先会签 → 422
+SG65B=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/$T65/sign)
+EQ "段65 未确认会签 422" "$SG65B" "422"
+CF65=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/$T65/confirm)
+EQ "段65 ADMIN 确认" "$CF65" "200"
+SG65=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/uar/tasks/$T65/sign)
+EQ "段65 内审会签归档" "$SG65" "200"
+A65=$(SQL "SELECT ARCHIVED FROM erp_admin_uar_report WHERE TASK_ID='$T65'")
+EQ "段65 报告已归档" "$A65" "1"
+T65ST=$(SQL "SELECT STATUS FROM erp_admin_uar_task WHERE ID='$T65'")
+EQ "段65 任务 ARCHIVED" "$T65ST" "ARCHIVED"
+
+# ---- 65.5 逾期升级（回拨新任务截止）----
+SQL "UPDATE erp_admin_uar_task SET STATUS='REVIEWING', DUE_AT=DATE_ADD(NOW(), INTERVAL 1 DAY), ESCALATED_AT=NULL, REMIND_AT=NULL WHERE ID='$T65'" >/dev/null 2>&1
+SQL "UPDATE erp_admin_uar_item SET JUDGMENT=NULL, JUDGED_AT=NULL WHERE TASK_ID='$T65' AND TARGET_USER_ID='smk65-priv'" >/dev/null 2>&1
+SW65=$(C -X POST -H "$(A $TADM)" $B/api/system/uar/sweep-overdue | J "d['data']['escalated']")
+[ "${SW65:-0}" -ge 1 ] && ok "段65 逾期升级触发" || bad "逾期升级未触发（$SW65）"
+SW65B=$(C -X POST -H "$(A $TADM)" $B/api/system/uar/sweep-overdue | J "d['data']['escalated']")
+EQ "段65 升级幂等" "$SW65B" "0"
+
+# ---- 65.6 页面结构（16.6 前端）----
+EQ "段65 页面四 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/access-review/index.vue)" "4"
+EQ "段65 四条路由" "$(grep -c /m/16.6 frontend/src/router/index.js)" "4"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM erp_admin_uar_report" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_uar_item" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_uar_task" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk65%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk65%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE EMP_NO LIKE 'SMK65%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_position_baseline WHERE POS_ID='smk65-pos'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='UarReview'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk65-%'; SET @audit_bypass=0" >/dev/null 2>&1
+
+echo "段 65 权限复核 16.6 追加完成"
+
+# ==================================================================== 段 66：审计日志 16.6（add-audit-log-console）
+echo "== 段 66 审计日志 16.7（M16-7）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk66-%' OR FIELD_NAME LIKE 'FORENSIC%'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_audit_tamper" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_forensic_package" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_forensic_request WHERE ID LIKE 'smk66-%' OR APPLY_BY IN (SELECT ID FROM (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk66-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='AuditTamper'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk66-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_mask_rule WHERE CODE LIKE 'SMK66%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk66-%'" >/dev/null 2>&1
+
+# ---- 造数：申请人/内审/DPO（admin 已持全部三角色兜底；此处造专职签署人验证角色校验）----
+for U in "smk66-app:smk66app:冒烟66申请人" "smk66-aud:smk66aud:冒烟66内审" "smk66-dpo:smk66dpo:冒烟66DPO"; do
+  UID66="${U%%:*}"; REST="${U#*:}"; UN66="${REST%%:*}"; NN66="${REST#*:}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UID66','$UN66',PASSWORD,'$NN66','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+done
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk66-ur-aud','smk66-aud',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_UAR_AUDITOR'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk66-ur-dpo','smk66-dpo',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DPO'" >/dev/null 2>&1
+# 签署人登录（造数账号复制 admin 密码）
+TA66AUD=$(C -H 'Content-Type: application/json' -d '{"username":"smk66aud","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TA66DPO=$(C -H 'Content-Type: application/json' -d '{"username":"smk66dpo","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TA66AUD:-}" ] && ok "段66 内审登录" || bad "内审登录失败"
+[ -n "${TA66DPO:-}" ] && ok "段66 DPO 登录" || bad "DPO 登录失败"
+# 审计造数（含手机号/身份证供脱敏断言）
+SQL "INSERT INTO hr_change_log (ID,EMP_ID,FIELD_NAME,OLD_VALUE,NEW_VALUE,REASON,CHANGE_BY,CHANGE_AT)
+     VALUES ('smk66-log1','smk66-app','EMP_STATUS','在职','13812345678','身份证 310101199001011234 冒烟66','smk66', DATE_SUB(NOW(), INTERVAL 1 HOUR))" >/dev/null 2>&1
+
+# ---- 66.1 检索 + 脱敏 ----
+S66=$(C -H "$(A $TADM)" "$B/api/system/audit-logs?empId=smk66-app" | J "d['data']['total']")
+EQ "段66 检索命中" "$S66" "1"
+S66V=$(C -H "$(A $TADM)" "$B/api/system/audit-logs?empId=smk66-app" | J "d['data']['rows'][0]['newValue']")
+EQ "段66 手机号脱敏" "$S66V" "138****5678"
+S66R=$(C -H "$(A $TADM)" "$B/api/system/audit-logs?empId=smk66-app" | J "d['data']['rows'][0]['reason']")
+CONTAINS "段66 身份证脱敏" "$S66R" "310101********1234"
+# 时间范围过滤
+F66=$(C -H "$(A $TADM)" "$B/api/system/audit-logs?empId=smk66-app&from=$(date -v+1H '+%Y-%m-%d %H:%M:%S' | sed 's/ /%20/')" | J "d['data']['total']")
+EQ "段66 未来范围不命中" "$F66" "0"
+
+# ---- 66.2 触发器：直连删改拒绝 + 尝试留痕 + 豁免放行留痕 ----
+T66U=$(docker exec -i -e MYSQL_PWD=root123 erp-mysql mysql --default-character-set=utf8mb4 -uroot erp -e "UPDATE hr_change_log SET NEW_VALUE='x' WHERE ID='smk66-log1'" 2>&1)
+CONTAINS "段66 直连 UPDATE 被拒" "$T66U" "禁止修改"
+T66D=$(docker exec -i -e MYSQL_PWD=root123 erp-mysql mysql --default-character-set=utf8mb4 -uroot erp -e "DELETE FROM hr_change_log WHERE ID='smk66-log1'" 2>&1)
+CONTAINS "段66 直连 DELETE 被拒" "$T66D" "禁止删除"
+T66T=$(SQL "SELECT COUNT(*) FROM erp_ops_audit_tamper WHERE ACTION_TYPE='UPDATE' AND BYPASS='0'")
+[ "${T66T:-0}" -ge 1 ] && ok "段66 尝试表留痕（拒绝）" || bad "尝试表未留痕"
+# 豁免放行仍留痕
+SQL "SET @audit_bypass=1; UPDATE hr_change_log SET NEW_VALUE='bypass-ok' WHERE ID='smk66-log1'; SET @audit_bypass=0" >/dev/null 2>&1
+T66B=$(SQL "SELECT COUNT(*) FROM erp_ops_audit_tamper WHERE ACTION_TYPE='UPDATE' AND BYPASS='1'")
+[ "${T66B:-0}" -ge 1 ] && ok "段66 豁免放行仍留痕" || bad "豁免未留痕"
+T66V=$(SQL "SELECT NEW_VALUE FROM hr_change_log WHERE ID='smk66-log1'")
+EQ "段66 豁免放行生效" "$T66V" "bypass-ok"
+# 告警扫描（内审收通知 + 幂等）
+SW66=$(C -H "$(A $TADM)" $B/api/system/audit-logs/tamper/sweep | J "d['data']['notified']")
+[ "${SW66:-0}" -ge 1 ] && ok "段66 告警扫描通知" || bad "告警未通知（$SW66）"
+SW66B=$(C -H "$(A $TADM)" $B/api/system/audit-logs/tamper/sweep | J "d['data']['fresh']")
+EQ "段66 告警幂等" "$SW66B" "0"
+
+# ---- 66.3 脱敏规则 CRUD ----
+MR66=$(C -H "$(A $TADM)" $B/api/system/mask-rules | J "len(d['data'])")
+[ "${MR66:-0}" -ge 3 ] && ok "段66 种子三规则" || bad "规则数不足（$MR66）"
+# 非法正则 422
+MR66B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK66BAD","name":"坏规则","pattern":"([","maskTemplate":"x","status":"1"}' $B/api/system/mask-rules)
+EQ "段66 非法正则 422" "$MR66B" "422"
+# 新建规则即刻生效
+MR66C=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK66NEW","name":"冒烟新规则","pattern":"(SMK\\d{4})","maskTemplate":"**$1","status":"1"}' $B/api/system/mask-rules)
+EQ "段66 新建规则" "$MR66C" "200"
+SQL "INSERT INTO hr_change_log (ID,EMP_ID,FIELD_NAME,OLD_VALUE,CHANGE_BY,CHANGE_AT)
+     VALUES ('smk66-log2','smk66-app','MASK_TEST','SMK1234','smk66',NOW())" >/dev/null 2>&1
+M66M=$(C -H "$(A $TADM)" "$B/api/system/audit-logs?empId=smk66-app&fieldName=MASK_TEST" | J "d['data']['rows'][0]['oldValue']")
+EQ "段66 新规则即刻生效" "$M66M" "**SMK1234"
+# 清理测试规则（逻辑删经 API）
+MR66ID=$(SQL "SELECT ID FROM erp_ops_mask_rule WHERE CODE='SMK66NEW'")
+C -X DELETE -H "$(A $TADM)" "$B/api/system/mask-rules/$MR66ID" >/dev/null
+
+# ---- 66.4 取证双签（顺序/自签）----
+RA66=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"purpose":"冒烟66取证调阅申请","rangeFrom":"2020-01-01 00:00:00","rangeTo":"2030-12-31 23:59:59","objectFilter":"smk66"}' $B/api/system/forensic/requests | J "d['data']['id']")
+[ -n "$RA66" ] && ok "段66 调阅申请（$RA66）" || bad "申请未落库"
+# admin（申请人）自签 → 403
+SG66S=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"opinion":"自签"}' $B/api/system/forensic/requests/$RA66/sign-audit)
+EQ "段66 申请人自签 403" "$SG66S" "403"
+# DPO 先签 → 422（内审未签）
+DPO66=$(BIZ -X POST -H "$(A $TA66DPO)" -H 'Content-Type: application/json' -d '{"opinion":"先签"}' $B/api/system/forensic/requests/$RA66/sign-dpo)
+EQ "段66 DPO 先签 422" "$DPO66" "422"
+# 非签署角色 → 403（申请人无 UAR_AUDITOR…admin 持有，改用无角色账号不造，跳过）
+# 内审签（smk66-aud 持 UAR_AUDITOR）
+SG66A=$(BIZ -X POST -H "$(A $TA66AUD)" -H 'Content-Type: application/json' -d '{"opinion":"内审核验通过"}' $B/api/system/forensic/requests/$RA66/sign-audit)
+EQ "段66 内审签署" "$SG66A" "200"
+# 内审重复签 422
+SG66R=$(BIZ -X POST -H "$(A $TA66AUD)" -H 'Content-Type: application/json' -d '{"opinion":"重复"}' $B/api/system/forensic/requests/$RA66/sign-audit)
+EQ "段66 内审重复签 422" "$SG66R" "422"
+# DPO 后签 → READY
+SG66D=$(BIZ -X POST -H "$(A $TA66DPO)" -H 'Content-Type: application/json' -d '{"opinion":"DPO 核验通过"}' $B/api/system/forensic/requests/$RA66/sign-dpo)
+EQ "段66 DPO 后签" "$SG66D" "200"
+ST66=$(SQL "SELECT STATUS FROM erp_ops_forensic_request WHERE ID='$RA66'")
+EQ "段66 双签齐 READY" "$ST66" "READY"
+
+# ---- 66.5 生成包 + 下载封条 + 过期销毁 ----
+GP66=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/forensic/requests/$RA66/packages)
+EQ "段66 生成包" "$GP66" "200"
+PK66=$(SQL "SELECT ID FROM erp_ops_forensic_package WHERE REQUEST_ID='$RA66'")
+[ -n "$PK66" ] && ok "段66 包落库（$PK66）" || bad "取证包未落库"
+T66TR=$(SQL "SELECT TOTAL_ROWS FROM erp_ops_forensic_package WHERE ID='$PK66'")
+[ "${T66TR:-0}" -ge 1 ] && ok "段66 封条总条数（$T66TR）" || bad "总条数为 0"
+# 下载 200 + 响应头校验和
+DL66=$(C -H "$(A $TADM)" -o /dev/null -w "%{http_code}" "$B/api/system/forensic/packages/$PK66/shards/0")
+EQ "段66 分片下载" "$DL66" "200"
+# 下载留痕
+DL66A=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='FORENSIC_DOWNLOAD'")
+[ "${DL66A:-0}" -ge 1 ] && ok "段66 下载自身留痕" || bad "下载未留痕"
+# 封条失效：篡改源数据后下载 500
+SQL "SET @audit_bypass=1; UPDATE hr_change_log SET NEW_VALUE='tampered' WHERE ID='smk66-log1'; SET @audit_bypass=0" >/dev/null 2>&1
+DL66T=$(BIZ -H "$(A $TADM)" "$B/api/system/forensic/packages/$PK66/shards/0")
+EQ "段66 封条失效拒下载" "$DL66T" "500"
+# 使用完毕确认（幂等）+ 销毁后下载拒
+CU66=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/forensic/packages/$PK66/confirm-used)
+EQ "段66 确认销毁" "$CU66" "200"
+CU66I=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/forensic/packages/$PK66/confirm-used)
+EQ "段66 销毁幂等" "$CU66I" "200"
+DL66X=$(BIZ -H "$(A $TADM)" "$B/api/system/forensic/packages/$PK66/shards/0")
+EQ "段66 销毁后下载拒" "$DL66X" "422"
+# 过期 sweep：新包回拨过期 → sweep 销毁 → 幂等
+RA66B=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"purpose":"冒烟66过期销毁场景申请","rangeFrom":"2020-01-01 00:00:00","rangeTo":"2030-12-31 23:59:59"}' $B/api/system/forensic/requests | J "d['data']['id']")
+SG66A2=$(BIZ -X POST -H "$(A $TA66AUD)" -H 'Content-Type: application/json' -d '{"opinion":"同意"}' $B/api/system/forensic/requests/$RA66B/sign-audit)
+SG66D2=$(BIZ -X POST -H "$(A $TA66DPO)" -H 'Content-Type: application/json' -d '{"opinion":"同意"}' $B/api/system/forensic/requests/$RA66B/sign-dpo)
+BIZ -X POST -H "$(A $TADM)" $B/api/system/forensic/requests/$RA66B/packages >/dev/null
+PK66B=$(SQL "SELECT ID FROM erp_ops_forensic_package WHERE REQUEST_ID='$RA66B'")
+SQL "UPDATE erp_ops_forensic_package SET EXPIRE_AT=DATE_SUB(NOW(), INTERVAL 1 HOUR) WHERE ID='$PK66B'" >/dev/null 2>&1
+SW66E=$(C -X POST -H "$(A $TADM)" $B/api/system/forensic/sweep-expired | J "d['data']['destroyed']")
+[ "${SW66E:-0}" -ge 1 ] && ok "段66 过期销毁" || bad "过期未销毁（$SW66E）"
+SW66F=$(C -X POST -H "$(A $TADM)" $B/api/system/forensic/sweep-expired | J "d['data']['destroyed']")
+EQ "段66 sweep 幂等" "$SW66F" "0"
+
+# ---- 66.6 页面结构（16.7 前端）----
+EQ "段66 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/audit-log/index.vue)" "3"
+EQ "段66 三条路由" "$(grep -c /m/16.7 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'smk66-%' OR FIELD_NAME LIKE 'MASK_TEST' OR FIELD_NAME LIKE 'FORENSIC%'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_audit_tamper" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_forensic_package" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_forensic_request WHERE ID LIKE 'smk66-%' OR APPLY_BY IN (SELECT ID FROM (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk66-%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='AuditTamper'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk66-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk66-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_mask_rule WHERE CODE LIKE 'SMK66%'" >/dev/null 2>&1
+
+echo "段 66 审计日志 16.7 追加完成"
+
+# ==================================================================== 段 67：越权检测 16.8（add-authz-detection-console）
+echo "== 段 67 越权检测 16.8（M16-8）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE FROM erp_authz_incident" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='AuthzAlert'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='SECURITY_EVENT' AND EMP_ID IN (SELECT ID FROM (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk67%') t); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk67%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk67%'" >/dev/null 2>&1
+
+# ---- 造数：目标账号（无特权角色，用于 403 风暴）----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk67-tgt','smk67tgt',PASSWORD,'冒烟67目标','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+T67=$(C -H 'Content-Type: application/json' -d '{"username":"smk67tgt","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T67:-}" ] && ok "段67 目标账号登录" || bad "目标账号登录失败"
+# 阈值参数就位
+P67=$(SQL "SELECT PARAM_VALUE FROM erp_sys_param WHERE PARAM_KEY='AUTHZ_DENY_BURST_THRESHOLD' AND DEL_FLAG='0'")
+EQ "段67 阈值参数登记" "$P67" "10"
+
+# ---- 67.1 403 风暴（路 B：URL 级 HTTP 403 计数）达阈值触发 ----
+for i in $(seq 1 10); do
+  C -H "Authorization: Bearer $T67" -o /dev/null "$B/api/system/authz-incidents" >/dev/null 2>&1
+done
+I67=$(SQL "SELECT COUNT(*) FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt'")
+EQ "段67 达阈值触发事件" "$I67" "1"
+H67=$(SQL "SELECT HIT_COUNT FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt'")
+[ "${H67:-0}" -ge 10 ] && ok "段67 触发计数（$H67 ≥ 10）" || bad "触发计数不足（$H67）"
+S67=$(SQL "SELECT STATUS FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt'")
+EQ "段67 事件 ACTIVE" "$S67" "ACTIVE"
+X67=$(SQL "SELECT EXPIRE_AT > DATE_ADD(NOW(), INTERVAL 6 DAY) FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt'")
+EQ "段67 到期 +7 天" "$X67" "1"
+# 双角色告警（ADMIN + 内审）
+N67=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='AuthzAlert'")
+[ "${N67:-0}" -ge 2 ] && ok "段67 双角色告警（$N67 条）" || bad "告警不足（$N67）"
+# SECURITY_EVENT 审计
+A67=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='SECURITY_EVENT' AND EMP_ID='smk67-tgt'")
+[ "${A67:-0}" -ge 1 ] && ok "段67 SECURITY_EVENT 审计" || bad "审计未落库"
+# 幂等：风暴继续不新增
+for i in $(seq 1 5); do
+  C -H "Authorization: Bearer $T67" -o /dev/null "$B/api/system/authz-incidents" >/dev/null 2>&1
+done
+I67B=$(SQL "SELECT COUNT(*) FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt'")
+EQ "段67 存续期幂等" "$I67B" "1"
+
+# ---- 67.2 降权拦截：敏感 403 / 非敏感 200 / 登录不受阻 ----
+R67=$(C -H "Authorization: Bearer $T67" -o /dev/null -w "%{http_code}" "$B/api/system/roles")
+EQ "段67 敏感路径被拦" "$R67" "403"
+R67M=$(C -H "Authorization: Bearer $T67" "$B/api/system/roles" | J "d['message']")
+CONTAINS "段67 降权提示语" "$R67M" "临时降权中"
+G67=$(C -H "Authorization: Bearer $T67" -o /dev/null -w "%{http_code}" "$B/api/auth/info")
+EQ "段67 非敏感路径放行" "$G67" "200"
+L67=$(C -H 'Content-Type: application/json' -d '{"username":"smk67tgt","password":"Admin@123"}' $B/api/auth/login | J "d['code']")
+EQ "段67 降权不阻断登录" "$L67" "200"
+
+# ---- 67.3 处置：结论 422 → 误用 → 重复 422 → 手动恢复 ----
+ID67=$(SQL "SELECT ID FROM erp_authz_incident WHERE TARGET_USER_ID='smk67-tgt' LIMIT 1")
+D67B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"action":"MISUSE","conclusion":"太短"}' $B/api/system/authz-incidents/$ID67/dispose)
+EQ "段67 结论过短 422" "$D67B" "422"
+D67=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"action":"MISUSE","conclusion":"联系本人核实为批量查询脚本未加组织过滤，非恶意","trainingFlag":"1"}' $B/api/system/authz-incidents/$ID67/dispose)
+EQ "段67 误用处置" "$D67" "200"
+D67S=$(SQL "SELECT CONCAT(DISPOSITION,'|',STATUS,'|',TRAINING_FLAG) FROM erp_authz_incident WHERE ID='$ID67'")
+EQ "段67 误用留结论保持降权" "$D67S" "MISUSE|ACTIVE|1"
+D67R=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"action":"RESTORE","conclusion":"重复处置应被拒绝的足够长度结论"}' $B/api/system/authz-incidents/$ID67/dispose)
+EQ "段67 重复处置 422" "$D67R" "422"
+RS67=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"reason":"冒烟手动恢复"}' $B/api/system/authz-incidents/$ID67/restore)
+EQ "段67 手动提前恢复" "$RS67" "200"
+RS67S=$(SQL "SELECT CONCAT(STATUS,'|',RESTORE_REASON) FROM erp_authz_incident WHERE ID='$ID67'")
+CONTAINS "段67 恢复状态与方式" "$RS67S" "RESTORED"
+# 恢复后敏感放行（降权提示消失）
+G67R=$(C -H "Authorization: Bearer $T67" "$B/api/system/roles" | J "d['message']")
+case "$G67R" in *临时降权中*) bad "恢复后仍降权拦截" ;; *) ok "段67 恢复后敏感放行" ;; esac
+
+# ---- 67.4 恶意处置联动停用（16.1 强停 STATUS='0'）----
+SQL "INSERT INTO erp_authz_incident (ID,TARGET_USER_ID,HIT_COUNT,THRESHOLD,TRIGGERED_AT,EXPIRE_AT,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk67-inc2','smk67-tgt',12,10,NOW(),DATE_ADD(NOW(), INTERVAL 7 DAY),'ACTIVE','smoke',NOW(),'0',0)" >/dev/null 2>&1
+D67M=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"action":"MALICIOUS","conclusion":"确认恶意越权探测行为，冻结账号并启动安全调查"}' $B/api/system/authz-incidents/smk67-inc2/dispose)
+EQ "段67 恶意处置" "$D67M" "200"
+U67=$(SQL "SELECT STATUS FROM erp_admin_user WHERE ID='smk67-tgt'")
+EQ "段67 联动停用 STATUS=0" "$U67" "0"
+I67M=$(SQL "SELECT STATUS FROM erp_authz_incident WHERE ID='smk67-inc2'")
+EQ "段67 事件 DISABLED" "$I67M" "DISABLED"
+
+# ---- 67.5 到期恢复 sweep（幂等）----
+SQL "INSERT INTO erp_authz_incident (ID,TARGET_USER_ID,HIT_COUNT,THRESHOLD,TRIGGERED_AT,EXPIRE_AT,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk67-inc3','smk67-tgt',10,10,DATE_SUB(NOW(), INTERVAL 8 DAY),DATE_SUB(NOW(), INTERVAL 1 DAY),'ACTIVE','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SW67=$(C -X POST -H "$(A $TADM)" $B/api/system/authz-incidents/sweep-restore | J "d['data']['restored']")
+[ "${SW67:-0}" -ge 1 ] && ok "段67 到期恢复（$SW67）" || bad "到期未恢复（$SW67）"
+SW67B=$(C -X POST -H "$(A $TADM)" $B/api/system/authz-incidents/sweep-restore | J "d['data']['restored']")
+EQ "段67 sweep 幂等" "$SW67B" "0"
+I67R=$(SQL "SELECT STATUS FROM erp_authz_incident WHERE ID='smk67-inc3'")
+EQ "段67 到期行 RESTORED" "$I67R" "RESTORED"
+
+# ---- 67.6 页面结构（16.8 前端）----
+EQ "段67 页面两 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/authz-detection/index.vue)" "2"
+EQ "段67 两条路由" "$(grep -c /m/16.8 frontend/src/router/index.js)" "2"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM erp_authz_incident" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='AuthzAlert'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='SECURITY_EVENT' AND EMP_ID IN (SELECT ID FROM (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk67%') t); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk67%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk67%'" >/dev/null 2>&1
+
+echo "段 67 越权检测 16.8 追加完成"
+
+# ==================================================================== 段 68：服务报告 16.9（add-sla-report-console）
+echo "== 段 68 服务报告 16.9（M16-9）开始 =="
+
+P68="2026-07"      # 造数月（确定性）
+E68="2026-06"      # 空月（无造数）
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE FROM erp_sla_report" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='SlaPublishViolation'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME LIKE 'SLA_REPORT%' OR (FIELD_NAME='SECURITY_EVENT' AND NEW_VALUE='PUBLISH_BLOCKED'); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_call_log WHERE CALLER='smk68'" >/dev/null 2>&1
+
+# ---- 造数：当月 100 次调用（98 个 2xx + 2 个 500）----
+SQL "INSERT INTO erp_intf_call_log (ID,CALLER,REQ_ID,API_PATH,RESP_CODE,COST_MS,CALL_AT,CREATE_BY,DEL_FLAG,VER_NO)
+     SELECT CONCAT('smk68-l', t1.n*10 + t2.n), 'smk68', CONCAT('req-', t1.n*10 + t2.n),
+            '/api/sla-test', 200, 100 + ((t1.n*10 + t2.n) MOD 50),
+            DATE_ADD('2026-07-05 10:00:00', INTERVAL (t1.n*10 + t2.n) MINUTE), 'smoke', '0', 0
+     FROM (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5
+           UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) t1,
+          (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5
+           UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) t2
+     WHERE t1.n*10 + t2.n < 98" >/dev/null 2>&1
+SQL "INSERT INTO erp_intf_call_log (ID,CALLER,REQ_ID,API_PATH,RESP_CODE,COST_MS,CALL_AT,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk68-e1','smk68','req-e1','/api/sla-test',500,300,'2026-07-05 12:00:00','smoke','0',0),
+            ('smk68-e2','smk68','req-e2','/api/sla-test',500,300,'2026-07-05 12:01:00','smoke','0',0)" >/dev/null 2>&1
+C68=$(SQL "SELECT COUNT(*) FROM erp_intf_call_log WHERE CALLER='smk68'")
+EQ "段68 造数 100 次调用" "$C68" "100"
+
+# ---- 68.1 生成与指标 ----
+G68=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"period\":\"$P68\"}" $B/api/system/sla-reports/generate)
+EQ "段68 按月生成" "$G68" "200"
+M68=$(SQL "SELECT METRICS_JSON FROM erp_sla_report WHERE PERIOD='$P68'")
+CONTAINS "段68 可用率 98%" "$M68" '"value":"98"'
+CONTAINS "段68 调用量 100" "$M68" '"value":"100"'
+CONTAINS "段68 未达标标记" "$M68" '"pass":false'
+A68=$(SQL "SELECT DATA_AS_OF IS NOT NULL FROM erp_sla_report WHERE PERIOD='$P68'")
+EQ "段68 数据截止时间戳" "$A68" "1"
+# 空月兜底
+G68E=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"period\":\"$E68\"}" $B/api/system/sla-reports/generate)
+EQ "段68 空月生成" "$G68E" "200"
+M68E=$(SQL "SELECT METRICS_JSON FROM erp_sla_report WHERE PERIOD='$E68'")
+CONTAINS "段68 空月不适用" "$M68E" '"value":"不适用"'
+# DRAFT 覆盖重生成
+G68R=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"period\":\"$P68\"}" $B/api/system/sla-reports/generate)
+EQ "段68 DRAFT 覆盖重生成" "$G68R" "200"
+# 非法月份 422
+G68B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"period":"2026-13"}' $B/api/system/sla-reports/generate)
+EQ "段68 非法月份 422" "$G68B" "422"
+
+# ---- 68.2 发布门禁（BR-5.6-16 / C-5.6-05）----
+ID68=$(SQL "SELECT ID FROM erp_sla_report WHERE PERIOD='$P68'")
+# DRAFT 下载 422（未定稿不外流）
+DL68B=$(BIZ -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/download)
+EQ "段68 DRAFT 下载 422" "$DL68B" "422"
+# 未归档发布 → 422 + 违规审计 + 双通知
+PU68B=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/publish)
+EQ "段68 未归档发布 422" "$PU68B" "422"
+V68=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='SECURITY_EVENT' AND EMP_ID='$ID68' AND NEW_VALUE='PUBLISH_BLOCKED'")
+[ "${V68:-0}" -ge 1 ] && ok "段68 违规审计存活（$V68）" || bad "违规审计缺失"
+N68=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='SlaPublishViolation'")
+[ "${N68:-0}" -ge 2 ] && ok "段68 违规双通知（$N68）" || bad "通知不足（$N68）"
+# 归档
+AR68=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/archive)
+EQ "段68 归档" "$AR68" "200"
+ST68=$(SQL "SELECT STATUS FROM erp_sla_report WHERE ID='$ID68'")
+EQ "段68 状态 ARCHIVED" "$ST68" "ARCHIVED"
+# 归档后重生成 422（版本锁定）
+G68L=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"period\":\"$P68\"}" $B/api/system/sla-reports/generate)
+EQ "段68 归档后重生成 422" "$G68L" "422"
+# 重复归档 422
+AR68R=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/archive)
+EQ "段68 重复归档 422" "$AR68R" "422"
+# 归档后发布成功
+PU68=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/publish)
+EQ "段68 归档后发布" "$PU68" "200"
+ST68P=$(SQL "SELECT CONCAT(STATUS,'|',PUBLISH_COUNT) FROM erp_sla_report WHERE ID='$ID68'")
+EQ "段68 状态 PUBLISHED" "$ST68P" "PUBLISHED|1"
+# 重复发布 422
+PU68R=$(BIZ -X POST -H "$(A $TADM)" $B/api/system/sla-reports/$ID68/publish)
+EQ "段68 重复发布 422" "$PU68R" "422"
+
+# ---- 68.3 CSV 下载（归档/发布后）----
+curl -s --noproxy '*' --max-time 30 -H "Authorization: Bearer $TADM" -o /tmp/sla68.csv -w "%{http_code}" "$B/api/system/sla-reports/$ID68/download" > /tmp/sla68.code
+EQ "段68 CSV 下载 200" "$(cat /tmp/sla68.code)" "200"
+grep -q "AVAILABILITY" /tmp/sla68.csv && ok "段68 CSV 含指标行" || bad "CSV 缺指标行"
+grep -q "指标编码,指标名称,指标值" /tmp/sla68.csv && ok "段68 CSV 固定列序" || bad "CSV 列序错"
+DL68A=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='SLA_REPORT_DOWNLOADED'")
+[ "${DL68A:-0}" -ge 1 ] && ok "段68 下载留痕" || bad "下载未留痕"
+
+# ---- 68.4 sweep 补缺/跳过 ----
+SW68=$(C -X POST -H "$(A $TADM)" $B/api/system/sla-reports/sweep | J "d['data']['generated']")
+EQ "段68 sweep 补生成上月" "$SW68" "1"
+SW68B=$(C -X POST -H "$(A $TADM)" $B/api/system/sla-reports/sweep | J "d['data']['skipped']")
+EQ "段68 sweep 已存在跳过" "$SW68B" "1"
+
+# ---- 68.5 页面结构（16.9 前端）----
+EQ "段68 页面两 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/sla-report/index.vue)" "2"
+EQ "段68 两条路由" "$(grep -c /m/16.9 frontend/src/router/index.js)" "2"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM erp_sla_report" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='SlaPublishViolation'" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME LIKE 'SLA_REPORT%' OR (FIELD_NAME='SECURITY_EVENT' AND NEW_VALUE='PUBLISH_BLOCKED'); SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_call_log WHERE CALLER='smk68'" >/dev/null 2>&1
+rm -f /tmp/sla68.csv /tmp/sla68.code
+
+echo "段 68 服务报告 16.9 追加完成"
+
+# ==================================================================== 段 69：工作日历三缺口 16.11（close-work-calendar-gaps）
+echo "== 段 69 工作日历三缺口 16.11（M16-11）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE FROM hr_holiday_calendar WHERE HOLIDAY_DATE IN ('2029-01-01','2029-01-05','2029-03-11')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_work_calendar WHERE CAL_DATE IN ('2029-01-01','2029-01-05','2029-03-11')" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SYNC'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_shift WHERE SHIFT_CODE='SMK69SH'" >/dev/null 2>&1
+
+# ---- 69.1 假日源头维护（TYPE 三值 + 日期唯一）----
+H69B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"holidayDate":"2029-01-01","name":"冒烟元旦","type":"BAD_TYPE"}' $B/api/system/calendar/holidays)
+EQ "段69 非法 TYPE 422" "$H69B" "422"
+H69=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"holidayDate":"2029-01-01","name":"冒烟元旦","type":"STATUTORY"}' $B/api/system/calendar/holidays | J "d['code']")
+EQ "段69 新增法定假" "$H69" "200"
+H69D=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"holidayDate":"2029-01-01","name":"重复","type":"RESTDAY"}' $B/api/system/calendar/holidays)
+EQ "段69 重复日期 422" "$H69D" "422"
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"holidayDate":"2029-01-05","name":"冒烟调休","type":"WORKDAY"}' $B/api/system/calendar/holidays >/dev/null
+C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"holidayDate":"2029-03-11","name":"冒烟周日假","type":"RESTDAY"}' $B/api/system/calendar/holidays >/dev/null
+
+# 人工维护行（HR 表无记录 → 同步不触碰）
+SQL "INSERT IGNORE INTO erp_admin_work_calendar (ID,CAL_DATE,IS_WORKDAY,REMARK,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk69-manual','2029-02-14','1','人工维护行','smoke','0',0)" >/dev/null 2>&1
+
+# ---- 69.2 同步映射（STATUTORY/RESTDAY→非工作日、WORKDAY 调休→工作日 + 备注 + 幂等 + 人工行不动）----
+# 先把 2029-01-05 种子外日期造为反向值，验证同步改写
+SQL "INSERT IGNORE INTO erp_admin_work_calendar (ID,CAL_DATE,IS_WORKDAY,REMARK,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk69-pre','2029-01-05','0','同步前反向值','smoke','0',0)" >/dev/null 2>&1
+SY69=$(C -X POST -H "$(A $TADM)" $B/api/system/calendar/holidays/sync | J "d['data']['affected']")
+[ "${SY69:-0}" -ge 3 ] && ok "段69 同步影响行（$SY69 ≥ 3）" || bad "同步影响行不足（$SY69）"
+W69S=$(SQL "SELECT IS_WORKDAY FROM erp_admin_work_calendar WHERE CAL_DATE='2029-01-01'")
+EQ "段69 STATUTORY→非工作日" "$W69S" "0"
+R69S=$(SQL "SELECT REMARK FROM erp_admin_work_calendar WHERE CAL_DATE='2029-01-01'")
+CONTAINS "段69 备注带假日名" "$R69S" "冒烟元旦"
+W69W=$(SQL "SELECT IS_WORKDAY FROM erp_admin_work_calendar WHERE CAL_DATE='2029-01-05'")
+EQ "段69 WORKDAY 调休→工作日（改写反向值）" "$W69W" "1"
+W69R=$(SQL "SELECT IS_WORKDAY FROM erp_admin_work_calendar WHERE CAL_DATE='2029-03-11'")
+EQ "段69 RESTDAY→非工作日" "$W69R" "0"
+R69M=$(SQL "SELECT CONCAT(IS_WORKDAY,'|',REMARK) FROM erp_admin_work_calendar WHERE CAL_DATE='2029-02-14'")
+EQ "段69 人工行不触碰" "$R69M" "1|人工维护行"
+SY69B=$(C -X POST -H "$(A $TADM)" $B/api/system/calendar/holidays/sync | J "d['data']['affected']")
+EQ "段69 重复同步幂等（0 变更）" "$SY69B" "0"
+A69=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SYNC'")
+[ "${A69:-0}" -ge 1 ] && ok "段69 同步审计留痕" || bad "同步审计缺失"
+
+# ---- 69.3 同步后日历读取口径（倒排工作日回推由 MrpBackscheduleDbTest 单测覆盖）----
+# 日历区间查询含同步后的假日行（读口径正常）
+Q69=$(C -H "$(A $TADM)" "$B/api/system/calendar?from=2029-01-01&to=2029-01-07" | J "len(d['data'])")
+[ "${Q69:-0}" -ge 2 ] && ok "段69 同步后日历可查（$Q69 行）" || bad "日历查询异常（$Q69）"
+
+# ---- 69.4 班次唯一键（194 迁移残留占码兜底）----
+SQL "INSERT INTO erp_admin_shift (ID,SHIFT_CODE,SHIFT_NAME,START_TIME,END_TIME,HOURS,STATUS,CREATE_BY,DEL_FLAG,VER_NO)
+     VALUES ('smk69-sh1','SMK69SH','冒烟班次','08:00','17:00',8,'0','smoke','0',0)" >/dev/null 2>&1
+SQL "UPDATE erp_admin_shift SET DEL_FLAG='1' WHERE SHIFT_CODE='SMK69SH'" >/dev/null 2>&1
+SH69B=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"shiftCode":"SMK69SH","shiftName":"冒烟占码班次","startTime":"08:00","endTime":"17:00","hours":8}' $B/api/system/calendar/shifts)
+EQ "段69 逻辑删占码 422" "$SH69B" "422"
+SQL "DELETE FROM erp_admin_shift WHERE SHIFT_CODE='SMK69SH'" >/dev/null 2>&1
+
+# ---- 69.5 页面结构（16.11.1 扩展）----
+EQ "段69 页面含同步按钮" "$(grep -c 'doSync' frontend/src/views/system/calendar/WorkCalendar.vue)" "2"
+[ "$(grep -c '法定假日源头' frontend/src/views/system/calendar/WorkCalendar.vue)" -ge 1 ] && ok "段69 页面含假日子区" || bad "假日子区缺失"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM hr_holiday_calendar WHERE HOLIDAY_DATE IN ('2029-01-01','2029-01-05','2029-03-11')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_work_calendar WHERE CAL_DATE IN ('2029-01-01','2029-01-05','2029-02-14','2029-03-11')" >/dev/null 2>&1
+SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SYNC'; SET @audit_bypass=0" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_shift WHERE SHIFT_CODE='SMK69SH'" >/dev/null 2>&1
+
+echo "段 69 工作日历三缺口 16.11 追加完成"
+
+
+
+
+
 
 echo "段 46 知识产权追加完成"
 

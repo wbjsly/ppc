@@ -34,6 +34,15 @@ public class MyBatisPlusConfig {
                 this.strictInsertFill(metaObject, "createDate", LocalDateTime.class, LocalDateTime.now());
                 this.strictInsertFill(metaObject, "updateBy", String.class, SecurityUtils.getCurrentUserId());
                 this.strictInsertFill(metaObject, "updateDate", LocalDateTime.class, LocalDateTime.now());
+                // 审计 IP/终端回填（add-audit-log-console D3）：仅对含对应字段的实体生效
+                if (metaObject.hasSetter("sourceIp")) {
+                    this.strictInsertFill(metaObject, "sourceIp", String.class,
+                            com.erp.security.AuditContext.getIp());
+                }
+                if (metaObject.hasSetter("terminal")) {
+                    this.strictInsertFill(metaObject, "terminal", String.class,
+                            com.erp.security.AuditContext.getTerminal());
+                }
             }
 
             @Override

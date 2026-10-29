@@ -144,19 +144,36 @@ public class DbBootstrap implements InitializingBean, ApplicationRunner {
     }
 
     private void executeSqlScript(String sql) {
-        String[] statements = sql.split(";", -1);
-        for (String stmt : statements) {
-            String trimmed = stmt.trim();
-            if (trimmed.isEmpty()) {
+        // 支持 DELIMITER 指令（191 触发器体含分号，朴素 split(';') 会切碎）：
+        // 行首 DELIMITER <token> 切换语句结束符；缓冲累积至以当前结束符结尾才作为一条语句执行
+        String delimiter = ";";
+        StringBuilder buf = new StringBuilder();
+        for (String line : sql.split("\n", -1)) {
+            String trimmed = line.trim();
+            if (trimmed.toUpperCase().startsWith("DELIMITER ")) {
+                delimiter = trimmed.substring("DELIMITER ".length()).trim();
                 continue;
             }
-            String cleaned = trimmed.replaceAll("(?m)^--.*$", "").trim();
-            if (!cleaned.isEmpty()) {
-                try {
-                    jdbcTemplate.execute(cleaned);
-                } catch (Exception e) {
-                    log.warn("SQL execution warning: {}", e.getMessage());
-                }
+            buf.append(line).append('\n');
+            String content = buf.toString().trim();
+            if (content.endsWith(delimiter)) {
+                executeOneStatement(content.substring(0, content.length() - delimiter.length()));
+                buf.setLength(0);
+            }
+        }
+        String rest = buf.toString().trim();
+        if (!rest.isEmpty()) {
+            executeOneStatement(rest);
+        }
+    }
+
+    private void executeOneStatement(String stmt) {
+        String cleaned = stmt.replaceAll("(?m)^--.*$", "").trim();
+        if (!cleaned.isEmpty()) {
+            try {
+                jdbcTemplate.execute(cleaned);
+            } catch (Exception e) {
+                log.warn("SQL execution warning: {}", e.getMessage());
             }
         }
     }

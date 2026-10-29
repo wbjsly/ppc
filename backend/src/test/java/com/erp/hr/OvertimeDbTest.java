@@ -340,8 +340,9 @@ class OvertimeDbTest {
         assertEquals("1", a2.getIsSpecial());
         assertEquals("项目攻坚", a2.getSpecialReason());
         // GM_SPECIAL 在途计入月累计：34+4=38，再提交任意时长被阻断
+        // 时间边界防护：复用 d2 日期（plusDays(3) 在月末会跨月，月累计不含新单导致阻断失效）
         e = assertThrows(ServiceException.class,
-                () -> overtimeService.submit(payload(empId, LocalDate.now().plusDays(3), "1", false)));
+                () -> overtimeService.submit(payload(empId, d2, "1", false)));
         assertTrue(e.getMessage().contains("36"), e.getMessage());
         // 非 GM 审批 GM_SPECIAL → 403
         e = assertThrows(ServiceException.class,

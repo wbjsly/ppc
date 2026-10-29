@@ -31,4 +31,12 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         return R.ok(authService.getUserInfo(authHeader));
     }
+
+    /** 修改当前登录用户密码（add-account-lifecycle-console design D3：强制改密/自主改密） */
+    @PostMapping("/change-password")
+    public R<Map<String, Object>> changePassword(
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody Map<String, String> body) {
+        return R.ok(authService.changePassword(authHeader, body.get("oldPwd"), body.get("newPwd")));
+    }
 }

@@ -429,7 +429,7 @@ function doAgentConfirm() {
 }
 
 function doSuspend() {
-  api.suspend(SUSPEND_ID(), { reason: suspendReason.value || '待客户信息' }).then(() => {
+  api.suspendOrder(SUSPEND_ID(), { reason: suspendReason.value || '待客户信息' }).then(() => {
     ElMessage.success('已挂起（SLA 计时暂停）')
     suspendVisible.value = false
     onSelect({ id: current.value.id })

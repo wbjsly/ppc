@@ -41,6 +41,7 @@ public class HrAccountLinkServiceImpl implements HrAccountLinkService {
     private final SysRoleDao roleDao;
     private final ApprovalEngine approvalEngine;
     private final PasswordEncoder passwordEncoder;
+    private final com.erp.service.system.PositionBaselineService baselineService;
 
     public static final String BIZ_ACCOUNT_OPEN = "HrAccountOpen";
 
@@ -77,11 +78,14 @@ public class HrAccountLinkServiceImpl implements HrAccountLinkService {
         SysUser u = new SysUser();
         u.setId(uuid());
         u.setUsername(e.getEmpNo());
-        String initial = "Init@" + (e.getEmpNo().length() >= 4
-                ? e.getEmpNo().substring(e.getEmpNo().length() - 4) : e.getEmpNo());
+        // 随机初始密码（add-account-lifecycle-console design D3）：
+        // 不落明文日志，首次登录强制改密（MUST_CHANGE_PWD='1'）
+        String initial = java.util.UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 8) + "Aa1!";
         u.setPassword(passwordEncoder.encode(initial));
         u.setNickName(e.getName());
-        u.setStatus("1");
+        u.setStatus(SysUser.ST_ACTIVE);
+        u.setMustChangePwd("1");
         u.setCreateBy("hr-link");
         userDao.insert(u);
         // 角色按岗位映射
@@ -91,7 +95,7 @@ public class HrAccountLinkServiceImpl implements HrAccountLinkService {
         e.setUpdateBy("hr-link");
         e.setUpdateDate(LocalDateTime.now());
         empDao.updateById(e);
-        log.info("account created for {} (username {}, 初始密码 Init@后4位)", e.getEmpNo(), e.getEmpNo());
+        log.info("account created for {} (username {}, 初始密码随机生成，首次登录强制改密)", e.getEmpNo(), e.getEmpNo());
         return u.getId();
     }
 
@@ -183,19 +187,8 @@ public class HrAccountLinkServiceImpl implements HrAccountLinkService {
     }
 
     private List<String> rolesOfPos(String posId) {
-        if (posId == null || posId.isBlank()) {
-            return List.of();
-        }
-        HrPosition p = posDao.selectById(posId);
-        if (p == null || p.getRolesJson() == null || p.getRolesJson().isBlank()) {
-            return List.of();
-        }
-        try {
-            return new ArrayList<>(new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(p.getRolesJson(), java.util.ArrayList.class));
-        } catch (Exception ex) {
-            return List.of();
-        }
+        // 基线表为唯一来源（add-role-permission-console design D5，停读 ROLES_JSON）
+        return baselineService.rolesOfPos(posId);
     }
 
     private static String uuid() {

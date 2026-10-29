@@ -73,7 +73,7 @@ class EmployeeTransferDbTest {
         var d = orgService.createDept(Map.of("name", "HRT 部门"));
         deptId = d.getId();
         var p = orgService.createPosition(Map.of("name", "HRT 岗位", "deptId", deptId,
-                "rolesJson", "[\"ROLE_HR\"]"));
+                "rolesJson", "[\"ROLE_PLANNER\"]"));
         posId = p.getId();
     }
 
@@ -85,7 +85,7 @@ class EmployeeTransferDbTest {
         jdbc.update("DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID "
                 + "WHERE i.BIZ_TYPE LIKE 'Hr%'");
         jdbc.update("DELETE FROM erp_sys_approval WHERE BIZ_TYPE LIKE 'Hr%'");
-        jdbc.update("DELETE FROM hr_change_log WHERE EMP_ID LIKE 'hrt-%'");
+        jdbc.update("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'hrt-%'; SET @audit_bypass=0");
         jdbc.update("DELETE FROM hr_social_change WHERE EMP_ID LIKE 'hrt-%'");
         jdbc.update("DELETE FROM hr_remind WHERE EMP_ID LIKE 'hrt-%'");
         jdbc.update("DELETE FROM hr_exit WHERE EMP_ID LIKE 'hrt-%' OR ID LIKE 'hrt-%'");
@@ -385,10 +385,10 @@ class EmployeeTransferDbTest {
         Integer userCnt = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM erp_admin_user WHERE USERNAME=?", Integer.class, empNo);
         assertEquals(1, userCnt, "审批通过创建账号（用户名=工号）");
-        // 角色按岗位映射（HRT 岗位映射 ROLE_HR）
+        // 角色按岗位映射（HRT 岗位映射 ROLE_PLANNER——ROLE_HR 属特权清单，基线 L1 拒收）
         Integer roleCnt = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM erp_admin_user_role ur JOIN erp_admin_user u ON ur.USER_ID=u.ID "
-                        + "JOIN erp_admin_role r ON ur.ROLE_ID=r.ID WHERE u.USERNAME=? AND r.ROLE_CODE='ROLE_HR'",
+                        + "JOIN erp_admin_role r ON ur.ROLE_ID=r.ID WHERE u.USERNAME=? AND r.ROLE_CODE='ROLE_PLANNER'",
                 Integer.class, empNo);
         assertEquals(1, roleCnt, "岗位角色映射赋予");
         // 主档回写账号锚

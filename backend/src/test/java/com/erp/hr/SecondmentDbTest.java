@@ -64,7 +64,7 @@ class SecondmentDbTest {
         jdbc.update("DELETE FROM erp_sys_approval WHERE BIZ_ID LIKE 'tsec-%'");
         jdbc.update("DELETE FROM hr_social_change WHERE EMP_ID LIKE 'tsec-%'");
         jdbc.update("DELETE FROM hr_remind WHERE EMP_ID LIKE 'tsec-%'");
-        jdbc.update("DELETE FROM hr_change_log WHERE EMP_ID LIKE 'tsec-%'");
+        jdbc.update("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'tsec-%'; SET @audit_bypass=0");
         jdbc.update("DELETE FROM hr_secondment WHERE EMP_ID LIKE 'tsec-%' OR ID LIKE 'tsec-%'");
         jdbc.update("DELETE FROM hr_employee WHERE ID LIKE 'tsec-%' OR EMP_NO LIKE 'TSEC-%'");
         jdbc.update("DELETE FROM erp_mdm_legal_entity WHERE ID LIKE 'tsec-le-%'");

@@ -63,12 +63,12 @@ class EmployeeArchiveDbTest {
     private HrDeptSeed seedOrg() {
         var d = orgService.createDept(Map.of("name", "测试部门"));
         var p = orgService.createPosition(Map.of("name", "测试岗位", "deptId", d.getId(),
-                "rolesJson", "[\"ROLE_HR\"]"));
+                "rolesJson", "[\"ROLE_PLANNER\"]"));
         return new HrDeptSeed(d.getId(), p.getId());
     }
 
     private void purge() {
-        jdbc.update("DELETE FROM hr_change_log WHERE EMP_ID LIKE 'hra-%'");
+        jdbc.update("SET @audit_bypass=1; DELETE FROM hr_change_log WHERE EMP_ID LIKE 'hra-%'; SET @audit_bypass=0");
         jdbc.update("DELETE FROM hr_remind WHERE EMP_ID LIKE 'hra-%'");
         jdbc.update("DELETE FROM hr_exit WHERE EMP_ID LIKE 'hra-%' OR ID LIKE 'hra-%'");
         jdbc.update("DELETE FROM hr_transfer WHERE EMP_ID LIKE 'hra-%' OR ID LIKE 'hra-%'");
@@ -77,6 +77,7 @@ class EmployeeArchiveDbTest {
         jdbc.update("DELETE FROM hr_transfer WHERE EMP_ID LIKE 'hra-%' OR ID LIKE 'hra-%'");
         jdbc.update("DELETE FROM hr_exit WHERE EMP_ID LIKE 'hra-%' OR ID LIKE 'hra-%'");
         jdbc.update("DELETE FROM hr_position WHERE ID LIKE 'hra-%'");
+        jdbc.update("DELETE b FROM erp_admin_position_baseline b LEFT JOIN hr_position p ON p.ID=b.POS_ID WHERE p.ID IS NULL");
         jdbc.update("DELETE FROM hr_dept WHERE ID LIKE 'hra-%'");
         jdbc.update("DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID = i.ID "
                 + "WHERE i.BIZ_TYPE IN ('HrAccountOpen','HrLockChange')");

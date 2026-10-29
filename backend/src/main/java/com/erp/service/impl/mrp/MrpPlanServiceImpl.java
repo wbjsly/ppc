@@ -56,8 +56,9 @@ import java.util.Set;
  *    爆炸（用量×(1+损耗)，深度 ≤ bom-max-nesting-depth）；
  * 5) 替代分配：候选 [主料, sub1...] 按剩余池封顶分配，缺量给首个启用替代（比例换算，
  *    spec FR-4.5-2-4 唯一具体场景口径）+ 溯源备注；同物料多父件毛需求聚合一次结算；
- * 6) 逐层倒排：子件需求日 = 父件开工日（需求日 − 路线 ΣLEAD_TIME，缺路线兜底 leadTimeDays+行内提示）；
- *    采购件下单日 = 需求日 − leadTimeDays；下单日 < 今日 → OVERDUE；
+ * 6) 逐层倒排（close-work-calendar-gaps：日历日 → 工作日回推）：子件需求日 = 父件开工日
+ *    （需求日 回推 路线 ΣLEAD_TIME 个工作日，缺路线兜底 leadTimeDays+行内提示）；
+ *    采购件下单日 = 需求日 回推 leadTimeDays 个工作日；下单日 < 今日 → OVERDUE（口径不变）；
  * 7) 建议量规则（FR-4.5-2-6）：采购净需求 &lt; minOrderQty 上调并备注；可用+建议量 &gt; MAX_STOCK 行内提示。
  *
  * 落库：RUNNING 行 autocommit 先落（互斥位）→ 纯读计算 → TransactionTemplate 事务内
@@ -79,12 +80,14 @@ public class MrpPlanServiceImpl implements MrpPlanService {
     private final TransactionTemplate txTemplate;
     private final MrpMoDao moDao;
     private final MrpMoShortageDao shortageDao;
+    private final com.erp.service.system.WorkCalendarService workCalendarService;
 
     public MrpPlanServiceImpl(MrpRunDao runDao, MrpSuggestionDao suggestionDao,
                               MdmItemDao mdmItemDao, MrpDataSource dataSource,
                               ProcMrpService procMrpService, SysParamService sysParamService,
                               ObjectMapper objectMapper, PlatformTransactionManager transactionManager,
-                              MrpMoDao moDao, MrpMoShortageDao shortageDao) {
+                              MrpMoDao moDao, MrpMoShortageDao shortageDao,
+                              com.erp.service.system.WorkCalendarService workCalendarService) {
         this.runDao = runDao;
         this.suggestionDao = suggestionDao;
         this.mdmItemDao = mdmItemDao;
@@ -95,6 +98,7 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         this.txTemplate = new TransactionTemplate(transactionManager);
         this.moDao = moDao;
         this.shortageDao = shortageDao;
+        this.workCalendarService = workCalendarService;
     }
 
     // ---------- 运行 ----------
@@ -409,7 +413,7 @@ public class MrpPlanServiceImpl implements MrpPlanService {
                     ? mo.getPlanStartDate() : LocalDate.now();
             s.setReqDate(reqDate);
             long lead = item.getLeadTimeDays() == null ? 0 : Math.max(0, item.getLeadTimeDays());
-            s.setOrderDate(reqDate.minusDays(lead));
+            s.setOrderDate(backWorkdays(reqDate, (int) lead)); // 工作日回推（spec 倒排）
             if (s.getOrderDate().isBefore(LocalDate.now())) {
                 s.setOverdueFlag("1");
             }
@@ -714,10 +718,11 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         }
         s.setSuggestQty(suggest.setScale(4, RoundingMode.HALF_UP));
 
-        // 倒排（FR-4.5-2-5）：需求日 − 提前期；缺路线兜底 leadTimeDays + 行内提示
+        // 倒排（FR-4.5-2-5 / mrp-demand-planning「逐层提前期倒排」）：需求日 回推 N 个工作日；
+        // 缺路线兜底 leadTimeDays + 行内提示
         if (buy) {
             long lead = item.getLeadTimeDays() == null ? 0 : Math.max(0, item.getLeadTimeDays());
-            s.setOrderDate(reqDate.minusDays(lead));
+            s.setOrderDate(backWorkdays(reqDate, (int) lead));
         } else {
             BigDecimal route = dataSource.publishedRouteLeadDays(item.getItemCode());
             long lead;
@@ -727,7 +732,7 @@ public class MrpPlanServiceImpl implements MrpPlanService {
                 lead = item.getLeadTimeDays() == null ? 0 : Math.max(0, item.getLeadTimeDays());
                 rmk = append(rmk, "无已发布工艺路线，按物料提前期兜底倒排");
             }
-            s.setOrderDate(reqDate.minusDays(lead));
+            s.setOrderDate(backWorkdays(reqDate, (int) lead));
         }
         if (s.getOrderDate() != null && s.getOrderDate().isBefore(LocalDate.now())) {
             s.setOverdueFlag("1");
@@ -744,12 +749,40 @@ public class MrpPlanServiceImpl implements MrpPlanService {
         return s;
     }
 
-    /** 父件开工日 = 需求日 − 路线 ΣLT（缺路线兜底 leadTimeDays；行内提示由父件建议行自带） */
+    /** 父件开工日 = 需求日 回推 路线 ΣLT 个工作日（缺路线兜底 leadTimeDays；行内提示由父件建议行自带） */
     private LocalDate backscheduleStart(MdmItem item, LocalDate reqDate) {
         BigDecimal route = dataSource.publishedRouteLeadDays(item.getItemCode());
         long lead = route != null ? Math.max(0, route.longValue())
                 : (item.getLeadTimeDays() == null ? 0 : Math.max(0, item.getLeadTimeDays()));
-        return reqDate.minusDays(lead);
+        return backWorkdays(reqDate, (int) lead);
+    }
+
+    /**
+     * 工作日回推（close-work-calendar-gaps，spec mrp-demand-planning「逐层提前期倒排」）：
+     * 从 from 向前逐日按工作日历数满 days 个工作日（非工作日跳过，含 KITTING_CALENDAR_FALLBACK
+     * 降级口径——与产能侧同源）；days=0 返回原日期（与 minusDays(0) 对齐）；
+     * 单次回推上限 366 天（防全非工作日数据死循环，超限按日历日回推并行内提示由调用方忽略——
+     * 此处仅 log 警告，行为等同旧 minusDays）。
+     */
+    private LocalDate backWorkdays(LocalDate from, int days) {
+        if (days <= 0) {
+            return from;
+        }
+        int budget = 366;
+        LocalDate cur = from;
+        int counted = 0;
+        while (counted < days) {
+            cur = cur.minusDays(1);
+            budget--;
+            if (budget < 0) {
+                log.warn("工作日回推超限（{} 天内未数满 {} 个工作日），退化为日历日回推", 366, days);
+                return from.minusDays(days);
+            }
+            if (workCalendarService.isWorkday(cur)) {
+                counted++;
+            }
+        }
+        return cur;
     }
 
     private List<String> topoSort(Set<String> nodes, Map<String, List<MrpDataSource.BomLine>> graph) {

@@ -29,6 +29,7 @@ public class HrOrgServiceImpl implements HrOrgService {
     private final HrPositionDao posDao;
     private final com.erp.dao.hr.HrEmployeeDao empDao;
     private final com.erp.dao.hr.HrGradeDao gradeDao;
+    private final com.erp.service.system.PositionBaselineService baselineService;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -124,6 +125,11 @@ public class HrOrgServiceImpl implements HrOrgService {
         p.setStatus("1");
         p.setCreateBy(currentUser());
         posDao.insert(p);
+        // 同步岗位基线（add-role-permission-console design D5）：同一事务内 upsert，
+        // 基线写路径统一过 PrivilegedRoles L1 校验（rolesJson 含特权角色 → 422 回滚）
+        if (rolesJson != null && !rolesJson.isBlank()) {
+            baselineService.upsert(p.getId(), rolesJson, currentUser());
+        }
         log.info("hr position created: {} {} roles {}", p.getPosNo(), name, rolesJson);
         return p;
     }
