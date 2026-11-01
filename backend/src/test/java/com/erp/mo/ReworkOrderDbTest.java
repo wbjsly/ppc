@@ -94,6 +94,11 @@ class ReworkOrderDbTest {
     @BeforeEach
     void seed() {
         MoSeed.cleanup(jdbc);
+        // 自足造数：报废/复检路径关单走 checkForClose → 当期费用池须存在（防跨测试残留依赖）
+        jdbc.update("INSERT IGNORE INTO erp_mrp_overhead_pool (ID, PERIOD, POOL_AMT, RULE, "
+                        + "CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('rw-pool-keep', ?, "
+                        + "10000, 'TIME', 'junit', NOW(), '0', 0)",
+                LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM")));
         categoryCode = MoSeed.mkCategory(jdbc);
         MoTestAuth.login("rw-tester", "ROLE_PLANNER", "ROLE_PROCESS_ENG", "ROLE_ADMIN");
 

@@ -84,6 +84,51 @@ public class SecurityConfig {
                 .antMatchers("/api/system/authz-incidents/**").hasRole("ADMIN")
                 // 服务报告（add-sla-report-console，spec sla-report-management）限 ADMIN
                 .antMatchers("/api/system/sla-reports/**").hasRole("ADMIN")
+                // 报表模板写操作（add-report-template-console，spec report-template-management）
+                // 限 BI_DESIGNER/ADMIN；读与渲染登录即可（service 层状态两极 403 细校验）
+                .antMatchers(HttpMethod.POST, "/api/bi/report-templates/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/report-templates/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/report-templates/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                // 读与渲染（含 PUBLISHED 任意登录角色消费面）：置于 /api/bi/** 兜底（PM 等四角色）之前，
+                // 否则无 PM 角色的普通用户渲染 403（design D6 状态两极权限在 service 层细校验）
+                .antMatchers(HttpMethod.GET, "/api/bi/report-templates/**").authenticated()
+                // 数据抽取控制台写操作（add-data-extract-console，spec bi-extract-console）
+                // 限 BI_DESIGNER/ADMIN；读登录即可（就绪状态等消费面）
+                .antMatchers(HttpMethod.POST, "/api/bi/data-extract/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/data-extract/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/data-extract/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/data-extract/**").authenticated()
+                // 脱敏规则写操作（add-data-extract-console，spec bi-mask-rule-management）
+                .antMatchers(HttpMethod.POST, "/api/bi/mask-rules/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/mask-rules/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/mask-rules/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/mask-rules/**").authenticated()
+                // 质量校验写操作（add-data-extract-console，spec bi-quality-check）
+                .antMatchers(HttpMethod.POST, "/api/bi/quality/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/quality/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/quality/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/quality/**").authenticated()
+                // 口径字典写操作（add-metric-dict-console，spec bi-metric-dictionary）
+                // 限 BI_DESIGNER/ADMIN；读登录即可（diff/批量校验/血缘消费面）
+                .antMatchers(HttpMethod.POST, "/api/bi/dict/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/dict/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/dict/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/dict/**").authenticated()
+                // 行级权限/临时授权/敏感字段登记写操作（add-perm-control-console，
+                // spec bi-row-permission / bi-temp-grant）；读登录即可（影响预览/审计消费面）
+                .antMatchers(HttpMethod.POST, "/api/bi/row-perms/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/row-perms/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/row-perms/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/row-perms/**").authenticated()
+                .antMatchers(HttpMethod.POST, "/api/bi/sensitive-fields/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/sensitive-fields/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/sensitive-fields/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/sensitive-fields/**").authenticated()
+                // 临时授权：申请登录即可（本人）；过期扫描管理员
+                .antMatchers(HttpMethod.POST, "/api/bi/temp-grants/expire-scan").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/temp-grants/**").authenticated()
+                .antMatchers(HttpMethod.POST, "/api/bi/temp-grants/**").authenticated()
+                .antMatchers(HttpMethod.DELETE, "/api/bi/temp-grants/**").authenticated()
                 .antMatchers(HttpMethod.POST, "/api/mdm/legal-entities/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/legal-entities/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/cost-centers/**").hasRole("ADMIN")
@@ -431,11 +476,44 @@ public class SecurityConfig {
                         .hasAnyRole("ADMIN", "SCMDIR")
                 .antMatchers("/api/scm/cpfr/**")
                         .hasAnyRole("ADMIN", "SCMDIR", "PM")
+                // 导出读接口（add-export-console，spec bi-export-lifecycle）：我的任务/下载
+                // 任意登录角色（属主校验在端点内），置于 /api/bi/** 兜底之前
+                .antMatchers(HttpMethod.GET, "/api/bi/export/tasks").authenticated()
+                .antMatchers(HttpMethod.GET, "/api/bi/export/*/download").authenticated()
+                .antMatchers(HttpMethod.GET, "/api/bi/export/pending").hasAnyRole("BI_DESIGNER", "ADMIN")
+                // 即席查询（add-adhoc-query-console，spec bi-adhoc-query）：自助工具面向
+                // 业务人员登录即可（安全边界在查询层治理）；治理统计 BI_DESIGNER/ADMIN
+                // （细规则须先于通配——Spring Security 首条命中即定）
+                .antMatchers(HttpMethod.GET, "/api/bi/adhoc/governance").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers("/api/bi/adhoc/**").authenticated()
+                // 临时报表（spec bi-temp-report）：登录即可，写操作服务层校验属主
+                .antMatchers("/api/bi/temp-reports/**").authenticated()
+                // 经营看板（add-kpi-dashboard，spec bi-kpi-dashboard）：读登录即可
+                // （数据范围行级注入）；定义/目标写+手动快照=BI_DESIGNER/ADMIN
+                // （细规则须先于通配——Spring Security 首条命中即定）
+                .antMatchers(HttpMethod.POST, "/api/bi/kpi/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/kpi/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/kpi/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                // 日报订阅（add-daily-report-subscription，spec bi-daily-report）：
+                // 定义写+推送日志/统计+试推=BI_DESIGNER/ADMIN；订阅/回执登录即可
+                // （服务层校验属主）——细规则须先于通配
+                .antMatchers(HttpMethod.POST, "/api/bi/daily-reports/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/bi/daily-reports/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.DELETE, "/api/bi/daily-reports/defs/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.GET, "/api/bi/daily-reports/push-logs",
+                        "/api/bi/daily-reports/stats").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/bi/daily-reports/push-now").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers("/api/bi/daily-reports/**").authenticated()
+                // 报表 SLA 服务报告（add-bi-sla-report，spec bi-sla-report）：14.9 全端点 BI_DESIGNER/ADMIN
+                // （发布/归档在服务层按审批角色细分；与 16.9 sla-reports 隔离）
+                .antMatchers("/api/bi/sla-reports/**").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/bi/kpi/targets").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/bi/kpi/snapshot/run").hasAnyRole("BI_DESIGNER", "ADMIN")
+                .antMatchers("/api/bi/kpi/**").authenticated()
                 // 采购分析（add-procurement-analysis design D10）：菜单同口径四角色，
                 // 门户记分卡在 /api/portal/** 之上不冲突；行级法人过滤在查询层（design D6）
                 .antMatchers("/api/bi/**", "/api/scm/scorecard/**")
-                    .hasAnyRole("PM", "FINANCE_MGR", "GM", "ADMIN")
-                // 开放调用入口（add-interface-integration design D1）：由 OpenApiAuthFilter 全量短路——
+                    .hasAnyRole("PM", "FINANCE_MGR", "GM", "ADMIN")                // 开放调用入口（add-interface-integration design D1）：由 OpenApiAuthFilter 全量短路——
                 // API Key + HMAC + 时间戳 + 限流 + 熔断 + 审计校验通过后才会带上 ROLE_OPEN_API，
                 // 校验失败在 filter 内直接写 400/401/429/503 并 return，绝不会走到这行放行
                 .antMatchers("/api/open/**").authenticated()

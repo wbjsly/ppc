@@ -106,8 +106,10 @@ class InvReportExportDbTest {
 
     @Test
     void backgroundSubmitWithInvReportDataset() {
+        // add-export-console：超量须用途 ≥10 字（FR-4.10-4-2），旧用例补 purpose
         Map<String, Object> out = exportService.submit("inv-report",
-                Map.of("type", "realtime", "warehouseCode", WH), 50000L);
+                Map.of("type", "realtime", "warehouseCode", WH,
+                        "purpose", "库存报表导出用途说明"), 50000L);
         assertEquals("PENDING", out.get("approvalStatus"), ">EXPORT_ROW_LIMIT 走审批（C-4.10-05）");
         String params = jdbc.queryForObject(
                 "SELECT PARAMS_JSON FROM erp_bi_export_task WHERE USER_NAME = 'rptx-user' "

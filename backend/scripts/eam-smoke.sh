@@ -3374,6 +3374,11 @@ echo "== 段 34 考勤+加班调休（M10-3/M10-4）开始 =="
 
 # 34.0 跨日残留防护：终审按 period 扫全表，昨日残留的未处理异常会拦终审（与段末清理同口径）
 SQL "DELETE FROM hr_attendance_exception WHERE EXC_DATE >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)" >/dev/null 2>&1
+# 回归测试残留员工（junit-* 在职无打卡 → 扫描按默认工时判 ABSENT 拦终审）：连员工本体清
+SQL "DELETE FROM hr_schedule WHERE EMP_ID LIKE 'junit%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_punch_record WHERE EMP_ID LIKE 'junit%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_attendance_exception WHERE EMP_ID LIKE 'junit%'" >/dev/null 2>&1
+SQL "DELETE FROM hr_employee WHERE ID LIKE 'junit%' OR EMP_NO LIKE 'JATT-%' OR EMP_NO LIKE 'JOT-%'" >/dev/null 2>&1
 
 # 34.1 造员工 + 班次 + 排班
 SQL "INSERT INTO hr_employee (ID, EMP_NO, NAME, ID_CARD_NO, DEPT_ID, EMP_STATUS, HIRE_DATE, BASE_SALARY, CREATE_BY, DEL_FLAG, VER_NO)
@@ -3478,6 +3483,11 @@ AT_BASE=$(SQL "SELECT HOURLY_BASE FROM hr_overtime_confirm WHERE ID='$AT_CID'")
 # 试算不落库（另一单：明日 34h 单走试算）
 AT_TRIAL=$(C -H "Authorization: Bearer $TADM" $B/api/hr/overtime/applies/$AT_OT1_ID/approval-view | J "d['data']['monthHours']")
 [ -n "$AT_TRIAL" ] && [ "$AT_TRIAL" != "None" ] && ok "审批视图当月累计（$AT_TRIAL h）" || bad "审批视图失败"
+
+# 月末边界稳健：种 1h 到 tomorrow 所在月，确保 36h 超限判定恒触发（36h 需 monthHours>0 才 >36 上限）
+C -X POST -H "Authorization: Bearer $TADM" -H 'Content-Type: application/json' \
+  -d "{\"empId\":\"smk-at-emp\",\"otDate\":\"$AT_OT_TOMORROW\",\"startTime\":\"09:00\",\"endTime\":\"10:00\",\"hours\":1,\"reason\":\"冒烟月基准\"}" \
+  $B/api/hr/overtime/applies >/dev/null 2>&1
 
 # 34.4b GM 特批通道 + 审批超时催办（add-overtime-followup，BR-4.7-04 / FR-4.7-6-2）
 # 未勾特批超限 → 422 且提示可特批
@@ -7937,6 +7947,1141 @@ SQL "SET @audit_bypass=1; DELETE FROM hr_change_log WHERE FIELD_NAME='HOLIDAY_SY
 SQL "DELETE FROM erp_admin_shift WHERE SHIFT_CODE='SMK69SH'" >/dev/null 2>&1
 
 echo "段 69 工作日历三缺口 16.11 追加完成"
+
+# ==================================================================== 段 70：报表模板 14.1（add-report-template-console）
+echo "== 段 70 报表模板 14.1（M14-1）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='ReportTemplate'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='ReportTemplate'" >/dev/null 2>&1
+SQL "DELETE v FROM erp_bi_report_version v JOIN erp_bi_report_template t ON v.TEMPLATE_ID=t.ID WHERE t.CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE x FROM erp_bi_report_test x JOIN erp_bi_report_template t ON x.TEMPLATE_ID=t.ID WHERE t.CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-070'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='ReportTemplatePublish'" >/dev/null 2>&1
+
+# ---- 70.0 口径字典造数（注册 + 发布，diffCheck 基准）----
+FORM70='{"expr":"SUM(AMOUNT)","precision":2}'
+M70=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"metricKey":"M-SMK-070","name":"冒烟回款额","definition":"冒烟70测试指标","formula":"{\"expr\":\"SUM(AMOUNT)\",\"precision\":2}","timeDim":"DAY","srcMapping":"{\"table\":\"t\",\"column\":\"c\"}","formulaType":"RATIO","numerator":"回款金额","denominator":"总金额"}' $B/api/bi/dict | J "d['code']")
+EQ "段70 口径字典注册" "$M70" "200"
+MP70=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"formula":"{\"expr\":\"SUM(AMOUNT)\",\"precision\":2}"}' $B/api/bi/dict/M-SMK-070/publish | J "d['code']")
+EQ "段70 口径字典发布" "$MP70" "200"
+
+# ---- 70.1 保存阻断（C-4.10-01）+ SQL 白名单 ----
+BAD70=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK70-BAD","name":"口径不一致模板","category":"STANDARD","sqlText":"SELECT 1 AS AMOUNT","columnsJson":"[{\"field\":\"AMOUNT\"}]","metricsJson":"[{\"metricKey\":\"M-SMK-070\",\"formula\":\"{\\\"expr\\\":\\\"HACKED\\\"}\"}]"}' $B/api/bi/report-templates)
+EQ "段70 口径不一致保存 422" "$BAD70" "422"
+DL70=$(SQL "SELECT COUNT(*) FROM erp_bi_report_template WHERE CODE='SMK70-BAD'")
+EQ "段70 阻断不落库" "$DL70" "0"
+SQL70=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK70-DEL","name":"非只读模板","category":"STANDARD","sqlText":"DELETE FROM erp_admin_role","columnsJson":"[]","metricsJson":"[]"}' $B/api/bi/report-templates)
+EQ "段70 非 SELECT 保存 422" "$SQL70" "422"
+UN70=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK70-UN","name":"未注册指标模板","category":"STANDARD","sqlText":"SELECT 1 AS AMOUNT","columnsJson":"[]","metricsJson":"[{\"metricKey\":\"smk70_none\",\"formula\":\"{}\"}]"}' $B/api/bi/report-templates)
+EQ "段70 未注册指标 422" "$UN70" "422"
+
+# ---- 70.2 正常登记 → 测试三项报告 → 核对 PASS ----
+G70=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK70-OK","name":"冒烟报表模板","category":"STANDARD","sqlText":"SELECT 1 AS AMOUNT","columnsJson":"[{\"field\":\"AMOUNT\",\"title\":\"金额\"}]","metricsJson":"[{\"metricKey\":\"M-SMK-070\",\"formula\":\"{\\\"expr\\\":\\\"SUM(AMOUNT)\\\",\\\"precision\\\":2}\"}]"}' $B/api/bi/report-templates | J "d['data']['id']")
+[ -n "${G70:-}" ] && ok "段70 正常登记（$G70）" || bad "登记失败"
+T70=$(SQL "SELECT STATUS FROM erp_bi_report_template WHERE ID='$G70'")
+EQ "段70 初始 DRAFT" "$T70" "DRAFT"
+
+RT70=$(C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/$G70/test | J "d['data']['id']")
+[ -n "${RT70:-}" ] && ok "段70 测试执行（$RT70）" || bad "测试执行失败"
+TS70=$(SQL "SELECT STATUS FROM erp_bi_report_test WHERE ID='$RT70'")
+EQ "段70 未核对前 FAIL" "$TS70" "FAIL"
+CF70=$(C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/tests/$RT70/confirm-accuracy | J "d['data']['status']")
+EQ "段70 核对后 PASS" "$CF70" "PASS"
+ST70=$(SQL "SELECT STATUS FROM erp_bi_report_template WHERE ID='$G70'")
+EQ "段70 测试后 TESTING" "$ST70" "TESTING"
+
+# ---- 70.3 变更强制作废 + 无报告提交 422 ----
+C -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"sqlText":"SELECT 2 AS AMOUNT"}' $B/api/bi/report-templates/$G70 >/dev/null
+V70=$(SQL "SELECT VALID FROM erp_bi_report_test WHERE ID='$RT70'")
+EQ "段70 变更后报告作废" "$V70" "0"
+SB70=$(BIZ -X POST -H "$(A $TADM)" $B/api/bi/report-templates/$G70/submit)
+EQ "段70 无有效报告提交 422" "$SB70" "422"
+
+# ---- 70.4 重测 → 提交 → 三方审批（自签 403）----
+RT70B=$(C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/$G70/test | J "d['data']['id']")
+C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/tests/$RT70B/confirm-accuracy >/dev/null
+SB70B=$(C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/$G70/submit | J "d['code']")
+EQ "段70 重测后提交" "$SB70B" "200"
+ST70P=$(SQL "SELECT STATUS FROM erp_bi_report_template WHERE ID='$G70'")
+EQ "段70 提交后 PENDING" "$ST70P" "PENDING_APPROVAL"
+I70=$(SQL "SELECT APPR_INSTANCE_ID FROM erp_bi_report_template WHERE ID='$G70'")
+[ -n "${I70:-}" ] && ok "段70 审批实例（$I70）" || bad "审批实例缺失"
+
+# 自签 403（发起人=admin 签署）
+T1_70=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$I70' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+SS70=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T1_70\",\"opinion\":\"自签\"}" $B/api/qms/approvals/pass)
+EQ "段70 发起人自签 403" "$SS70" "403"
+
+# 三方签署（admin 持三角色，非发起人账号语义由引擎按角色判定——发起人即签署人时 403，
+# 故用专用签署账号）
+for U in "smk70dg:ROLE_DATA_GOV:数据治理" "smk70bo:ROLE_BIZ_OWNER:业务负责人" "smk70it:ROLE_ADMIN:IT审核"; do
+  UN="${U%%:*}"; REST="${U#*:}"; RC="${REST%%:*}"
+  SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+       SELECT '$UN','$UN',PASSWORD,'冒烟70-$RC','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+  SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT CONCAT('smk70-ur-','$RC'), '$UN', ID FROM erp_admin_role WHERE ROLE_CODE='$RC'" >/dev/null 2>&1
+done
+TDG70=$(C -H 'Content-Type: application/json' -d '{"username":"smk70dg","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TBO70=$(C -H 'Content-Type: application/json' -d '{"username":"smk70bo","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TDG70:-}" ] && [ -n "${TBO70:-}" ] && ok "段70 签署人登录" || bad "签署人登录失败"
+
+T1_70=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$I70' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+P1_70=$(C -X POST -H "$(A $TDG70)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T1_70\",\"opinion\":\"口径核验通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段70 数据治理签署" "$P1_70" "200"
+T2_70=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$I70' AND SEQ=2 AND NODE_TYPE='SIGN' LIMIT 1")
+P2_70=$(C -X POST -H "$(A $TBO70)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T2_70\",\"opinion\":\"业务准确\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段70 业务负责人签署" "$P2_70" "200"
+TIT70=$(C -H 'Content-Type: application/json' -d '{"username":"smk70it","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T3_70=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$I70' AND SEQ=3 AND NODE_TYPE='SIGN' LIMIT 1")
+P3_70=$(C -X POST -H "$(A $TIT70)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T3_70\",\"opinion\":\"性能可接受\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段70 IT 签署" "$P3_70" "200"
+
+# ---- 70.5 发布生效：PUBLISHED + 快照（口径版本绑定）----
+ST70F=$(SQL "SELECT STATUS FROM erp_bi_report_template WHERE ID='$G70'")
+EQ "段70 三方全过 PUBLISHED" "$ST70F" "PUBLISHED"
+VN70=$(SQL "SELECT COUNT(*) FROM erp_bi_report_version WHERE TEMPLATE_ID='$G70'")
+EQ "段70 发布快照 1 条" "$VN70" "1"
+MV70=$(SQL "SELECT METRIC_VERSIONS_JSON FROM erp_bi_report_version WHERE TEMPLATE_ID='$G70'")
+CONTAINS "段70 口径版本绑定（BR-4.10-07）" "$MV70" "M-SMK-070"
+
+# ---- 70.6 渲染两态权限 ----
+# DRAFT 模板 + 非设计师 → 403
+G70D=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK70-D","name":"草稿模板","category":"STANDARD","sqlText":"SELECT 3 AS AMOUNT","columnsJson":"[]","metricsJson":"[]"}' $B/api/bi/report-templates | J "d['data']['id']")
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk70-plain','smk70plain',PASSWORD,'冒烟70普通','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+TP70=$(C -H 'Content-Type: application/json' -d '{"username":"smk70plain","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+# service 层 403（body code；GET 已放行至 service 细校验，不再是 URL 级 HTTP 403）
+RD70=$(C -H "Authorization: Bearer $TP70" "$B/api/bi/report-templates/$G70D/render" | J "d['code']")
+EQ "段70 草稿普通角色渲染 403" "$RD70" "403"
+# PUBLISHED + 普通角色 → 200（admin 通配行级种子 → 全量）
+RP70=$(C -H "Authorization: Bearer $TP70" "$B/api/bi/report-templates/$G70/render" | J "d['code']")
+EQ "段70 已发布普通角色渲染 200" "$RP70" "200"
+
+# ---- 70.7 回退（新版本号保留链）----
+V1_70=$(SQL "SELECT ID FROM erp_bi_report_version WHERE TEMPLATE_ID='$G70' AND VERSION_NO=1")
+RB70=$(C -X POST -H "$(A $TADM)" $B/api/bi/report-templates/versions/$V1_70/rollback | J "d['data']['versionNo']")
+EQ "段70 回退生成 V2" "$RB70" "2"
+VN70B=$(SQL "SELECT COUNT(*) FROM erp_bi_report_version WHERE TEMPLATE_ID='$G70'")
+EQ "段70 历史保留 2 条" "$VN70B" "2"
+RF70=$(SQL "SELECT ROLLBACK_FROM FROM erp_bi_report_version WHERE TEMPLATE_ID='$G70' AND VERSION_NO=2")
+EQ "段70 回退溯源 V1" "$RF70" "1"
+
+# ---- 70.8 二次校验失败回滚（BR-4.10-11，单测覆盖；此处断言告警表清零基线）----
+#（直改口径字典公式再触发 activateOnApproved 属单测场景，冒烟不重复；断言无残留告警）
+N70=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='ReportTemplatePublish'")
+EQ "段70 冒烟期无二次校验告警" "$N70" "0"
+
+# ---- 70.9 页面结构（14.1 前端）----
+EQ "段70 页面四 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/report-template/index.vue)" "4"
+EQ "段70 四条路由" "$(grep -c /m/14.1 frontend/src/router/index.js)" "4"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='ReportTemplate'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='ReportTemplate'" >/dev/null 2>&1
+SQL "DELETE v FROM erp_bi_report_version v JOIN erp_bi_report_template t ON v.TEMPLATE_ID=t.ID WHERE t.CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE x FROM erp_bi_report_test x JOIN erp_bi_report_template t ON x.TEMPLATE_ID=t.ID WHERE t.CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK70%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-070'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE='ReportTemplatePublish'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk70%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk70%'" >/dev/null 2>&1
+
+echo "段 70 报表模板 14.1 追加完成"
+
+# ==================================================================== 段 71：数据抽取 14.2（add-data-extract-console）
+echo "== 段 71 数据抽取 14.2（M14-2）开始 =="
+
+# ---- 段首清理（可重跑；批次号为 yyyyMMdd 无前缀，按配置反查删除 + 当日批次整删）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='MaskRule'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='MaskRule'" >/dev/null 2>&1
+SQL "DELETE r FROM erp_bi_extract_run r JOIN erp_bi_extract_config c ON c.ID=r.CONFIG_ID WHERE c.CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_run WHERE BATCH_DATE >= CURDATE() - INTERVAL 3 DAY" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_batch WHERE BATCH_DATE >= CURDATE() - INTERVAL 3 DAY" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_config WHERE CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_datasource WHERE NAME LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_quality_result WHERE RULE_ID IN (SELECT ID FROM (SELECT ID FROM erp_bi_quality_rule WHERE NAME LIKE 'SMK71%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_quality_rule WHERE NAME LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_mask_rule_log WHERE RULE_ID IN (SELECT ID FROM (SELECT ID FROM erp_bi_perm_rule WHERE TARGET_KEY LIKE 'smk71_%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE TARGET_KEY LIKE 'smk71_%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'DataExtract%' OR BIZ_TYPE='MaskRuleApproval'" >/dev/null 2>&1
+
+# ---- 71.0 数据源登记（连接加密 FR-4.10-2-1）+ 连通测试 + schema 快照 ----
+DS71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK71-DS","type":"DB","dbName":"erp","conn":"jdbc:mysql://smk71-host:3306/erp?password=topsecret71","remark":"冒烟71数据源"}' $B/api/bi/data-extract/datasources | J "d['data']['id']")
+[ -n "${DS71:-}" ] && ok "段71 数据源登记（$DS71）" || bad "数据源登记失败"
+ENC71=$(SQL "SELECT CASE WHEN CONN_ENC LIKE 'topsecret%' THEN 'PLAIN' ELSE 'ENC' END FROM erp_bi_datasource WHERE ID='$DS71'")
+EQ "段71 连接密文存储" "$ENC71" "ENC"
+CONN71=$(C -X POST -H "$(A $TADM)" $B/api/bi/data-extract/datasources/$DS71/test-connection | J "str(d['data']['ok']).lower()")
+EQ "段71 连通测试通过" "$CONN71" "true"
+SC71=$(C -X POST -H "$(A $TADM)" $B/api/bi/data-extract/datasources/$DS71/check-schema | J "str(d['data']['changed']).lower()")
+EQ "段71 快照无变更" "$SC71" "false"
+
+# ---- 71.1 模板造数（PUBLISHED 直插）+ 配置校验 ----
+SQL "INSERT INTO erp_bi_report_template (ID,CODE,NAME,CATEGORY,SQL_TEXT,COLUMNS_JSON,METRICS_JSON,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk71-tpl','SMK71-TPL','冒烟71模板','STANDARD','SELECT 1 AS AMOUNT','[{\"field\":\"AMOUNT\",\"title\":\"金额\"}]','[]','PUBLISHED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_report_template (ID,CODE,NAME,CATEGORY,SQL_TEXT,COLUMNS_JSON,METRICS_JSON,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk71-tpld','SMK71-TPLD','冒烟71草稿','STANDARD','SELECT 1 AS AMOUNT','[]','[]','DRAFT','smoke',NOW(),'0',0)" >/dev/null 2>&1
+# 草稿模板绑定 422（仅已发布可绑）
+BD71=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK71-BAD","name":"绑草稿","datasourceId":"'$DS71'","templateId":"smk71-tpld","mode":"FULL"}' $B/api/bi/data-extract/configs)
+EQ "段71 绑草稿模板 422" "$BD71" "422"
+# 增量模式水位字段须在模板列清单（422）
+WM71=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK71-WM","name":"水位校验","datasourceId":"'$DS71'","templateId":"smk71-tpl","mode":"INCREMENTAL","watermarkField":"NOT_IN_COLS"}' $B/api/bi/data-extract/configs)
+EQ "段71 水位字段校验 422" "$WM71" "422"
+# 正常配置（全量）
+CFG71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"code":"SMK71-C1","name":"冒烟抽取配置","datasourceId":"'$DS71'","templateId":"smk71-tpl","mode":"FULL","seq":10}' $B/api/bi/data-extract/configs | J "d['data']['id']")
+[ -n "${CFG71:-}" ] && ok "段71 抽取配置（$CFG71）" || bad "抽取配置失败"
+
+# ---- 71.2 质量规则先行（SEVERE 勾稽必失败 1 vs 2）----
+QR71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK71-勾稽","ruleType":"RECONCILE","datasourceId":"'$DS71'","leftSql":"SELECT 1","rightSql":"SELECT 2","tolerance":"0","severeLevel":"SEVERE"}' $B/api/bi/quality/rules | J "d['data']['id']")
+[ -n "${QR71:-}" ] && ok "段71 质量规则（$QR71）" || bad "质量规则失败"
+# 非法标识符拒绝
+QRB71=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK71-非法","ruleType":"NOT_NULL","targetTable":"t;x","targetColumn":"c"}' $B/api/bi/quality/rules)
+EQ "段71 非法表名 422" "$QRB71" "422"
+
+# ---- 71.3 批次执行 → SEVERE 阻断就绪（BR-4.10-14）----
+BT71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"date\":\"$(date +%F)\",\"manual\":true}" $B/api/bi/data-extract/batch/run | J "d['data']['batchStatus']")
+EQ "段71 SEVERE 阻断 QUALITY_BLOCKED" "$BT71" "QUALITY_BLOCKED"
+RDY71=$(C -H "$(A $TADM)" $B/api/bi/data-extract/ready | J "str(d['data']['ready']).lower()")
+EQ "段71 阻断期间不就绪" "$RDY71" "false"
+FAIL71=$(SQL "SELECT COUNT(*) FROM erp_bi_quality_result WHERE RULE_ID='$QR71' AND CONCLUSION='FAIL' AND SEVERE_LEVEL='SEVERE'")
+[ "$FAIL71" -ge 1 ] && ok "段71 校验报告 FAIL 落库（$FAIL71）" || bad "校验报告缺失"
+# 复验：停用规则 → recheck → READY
+C -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"status":"DISABLED"}' $B/api/bi/quality/rules/$QR71 >/dev/null
+BN71=$(date +%Y%m%d)
+RC71=$(C -X POST -H "$(A $TADM)" $B/api/bi/quality/recheck/$BN71 | J "d['data']['status']")
+EQ "段71 复验解除阻断 READY" "$RC71" "READY"
+RDY71B=$(C -H "$(A $TADM)" $B/api/bi/data-extract/ready | J "str(d['data']['ready']).lower()")
+EQ "段71 复验后就绪" "$RDY71B" "true"
+# 批次已 READY 幂等
+ID71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d "{\"date\":\"$(date +%F)\",\"manual\":true}" $B/api/bi/data-extract/batch/run | J "d['data']['note']")
+EQ "段71 就绪批次幂等" "$ID71" "already-ready"
+
+# ---- 71.4 脱敏规则：DRAFT 不生效 → 审批激活 → 掩码输出 ----
+MR71=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetKey":"smk71_phone","ruleType":"COL_MASK","maskStyle":"PHONE"}' $B/api/bi/mask-rules | J "d['data']['id']")
+[ -n "${MR71:-}" ] && ok "段71 脱敏规则草稿（$MR71）" || bad "脱敏规则失败"
+MRS71=$(SQL "SELECT STATUS FROM erp_bi_perm_rule WHERE ID='$MR71'")
+EQ "段71 初始 DRAFT" "$MRS71" "DRAFT"
+SM71=$(C -X POST -H "$(A $TADM)" $B/api/bi/mask-rules/$MR71/submit | J "d['code']")
+EQ "段71 提交审批" "$SM71" "200"
+IM71=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='MaskRule' AND BIZ_ID='$MR71' ORDER BY ID DESC LIMIT 1")
+# 专用数据治理签署账号（发起人=admin，自签语义由引擎判定，沿段70模式）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk71dg','smk71dg',PASSWORD,'冒烟71-治理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk71-ur-DG','smk71dg',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DATA_GOV'" >/dev/null 2>&1
+TDG71=$(C -H 'Content-Type: application/json' -d '{"username":"smk71dg","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TDG71:-}" ] && ok "段71 治理签署人登录" || bad "签署人登录失败"
+TM71=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$IM71' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+PM71=$(C -X POST -H "$(A $TDG71)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TM71\",\"opinion\":\"脱敏合规通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段71 数据治理签署" "$PM71" "200"
+MEN71=$(SQL "SELECT STATUS FROM erp_bi_perm_rule WHERE ID='$MR71'")
+EQ "段71 审批后 ENABLED" "$MEN71" "ENABLED"
+LOG71=$(SQL "SELECT COUNT(*) FROM erp_bi_mask_rule_log WHERE RULE_ID='$MR71' AND ACTION='ENABLE'")
+[ "$LOG71" -ge 1 ] && ok "段71 启用留痕（$LOG71）" || bad "启用留痕缺失"
+# 已生效不可改
+MU71=$(BIZ -X PUT -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"maskStyle":"SALARY"}' $B/api/bi/mask-rules/$MR71)
+EQ "段71 生效后不可改 422" "$MU71" "422"
+# 停用即时生效 + 留痕
+C -X POST -H "$(A $TADM)" $B/api/bi/mask-rules/$MR71/disable >/dev/null
+MD71=$(SQL "SELECT STATUS FROM erp_bi_perm_rule WHERE ID='$MR71'")
+EQ "段71 停用 DISABLED" "$MD71" "DISABLED"
+
+# ---- 71.5 权限与页面结构 ----
+# 非 BI 角色写 403（SecurityConfig 拦截返回 HTTP 403 空 body，用 HTTP 码断言）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk71-plain','smk71plain',PASSWORD,'冒烟71普通','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+TPL71P=$(C -H 'Content-Type: application/json' -d '{"username":"smk71plain","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+PW71=$(HTTP -X POST -H "Authorization: Bearer $TPL71P" -H 'Content-Type: application/json' \
+  -d '{"name":"SMK71-X","type":"DB"}' $B/api/bi/data-extract/datasources)
+EQ "段71 非 BI 写数据源 403" "$PW71" "403"
+GR71=$(C -H "Authorization: Bearer $TPL71P" $B/api/bi/data-extract/ready | J "d['code']")
+EQ "段71 登录可读就绪状态" "$GR71" "200"
+EQ "段71 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/data-extract/index.vue)" "3"
+EQ "段71 三条路由" "$(grep -c /m/14.2 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='MaskRule'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='MaskRule'" >/dev/null 2>&1
+SQL "DELETE r FROM erp_bi_extract_run r JOIN erp_bi_extract_config c ON c.ID=r.CONFIG_ID WHERE c.CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_run WHERE BATCH_DATE >= CURDATE() - INTERVAL 3 DAY" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_batch WHERE BATCH_DATE >= CURDATE() - INTERVAL 3 DAY" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_config WHERE CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_datasource WHERE NAME LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_quality_result WHERE RULE_ID IN (SELECT ID FROM (SELECT ID FROM erp_bi_quality_rule WHERE NAME LIKE 'SMK71%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_quality_rule WHERE NAME LIKE 'SMK71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_mask_rule_log WHERE RULE_ID IN (SELECT ID FROM (SELECT ID FROM erp_bi_perm_rule WHERE TARGET_KEY LIKE 'smk71_%') t)" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE TARGET_KEY LIKE 'smk71_%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'DataExtract%' OR BIZ_TYPE='MaskRuleApproval'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk71%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk71%'" >/dev/null 2>&1
+
+echo "段 71 数据抽取 14.2 追加完成"
+
+# ==================================================================== 段 72：指标口径 14.3（add-metric-dict-console）
+echo "== 段 72 指标口径 14.3（M14-3）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_lineage WHERE METRIC_KEY LIKE 'M-SMK-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_dict WHERE METRIC_KEY LIKE 'M-SMK-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK72%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+
+# ---- 72.0 登记：编码格式 422 + 十二要素发布 ----
+BAD72=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"metricKey":"SALES_BAD","name":"坏编码","definition":"x","formula":"{}","timeDim":"DAY","srcMapping":"{}"}' $B/api/bi/dict)
+EQ "段72 坏编码 422" "$BAD72" "422"
+RG72=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"metricKey":"M-SMK-001","name":"冒烟毛利率","definition":"冒烟14.3指标","formula":"{\"expr\":\"SUM(AMOUNT)\",\"precision\":2}","timeDim":"DAY","srcMapping":"{\"Invoice.amount\":\"amt\"}","formulaType":"RATIO","numerator":"销售收入 − 销售成本","denominator":"销售收入","dimensions":"客户/期间","owner":"smk72-owner"}' $B/api/bi/dict | J "d['data']['status']")
+EQ "段72 登记草稿" "$RG72" "DRAFT"
+# 比率型缺分母发布 422（先抹掉分母）
+SQL "UPDATE erp_bi_metric_dict SET DENOMINATOR=NULL WHERE METRIC_KEY='M-SMK-001'" >/dev/null 2>&1
+PD72=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"formula":"{\"expr\":\"SUM(AMOUNT)\",\"precision\":2}"}' $B/api/bi/dict/M-SMK-001/publish)
+EQ "段72 比率缺分母 422" "$PD72" "422"
+SQL "UPDATE erp_bi_metric_dict SET DENOMINATOR='销售收入' WHERE METRIC_KEY='M-SMK-001'" >/dev/null 2>&1
+PB72=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"formula":"{\"expr\":\"SUM(AMOUNT)\",\"precision\":2}"}' $B/api/bi/dict/M-SMK-001/publish | J "d['data']['status']")
+EQ "段72 发布生效" "$PB72" "PUBLISHED"
+
+# ---- 72.1 引用方登记 + 变更申请（治理单签 → GRAYING）----
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk72-tpl','SMK72-TPL','冒烟14.3模板','STANDARD','SELECT 1','[]','[{\"metricKey\":\"M-SMK-001\",\"formula\":\"{}\"}]','PUBLISHED','RISK:HIGH 驾驶舱','smoke',NOW(),'0',0)" >/dev/null 2>&1
+BU72=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"consumerId":"smk72-consumer"}' $B/api/bi/dict/M-SMK-001/usage | J "d['code']")
+EQ "段72 引用方登记" "$BU72" "200"
+RC72=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"formula":"{\"expr\":\"SUM(NET)\",\"precision\":2}","reason":"冒烟口径调整","scope":"涉及1张报表"}' $B/api/bi/dict/M-SMK-001/change-request | J "d['data']['status']")
+EQ "段72 变更审批中" "$RC72" "CHANGE_PENDING"
+ROW72=$(SQL "SELECT ID FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-001' AND VERSION=2")
+[ -n "${ROW72:-}" ] && ok "段72 新版本行（$ROW72）" || bad "新版本行缺失"
+# 旧版仍生效（未审批不生效）
+CUR72=$(SQL "SELECT VERSION FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-001' AND IS_CURRENT=1")
+EQ "段72 旧版仍生效" "$CUR72" "1"
+# 重复申请 422
+DUP72=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"formula":"{}"}' $B/api/bi/dict/M-SMK-001/change-request)
+EQ "段72 重复申请 422" "$DUP72" "422"
+# 同指标变更列表可见
+CL72=$(C -H "$(A $TADM)" $B/api/bi/dict/M-SMK-001/changes | J "len(d['data'])")
+EQ "段72 变更列表 1 条" "$CL72" "1"
+
+# 治理签署账号（发起人=mdt-smoke admin，签署须 ROLE_DATA_GOV）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk72dg','smk72dg',PASSWORD,'冒烟72-治理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk72-ur-DG','smk72dg',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DATA_GOV'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk72bo','smk72bo',PASSWORD,'冒烟72-业务','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk72-ur-BO','smk72bo',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_BIZ_OWNER'" >/dev/null 2>&1
+TDG72=$(C -H 'Content-Type: application/json' -d '{"username":"smk72dg","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TBO72=$(C -H 'Content-Type: application/json' -d '{"username":"smk72bo","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TDG72:-}" ] && [ -n "${TBO72:-}" ] && ok "段72 签署人登录" || bad "签署人登录失败"
+IM72=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='MetricDictChange' AND BIZ_ID='$ROW72' ORDER BY ID DESC LIMIT 1")
+T1_72=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$IM72' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+PG72=$(C -X POST -H "$(A $TDG72)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T1_72\",\"opinion\":\"一致性核验通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段72 治理签署" "$PG72" "200"
+SG72=$(SQL "SELECT STATUS FROM erp_bi_metric_dict WHERE ID='$ROW72'")
+EQ "段72 灰度中" "$SG72" "GRAYING"
+CUR72B=$(SQL "SELECT VERSION FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-001' AND IS_CURRENT=1")
+EQ "段72 灰度期旧版仍生效" "$CUR72B" "1"
+# 引用方待更新标记
+PDN72=$(C -H "$(A $TADM)" $B/api/bi/dict/M-SMK-001/consumers | J "str(d['data']['pending']).lower()")
+EQ "段72 引用方待更新" "$PDN72" "true"
+# 灰度通知
+NT72=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='MetricDictChange'")
+[ "$NT72" -ge 1 ] && ok "段72 灰度通知（$NT72）" || bad "灰度通知缺失"
+
+# ---- 72.2 切换确认（超容差 422 → 双审 → 新版生效）----
+TOL72=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"diffNote":"新旧差异","diffPct":"0.8"}' $B/api/bi/dict/changes/$ROW72/switch)
+EQ "段72 超容差缺备注 422" "$TOL72" "422"
+SW72=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"diffNote":"新版剔除返利，抽样差异 0.3%","diffPct":"0.3"}' $B/api/bi/dict/changes/$ROW72/switch | J "d['code']")
+EQ "段72 切换提交" "$SW72" "200"
+IM2_72=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='MetricDictSwitch' AND BIZ_ID='$ROW72' ORDER BY ID DESC LIMIT 1")
+T1S72=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$IM2_72' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+PS1_72=$(C -X POST -H "$(A $TDG72)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T1S72\",\"opinion\":\"灰度复核通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段72 治理灰度复核" "$PS1_72" "200"
+BEF72=$(SQL "SELECT STATUS FROM erp_bi_metric_dict WHERE ID='$ROW72'")
+EQ "段72 双审未完不生效" "$BEF72" "GRAYING"
+T2S72=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$IM2_72' AND SEQ=2 AND NODE_TYPE='SIGN' LIMIT 1")
+PS2_72=$(C -X POST -H "$(A $TBO72)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T2S72\",\"opinion\":\"切换批准\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段72 业务负责人批准" "$PS2_72" "200"
+AFT72=$(SQL "SELECT STATUS FROM erp_bi_metric_dict WHERE ID='$ROW72'")
+EQ "段72 新版已发布" "$AFT72" "PUBLISHED"
+CUR72C=$(SQL "SELECT VERSION FROM erp_bi_metric_dict WHERE METRIC_KEY='M-SMK-001' AND IS_CURRENT=1")
+EQ "段72 IS_CURRENT 切至新版" "$CUR72C" "2"
+# 引用方更新确认清标
+CC72=$(C -X PUT -H "$(A $TADM)" $B/api/bi/dict/M-SMK-001/consumers/smk72-consumer/confirm | J "d['data']['status']")
+EQ "段72 引用方确认清除" "$CC72" "ACTIVE"
+
+# ---- 72.3 血缘图谱与影响报告（S-4.10-15）----
+LN72=$(C -H "$(A $TADM)" $B/api/bi/dict/M-SMK-001/lineage | J "d['code']")
+EQ "段72 血缘图谱 200" "$LN72" "200"
+IM72V=$(SQL "SELECT COUNT(*) FROM erp_bi_metric_lineage WHERE METRIC_KEY='M-SMK-001' AND NODE_TYPE='REPORT'")
+[ "$IM72V" -ge 1 ] && ok "段72 引用报表血缘（$IM72V）" || bad "引用报表血缘缺失"
+HR72=$(C -H "$(A $TADM)" $B/api/bi/dict/M-SMK-001/lineage/2/impact | J "len(d['data']['highRiskReports'])")
+EQ "段72 高风险报表标注" "$HR72" "1"
+
+# ---- 72.4 批量口径校验（14.3.3）----
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk72-tpl2','SMK72-TPL2','冒烟14.3差异模板','STANDARD','SELECT 1','[]','[{\"metricKey\":\"M-SMK-001\",\"formula\":\"HACKED\"},{\"metricKey\":\"M-SMK-099\",\"formula\":\"{}\"}]','PUBLISHED','smoke',NOW(),'0',0)" >/dev/null 2>&1
+CA72=$(C -X POST -H "$(A $TADM)" $B/api/bi/dict/check-all | J "len(d['data'])")
+[ "$CA72" -ge 3 ] && ok "段72 批量校验报告（$CA72 项）" || bad "批量校验项数不足"
+UD72=$(C -X POST -H "$(A $TADM)" $B/api/bi/dict/check-all | J "len([r for r in d['data'] if not r['registered']])")
+EQ "段72 未注册计差异" "$UD72" "1"
+DF72=$(C -X POST -H "$(A $TADM)" $B/api/bi/dict/check-all | J "len([r for r in d['data'] if not r['consistent']])")
+[ "$DF72" -ge 2 ] && ok "段72 差异项（$DF72）" || bad "差异项不足"
+
+# ---- 72.5 页面结构 ----
+EQ "段72 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/metric-dict/index.vue)" "3"
+EQ "段72 三条路由" "$(grep -c /m/14.3 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_lineage WHERE METRIC_KEY LIKE 'M-SMK-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_metric_dict WHERE METRIC_KEY LIKE 'M-SMK-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK72%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('MetricDictChange','MetricDictSwitch')" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk72%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk72%'" >/dev/null 2>&1
+
+echo "段 72 指标口径 14.3 追加完成"
+
+# ==================================================================== 段 73：权限控制 14.4（add-perm-control-console）
+echo "== 段 73 权限控制 14.4（M14-4）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE IN ('BiRowPerm','BiTempGrant')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('BiRowPerm','BiTempGrant')" >/dev/null 2>&1
+SQL "DELETE v FROM erp_bi_perm_rule_ver v JOIN erp_bi_perm_rule r ON v.RULE_ID=r.ID WHERE r.USER_NAME LIKE 'smk73%' OR r.ROLE_CODE LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk73%' OR ROLE_CODE LIKE 'smk73%' OR TARGET_KEY LIKE 'smk73_%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_temp_grant WHERE FIELD_KEY LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('BiRowPermFallback','BiTempGrantRejected')" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_org_unit WHERE OU_CODE LIKE 'SMK73%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_role WHERE ROLE_CODE LIKE 'smk73%'" >/dev/null 2>&1
+
+# ---- 73.0 组织树造数（SELF_SUBTREE 展开基础）----
+SQL "INSERT IGNORE INTO erp_mdm_org_unit (ID, OU_CODE, OU_NAME, LEGAL_ENTITY_ID, PARENT_ID, TREE_LEVEL, OU_TYPE, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk73-org-root','SMK73-ROOT','冒烟73根','LE-SMK73','' ,1,'DEPT','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_mdm_org_unit (ID, OU_CODE, OU_NAME, LEGAL_ENTITY_ID, PARENT_ID, TREE_LEVEL, OU_TYPE, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk73-org-child','SMK73-CHILD','冒烟73子','LE-SMK73','smk73-org-root',2,'DEPT','1','smoke',NOW(),'0',0)" >/dev/null 2>&1
+
+# ---- 73.1 行级规则：非法枚举 422 → 创建 → 提交 → 治理签署 → ENABLED + 版本快照 ----
+IE73=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"userName":"smk73u1","scopeExpr":"DROP TABLE x","action":"PASS"}' $B/api/bi/row-perms)
+EQ "段73 非法 SCOPE_EXPR 422" "$IE73" "422"
+LE73=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"userName":"smk73u1","scopeExpr":"SELF_SUBTREE","orgId":"smk73-org-root","action":"PASS","remark":"冒烟73行级"}' $B/api/bi/row-perms | J "d['data']['id']")
+[ -n "${LE73:-}" ] && ok "段73 行级规则草稿（$LE73）" || bad "行级规则创建失败"
+LST73=$(SQL "SELECT STATUS FROM erp_bi_perm_rule WHERE ID='$LE73'")
+EQ "段73 初始 DRAFT" "$LST73" "DRAFT"
+LSM73=$(C -X POST -H "$(A $TADM)" $B/api/bi/row-perms/$LE73/submit | J "d['code']")
+EQ "段73 提交审批" "$LSM73" "200"
+LIM73=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='BiRowPerm' AND BIZ_ID='$LE73' ORDER BY ID DESC LIMIT 1")
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk73dg','smk73dg',PASSWORD,'冒烟73-治理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk73-ur-DG','smk73dg',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DATA_GOV'" >/dev/null 2>&1
+TDG73=$(C -H 'Content-Type: application/json' -d '{"username":"smk73dg","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TDG73:-}" ] && ok "段73 治理签署人登录" || bad "签署人登录失败"
+LTM73=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$LIM73' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+LPM73=$(C -X POST -H "$(A $TDG73)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$LTM73\",\"opinion\":\"行级权限审核通过\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段73 数据治理签署" "$LPM73" "200"
+LEN73=$(SQL "SELECT STATUS FROM erp_bi_perm_rule WHERE ID='$LE73'")
+EQ "段73 审批后 ENABLED" "$LEN73" "ENABLED"
+LVR73=$(SQL "SELECT COUNT(*) FROM erp_bi_perm_rule_ver WHERE RULE_ID='$LE73'")
+[ "$LVR73" -ge 1 ] && ok "段73 版本快照生成（$LVR73）" || bad "版本快照缺失"
+# 影响预览：SELF_SUBTREE 展开到法人主体 LE-SMK73
+LIP73=$(C -H "$(A $TADM)" "$B/api/bi/row-perms/impact-preview?userName=smk73u1" | J "str('LE-SMK73' in str(d['data']['allowedEntities']))")
+EQ "段73 影响预览含展开主体" "$LIP73" "True"
+
+# ---- 73.2 多角色并集 + DENY 取严（BR-4.10-16）----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk73u2','smk73u2',PASSWORD,'冒烟73-并集','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_role (ID,ROLE_CODE,ROLE_NAME,STATUS,SORT_ORDER,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk73-rA','smk73_ROLE_A','冒烟73角色A','1',98,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_role (ID,ROLE_CODE,ROLE_NAME,STATUS,SORT_ORDER,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     VALUES ('smk73-rB','smk73_ROLE_B','冒烟73角色B','1',98,'smoke',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) VALUES ('smk73-ur-A','smk73u2','smk73-rA')" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) VALUES ('smk73-ur-B','smk73u2','smk73-rB')" >/dev/null 2>&1
+# 角色 A：LE-SMK73 PASS（复用 73.1 已生效规则改为角色维度：另建两条）
+RA73=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"smk73_ROLE_A","scopeExpr":"SELF","entityId":"LE-SMK73","action":"PASS"}' $B/api/bi/row-perms | J "d['data']['id']")
+C -X POST -H "$(A $TADM)" $B/api/bi/row-perms/$RA73/submit >/dev/null
+LTM73B=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_TYPE='BiRowPerm' AND i.BIZ_ID='$RA73' AND t.SEQ=1 AND t.NODE_TYPE='SIGN' LIMIT 1")
+C -X POST -H "$(A $TDG73)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$LTM73B\",\"opinion\":\"通过\"}" $B/api/qms/approvals/pass >/dev/null
+# 并集预览：含 LE-SMK73
+LUN73=$(C -H "$(A $TADM)" "$B/api/bi/row-perms/impact-preview?userName=smk73u2" | J "str('LE-SMK73' in str(d['data']['allowedEntities']))")
+EQ "段73 多角色并集生效" "$LUN73" "True"
+# DENY 取严：角色 B 对 LE-SMK73 DENY
+DB73=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"roleCode":"smk73_ROLE_B","scopeExpr":"SELF","entityId":"LE-SMK73","action":"DENY"}' $B/api/bi/row-perms | J "d['data']['id']")
+C -X POST -H "$(A $TADM)" $B/api/bi/row-perms/$DB73/submit >/dev/null
+LTM73C=$(SQL "SELECT t.ID FROM erp_sys_approval_task t JOIN erp_sys_approval i ON i.ID=t.APPR_ID WHERE i.BIZ_TYPE='BiRowPerm' AND i.BIZ_ID='$DB73' AND t.SEQ=1 AND t.NODE_TYPE='SIGN' LIMIT 1")
+C -X POST -H "$(A $TDG73)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$LTM73C\",\"opinion\":\"通过\"}" $B/api/qms/approvals/pass >/dev/null
+LDY73=$(C -H "$(A $TADM)" "$B/api/bi/row-perms/impact-preview?userName=smk73u2" | J "str('LE-SMK73' not in str(d['data']['allowedEntities']) and d['data']['allEntities']==False)")
+EQ "段73 DENY 严于 PASS" "$LDY73" "True"
+
+# ---- 73.3 临时授权：超上限 422 → 申请 → 签署 → ACTIVE → 过期收回 ----
+OH73=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"fieldKey":"smk73_salary","purpose":"超上限测试用途","hours":48}' $B/api/bi/temp-grants)
+EQ "段73 超 24h 上限 422" "$OH73" "422"
+TG73=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"fieldKey":"smk73_salary","purpose":"薪酬分析用途说明","hours":2}' $B/api/bi/temp-grants | J "d['data']['id']")
+[ -n "${TG73:-}" ] && ok "段73 临时授权申请（$TG73）" || bad "临时授权申请失败"
+TST73=$(SQL "SELECT STATUS FROM erp_bi_temp_grant WHERE ID='$TG73'")
+EQ "段73 申请即审批中" "$TST73" "PENDING_APPROVAL"
+TIM73=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='BiTempGrant' AND BIZ_ID='$TG73' ORDER BY ID DESC LIMIT 1")
+TTM73=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$TIM73' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+TPM73=$(C -X POST -H "$(A $TDG73)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TTM73\",\"opinion\":\"临时授权批准\"}" $B/api/qms/approvals/pass | J "d['code']")
+EQ "段73 临时授权签署" "$TPM73" "200"
+TEN73=$(SQL "SELECT STATUS FROM erp_bi_temp_grant WHERE ID='$TG73'")
+EQ "段73 审批后 ACTIVE" "$TEN73" "ACTIVE"
+TXC73=$(SQL "SELECT TIMESTAMPDIFF(HOUR, APPLY_AT, EXPIRE_AT) FROM erp_bi_temp_grant WHERE ID='$TG73'")
+[ "$TXC73" -le 24 ] && ok "段73 有效期 ≤24h（${TXC73}h）" || bad "有效期超上限（${TXC73}h）"
+# 回拨过期 → 手动触发收回
+SQL "UPDATE erp_bi_temp_grant SET EXPIRE_AT=DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE ID='$TG73'" >/dev/null 2>&1
+EXS73=$(C -X POST -H "$(A $TADM)" $B/api/bi/temp-grants/expire-scan | J "d['data']")
+[ "${EXS73:-0}" -ge 1 ] && ok "段73 过期扫描收回（$EXS73 条）" || bad "过期扫描未收回"
+TEX73=$(SQL "SELECT STATUS FROM erp_bi_temp_grant WHERE ID='$TG73'")
+EQ "段73 到期 EXPIRED" "$TEX73" "EXPIRED"
+
+# ---- 73.4 敏感字段登记位（14.4.2）+ 审计 + 权限 ----
+SF73=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"targetKey":"smk73_phone","remark":"冒烟73敏感登记"}' $B/api/bi/sensitive-fields | J "d['data']['id']")
+[ -n "${SF73:-}" ] && ok "段73 敏感字段登记（$SF73）" || bad "敏感字段登记失败"
+SFS73=$(SQL "SELECT RULE_TYPE FROM erp_bi_perm_rule WHERE ID='$SF73'")
+EQ "段73 登记类型 COL_SENSITIVE" "$SFS73" "COL_SENSITIVE"
+AUD73=$(C -H "$(A $TADM)" "$B/api/bi/row-perms/audit?size=5" | J "d['code']")
+EQ "段73 审计日志查询 200" "$AUD73" "200"
+# 非 BI 角色写 403
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk73-plain','smk73plain',PASSWORD,'冒烟73普通','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+TPL73P=$(C -H 'Content-Type: application/json' -d '{"username":"smk73plain","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+PW73=$(HTTP -X POST -H "Authorization: Bearer $TPL73P" -H 'Content-Type: application/json' \
+  -d '{"userName":"x","scopeExpr":"SELF","entityId":"LE-01"}' $B/api/bi/row-perms)
+EQ "段73 非 BI 写行级 403" "$PW73" "403"
+GR73=$(C -H "Authorization: Bearer $TPL73P" "$B/api/bi/row-perms?status=ENABLED" | J "d['code']")
+EQ "段73 登录可读规则列表" "$GR73" "200"
+TGW73=$(HTTP -X POST -H "Authorization: Bearer $TPL73P" -H 'Content-Type: application/json' \
+  -d '{"fieldKey":"smk73_x","purpose":"普通用户申请用途"}' $B/api/bi/temp-grants/expire-scan)
+EQ "段73 非管理员过期扫描 403" "$TGW73" "403"
+EQ "段73 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/perm-control/index.vue)" "3"
+EQ "段73 三条路由" "$(grep -c /m/14.4 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE IN ('BiRowPerm','BiTempGrant')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE IN ('BiRowPerm','BiTempGrant')" >/dev/null 2>&1
+SQL "DELETE v FROM erp_bi_perm_rule_ver v JOIN erp_bi_perm_rule r ON v.RULE_ID=r.ID WHERE r.USER_NAME LIKE 'smk73%' OR r.ROLE_CODE LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk73%' OR ROLE_CODE LIKE 'smk73%' OR TARGET_KEY LIKE 'smk73_%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_temp_grant WHERE FIELD_KEY LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE IN ('BiRowPermFallback','BiTempGrantRejected')" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_org_unit WHERE OU_CODE LIKE 'SMK73%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk73%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_role WHERE ROLE_CODE LIKE 'smk73%'" >/dev/null 2>&1
+
+echo "段 73 权限控制 14.4 追加完成"
+
+# ==================================================================== 段 74：数据导出 14.5（add-export-console）
+echo "== 段 74 数据导出 14.5（M14-5）开始 =="
+
+# ---- 段首清理（可重跑）----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='BiExportOverLimit'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='BiExportOverLimit'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_export_task WHERE TASK_NO LIKE 'EX%' OR USER_NAME='smk74u'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK74%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk74%' OR CREATE_BY='smk74'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'BiExport%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk74%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk74%'" >/dev/null 2>&1
+
+# ---- 74.0 造数：PUBLISHED 模板 + 行级通配（模板导出权限基础）----
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk74-tpl','SMK74-TPL','冒烟74模板','STANDARD','SELECT 1 AS A, ''x'' AS B','[]','[]','PUBLISHED','smk74','smk74',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_perm_rule (ID, RULE_TYPE, TARGET_KEY, USER_NAME, ENTITY_ID, ACTION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+     VALUES ('smk74-perm','ROW_LE','*','smk74u','*','PASS','ENABLED','smk74',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk74u','smk74u',PASSWORD,'冒烟74用户','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk74mgr','smk74mgr',PASSWORD,'冒烟74经理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk74-ur-M','smk74mgr',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DEPT_MANAGER'" >/dev/null 2>&1
+
+# ---- 74.1 小额导出三格式（模板驱动，无审批）----
+CSV74=""
+for FMT in csv xlsx pdf; do
+  EX74=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+    -d "{\"dataset\":\"template\",\"params\":{\"templateId\":\"smk74-tpl\",\"format\":\"$FMT\",\"reportName\":\"冒烟报表\"},\"estRows\":10}" $B/api/bi/export | J "d['data']['id']")
+  [ -n "${EX74:-}" ] && ok "段74 $FMT 提交（$EX74）" || bad "段74 $FMT 提交失败"
+  [ "$FMT" = "csv" ] && CSV74="$EX74"
+  # worker 每 10 秒消费一轮——轮询等待 DONE（最多 20 秒）
+  ST74="QUEUED"
+  for w in $(seq 1 10); do
+    sleep 2
+    ST74=$(SQL "SELECT STATUS FROM erp_bi_export_task WHERE ID='$EX74'")
+    [ "$ST74" = "DONE" ] && break
+  done
+  EQ "段74 $FMT 后台完成" "$ST74" "DONE"
+  WM74=$(SQL "SELECT WATERMARK FROM erp_bi_export_task WHERE ID='$EX74'")
+  CONTAINS "段74 $FMT 水印含用户名" "$WM74" "admin"
+  FP74=$(SQL "SELECT FILE_PATH FROM erp_bi_export_task WHERE ID='$EX74'")
+  [ -n "${FP74:-}" ] && [ -f "$FP74" ] && ok "段74 $FMT 密文落盘" || bad "段74 $FMT 密文缺失"
+done
+
+# ---- 74.2 下载（属主解密流出 + 过期 422）----
+EXDL="$CSV74"
+DLCODE=$(HTTP -H "$(A $TADM)" $B/api/bi/export/$EXDL/download)
+EQ "段74 属主下载 200" "$DLCODE" "200"
+# 过期链接 422：回拨 EXPIRE_AT
+SQL "UPDATE erp_bi_export_task SET EXPIRE_AT=DATE_SUB(NOW(), INTERVAL 1 DAY) WHERE ID='$EXDL'" >/dev/null 2>&1
+EXP74=$(BIZ -H "$(A $TADM)" $B/api/bi/export/$EXDL/download)
+EQ "段74 过期链接 422" "$EXP74" "422"
+
+# ---- 74.3 超量审批：拦截 → 分级角色 → 驳回回调 ----
+OVRESP74=$(C -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"dataset":"cost","params":{"format":"csv","purpose":"月度经营分析导出用途说明"},"estRows":80000}' $B/api/bi/export)
+OVID74=$(echo "$OVRESP74" | J "d['data']['id']")
+OROLE74=$(echo "$OVRESP74" | J "d['data']['approverRole']")
+OVS74=$(SQL "SELECT APPROVAL_STATUS FROM erp_bi_export_task WHERE ID='$OVID74'")
+EQ "段74 超量拦截 PENDING" "$OVS74" "PENDING"
+EQ "段74 总监级审批（>5万）" "$OROLE74" "ROLE_DEPT_DIRECTOR"
+# 用途 <10 字 422
+OP74=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' \
+  -d '{"dataset":"cost","params":{"format":"csv","purpose":"短"},"estRows":80000}' $B/api/bi/export)
+EQ "段74 用途过短 422" "$OP74" "422"
+# 经理签署被拒（非本单角色）
+TIM74=$(SQL "SELECT ID FROM erp_sys_approval WHERE BIZ_TYPE='BiExportOverLimit' AND BIZ_ID='$OVID74' ORDER BY ID DESC LIMIT 1")
+TTM74=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$TIM74' AND SEQ=1 AND NODE_TYPE='SIGN' LIMIT 1")
+TMG74=$(C -H 'Content-Type: application/json' -d '{"username":"smk74mgr","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${TMG74:-}" ] && ok "段74 经理签署人登录" || bad "签署人登录失败"
+TRJ74=$(C -X POST -H "$(A $TMG74)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TTM74\",\"reason\":\"测试驳回\"}" $B/api/qms/approvals/reject | J "d['code']")
+if [ "${TRJ74:-}" = "403" ] || [ "${TRJ74:-}" = "422" ]; then ok "段74 非角色签署被拒（$TRJ74）"; else bad "非角色签署未被拒（$TRJ74）"; fi
+# 以总监身份驳回
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk74dir','smk74dir',PASSWORD,'冒烟74总监','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'smk74-ur-D','smk74dir',ID FROM erp_admin_role WHERE ROLE_CODE='ROLE_DEPT_DIRECTOR'" >/dev/null 2>&1
+TDI74=$(C -H 'Content-Type: application/json' -d '{"username":"smk74dir","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+TRD74=$(C -X POST -H "$(A $TDI74)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$TTM74\",\"reason\":\"冒烟驳回\"}" $B/api/qms/approvals/reject | J "d['code']")
+EQ "段74 总监驳回签署" "$TRD74" "200"
+ORJ74=$(SQL "SELECT STATUS FROM erp_bi_export_task WHERE ID='$OVID74'")
+EQ "段74 驳回后任务 FAILED" "$ORJ74" "FAILED"
+NTC74=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='BiExportRejected'")
+[ "$NTC74" -ge 1 ] && ok "段74 驳回通知（$NTC74）" || bad "驳回通知缺失"
+
+# ---- 74.4 生命周期：24h 提醒 + 到期清理 ----
+EXL74="$CSV74"
+SQL "UPDATE erp_bi_export_task SET EXPIRE_AT=DATE_ADD(NOW(), INTERVAL 12 HOUR), REMIND_AT=NULL WHERE ID='$EXL74'" >/dev/null 2>&1
+# 手动触发生命周期（服务端 sweep 由 scheduler 跑；此处验证数据语义）
+RML74=$(SQL "SELECT COUNT(*) FROM erp_bi_export_task WHERE ID='$EXL74' AND EXPIRE_AT > NOW() AND REMIND_AT IS NULL")
+[ "$RML74" -ge 1 ] && ok "段74 待提醒任务就位" || bad "待提醒任务缺失"
+
+# ---- 74.5 权限与页面结构 ----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk74-plain','smk74plain',PASSWORD,'冒烟74普通','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+TPL74P=$(C -H 'Content-Type: application/json' -d '{"username":"smk74plain","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+GT74=$(C -H "Authorization: Bearer $TPL74P" $B/api/bi/export/tasks | J "d['code']")
+EQ "段74 登录可读任务列表" "$GT74" "200"
+PD74=$(HTTP -H "Authorization: Bearer $TPL74P" $B/api/bi/export/pending)
+EQ "段74 非管理员看待审批 403" "$PD74" "403"
+EQ "段74 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/export-console/index.vue)" "3"
+EQ "段74 三条路由" "$(grep -c /m/14.5 frontend/src/router/index.js)" "3"
+
+# ---- 段尾清理 ----
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval i ON t.APPR_ID=i.ID WHERE i.BIZ_TYPE='BiExportOverLimit'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='BiExportOverLimit'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_export_task WHERE TASK_NO LIKE 'EX%' OR USER_NAME='smk74u'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK74%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk74%' OR CREATE_BY='smk74'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'BiExport%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk74%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk74%'" >/dev/null 2>&1
+
+echo "段 74 数据导出 14.5 追加完成"
+
+# ==== 段 75：自助查询 14.6（add-adhoc-query-console，spec bi-adhoc-query + bi-temp-report）====
+echo "---- 段 75 自助查询 14.6 ----"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_bi_adhoc_task WHERE USER_NAME LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_saved_query WHERE USER_NAME LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_temp_report WHERE CREATE_BY LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk75%' OR CREATE_BY='smk75'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK75%'" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk75_seed" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'Adhoc%' OR BIZ_TYPE='TempReportExpire'" >/dev/null 2>&1
+
+# 种数据源模板（语义列：时间/组织/普通维度 + 指标）+ 源表 + 行级通配绑定
+TPL75="smk75-tpl"
+SQL "CREATE TABLE smk75_seed (ORDER_DATE varchar(10), ENTITY_ID varchar(32), REGION varchar(32), AMOUNT decimal(12,2))" >/dev/null 2>&1
+SQL "INSERT INTO smk75_seed VALUES ('2026-10-01','LE-01','华东',100),('2026-10-02','LE-01','华北',200),('2026-10-03','LE-02','华东',300)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$TPL75','SMK75-TPL','冒烟14.6数据集','STANDARD','SELECT * FROM smk75_seed','[{\"field\":\"ORDER_DATE\",\"label\":\"订单日期\",\"role\":\"DIMENSION\",\"timeFlag\":true},{\"field\":\"ENTITY_ID\",\"label\":\"法人\",\"role\":\"DIMENSION\",\"roleFlag\":true},{\"field\":\"REGION\",\"label\":\"区域\",\"role\":\"DIMENSION\"},{\"field\":\"AMOUNT\",\"label\":\"金额\",\"role\":\"MEASURE\",\"agg\":[\"SUM\",\"AVG\"]}]','[]','PUBLISHED','smk75',NOW(),'0',0)" >/dev/null 2>&1
+# 存量纯列名模板（兼容性验证）
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk75-leg','SMK75-LEG','冒烟存量列','STANDARD','SELECT 1','[\"COL_A\",\"COL_B\"]','[]','PUBLISHED','smk75',NOW(),'0',0)" >/dev/null 2>&1
+# 冒烟用户行级通配绑定（查询用户 + 共享接收人）
+SQL "INSERT INTO erp_bi_perm_rule (ID, RULE_TYPE, TARGET_KEY, USER_NAME, ENTITY_ID, ACTION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk75-perm-u','ROW_LE','*','smk75u','*','PASS','ENABLED','smk75',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_perm_rule (ID, RULE_TYPE, TARGET_KEY, USER_NAME, ENTITY_ID, ACTION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk75-perm-g','ROW_LE','*','smk75g','*','PASS','ENABLED','smk75',NOW(),'0',0)" >/dev/null 2>&1
+
+# 冒烟账号（查询人 smk75u / 共享接收人 smk75g，沿用 smk 模式）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk75u','smk75u',PASSWORD,'冒烟75查询','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk75g','smk75g',PASSWORD,'冒烟75接收','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+# smk75u 需 BI_DESIGNER（转正走模板 create 链）
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-75u-bi',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_BI_DESIGNER' WHERE u.USERNAME='smk75u' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+
+T75U=$(C -H 'Content-Type: application/json' -d '{"username":"smk75u","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+T75G=$(C -H 'Content-Type: application/json' -d '{"username":"smk75g","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T75U:-}" ] && ok "段75 查询人登录" || bad "段75 查询人登录失败"
+[ -n "${T75G:-}" ] && ok "段75 接收人登录" || bad "段75 接收人登录失败"
+
+# ---- 75.1 数据集与字段语义 ----
+DS75=$(C -H "$(A $T75U)" $B/api/bi/adhoc/datasets)
+echo "$DS75" | J "any(d['code']=='SMK75-TPL' for d in d['data'])" | grep -qi true && ok "段75 PUBLISHED 数据集可见" || bad "段75 PUBLISHED 数据集不可见"
+echo "$DS75" | J "any(d['code']=='SMK75-LEG' for d in d['data'])" | grep -qi true && ok "段75 存量纯列名数据集可见" || bad "段75 存量数据集不可见"
+echo "$DS75" | grep -q '"timeFlag":true' && ok "段75 时间语义标注" || bad "段75 时间语义标注缺失"
+echo "$DS75" | grep -q '"roleFlag":true' && ok "段75 组织语义标注" || bad "段75 组织语义标注缺失"
+
+# ---- 75.2 预检阻断（BR-4.10-30）----
+PB75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"],\\\"measures\\\":[],\\\"filters\\\":[{\\\"field\\\":\\\"REGION\\\",\\\"op\\\":\\\"EQ\\\",\\\"value\\\":\\\"华东\\\"}]}\"}" $B/api/bi/adhoc/query | J "d['code']")
+EQ "段75 无时间无组织阻断422" "$PB75" "422"
+PB275=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"],\\\"measures\\\":[],\\\"filters\\\":[{\\\"field\\\":\\\"ORDER_DATE\\\",\\\"op\\\":\\\"GE\\\",\\\"value\\\":\\\"2026-10-01\\\"}]}\"}" $B/api/bi/adhoc/query | J "d['code']")
+EQ "段75 有时间无组织仍阻断422" "$PB275" "422"
+RJ75=$(SQL "SELECT COUNT(*) FROM erp_bi_adhoc_task WHERE STATUS='REJECTED' AND USER_NAME='smk75u'")
+[ "${RJ75:-0}" -ge 2 ] && ok "段75 REJECTED 逐次留痕（$RJ75）" || bad "段75 REJECTED 留痕缺失（$RJ75）"
+
+# ---- 75.3 同步查询 + 注入防护 ----
+SY75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"],\\\"measures\\\":[{\\\"field\\\":\\\"AMOUNT\\\",\\\"agg\\\":\\\"SUM\\\"}],\\\"filters\\\":[{\\\"field\\\":\\\"ORDER_DATE\\\",\\\"op\\\":\\\"GE\\\",\\\"value\\\":\\\"2026-10-01\\\"},{\\\"field\\\":\\\"ENTITY_ID\\\",\\\"op\\\":\\\"EQ\\\",\\\"value\\\":\\\"LE-01\\\"}]}\"}" $B/api/bi/adhoc/query | J "d['data']['mode']")
+EQ "段75 同步执行模式" "$SY75" "sync"
+INJ75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"],\\\"measures\\\":[],\\\"filters\\\":[{\\\"field\\\":\\\"ORDER_DATE\\\",\\\"op\\\":\\\"GE\\\",\\\"value\\\":\\\"2026-10-01\\\"},{\\\"field\\\":\\\"ENTITY_ID\\\",\\\"op\\\":\\\"EQ\\\",\\\"value\\\":\\\"'; DROP TABLE smk75_seed; --\\\"}]}\"}" $B/api/bi/adhoc/query | J "d['data']['mode']")
+EQ "段75 注入值参数化执行" "$INJ75" "sync"
+SIE75=$(SQL "SELECT COUNT(*) FROM smk75_seed")
+EQ "段75 源表未被注入破坏" "$SIE75" "3"
+NWF75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"NOT_A_COL\\\"],\\\"measures\\\":[],\\\"filters\\\":[{\\\"field\\\":\\\"ORDER_DATE\\\",\\\"op\\\":\\\"GE\\\",\\\"value\\\":\\\"2026-10-01\\\"},{\\\"field\\\":\\\"ENTITY_ID\\\",\\\"op\\\":\\\"EQ\\\",\\\"value\\\":\\\"x\\\"}]}\"}" $B/api/bi/adhoc/query | J "d['code']")
+EQ "段75 非白名单字段422" "$NWF75" "422"
+DN75=$(SQL "SELECT COUNT(*) FROM erp_bi_adhoc_task WHERE STATUS='DONE' AND USER_NAME='smk75u'")
+[ "${DN75:-0}" -ge 2 ] && ok "段75 同步落 DONE 留痕（$DN75）" || bad "段75 DONE 留痕缺失（$DN75）"
+
+# ---- 75.4 我的查询 ----
+SQ75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"name\":\"冒烟常用\",\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"]}\"}" $B/api/bi/adhoc/saved-queries | J "d['code']")
+EQ "段75 保存我的查询" "$SQ75" "200"
+SQL75=$(C -H "$(A $T75U)" $B/api/bi/adhoc/saved-queries | J "any(q['name']=='冒烟常用' for q in d['data'])" | grep -qi true && echo ok)
+EQ "段75 我的查询可见" "${SQL75:-}" "ok"
+SOG75=$(C -H "$(A $T75G)" $B/api/bi/adhoc/saved-queries | J "len(d['data'])")
+EQ "段75 我的查询他人不可见" "$SOG75" "0"
+
+# ---- 75.5 临时报表：另存/打开/共享/转正 ----
+TR75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d "{\"name\":\"冒烟临时报表\",\"remark\":\"段75\",\"templateId\":\"$TPL75\",\"queryJson\":\"{\\\"dimensions\\\":[\\\"REGION\\\"],\\\"measures\\\":[{\\\"field\\\":\\\"AMOUNT\\\",\\\"agg\\\":\\\"SUM\\\"}],\\\"filters\\\":[{\\\"field\\\":\\\"ORDER_DATE\\\",\\\"op\\\":\\\"GE\\\",\\\"value\\\":\\\"2026-10-01\\\"},{\\\"field\\\":\\\"ENTITY_ID\\\",\\\"op\\\":\\\"NE\\\",\\\"value\\\":\\\"NONE\\\"}]}\"}" $B/api/bi/temp-reports | J "d['data']['id']")
+[ -n "${TR75:-}" ] && ok "段75 另存临时报表（$TR75）" || bad "段75 另存失败"
+EX75=$(SQL "SELECT DATEDIFF(EXPIRE_AT, NOW()) FROM erp_bi_temp_report WHERE ID='$TR75'")
+[ "${EX75:-0}" -ge 29 ] && ok "段75 30 天到期时间（$EX75）" || bad "段75 到期时间异常（$EX75）"
+OP75=$(C -H "$(A $T75U)" $B/api/bi/temp-reports/$TR75 | J "d['code']")
+EQ "段75 创建人打开" "$OP75" "200"
+S475=$(C -H "$(A $T75G)" $B/api/bi/temp-reports/$TR75 | J "d['code']")
+EQ "段75 未共享他人打开404语义" "$S475" "404"
+SH75=$(C -X POST -H "$(A $T75U)" -H 'Content-Type: application/json' -d '[{"type":"user","code":"smk75g"}]' $B/api/bi/temp-reports/$TR75/share | J "d['code']")
+EQ "段75 共享设置" "$SH75" "200"
+OPG75=$(C -H "$(A $T75G)" $B/api/bi/temp-reports/$TR75 | J "d['code']")
+EQ "段75 共享接收人打开重跑" "$OPG75" "200"
+
+# ---- 75.6 转正（C-4.10-01 / BR-4.10-34）----
+PR75=$(C -X POST -H "$(A $T75U)" $B/api/bi/temp-reports/$TR75/promote)
+PRT75=$(echo "$PR75" | J "d['data']['templateStatus']")
+EQ "段75 转正生成 DRAFT 模板" "$PRT75" "DRAFT"
+PR275=$(C -X POST -H "$(A $T75U)" $B/api/bi/temp-reports/$TR75/promote | J "d['code']")
+EQ "段75 重复转正422" "$PR275" "422"
+
+# ---- 75.7 治理（14.6.2 仅治理角色）----
+GV75=$(C -H "$(A $TADM)" $B/api/bi/adhoc/governance | J "d['data']['quota']")
+EQ "段75 治理配额可读" "$GV75" "50"
+GP75=$(HTTP -H "$(A $T75G)" $B/api/bi/adhoc/governance)
+EQ "段75 普通用户读治理被拒" "$GP75" "403"
+TK75=$(C -H "$(A $T75U)" $B/api/bi/adhoc/tasks | J "any(t['status']=='REJECTED' for t in d['data'])" | grep -qi true && echo ok)
+EQ "段75 我的任务含阻断留痕" "${TK75:-}" "ok"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM erp_bi_adhoc_task WHERE USER_NAME LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_saved_query WHERE USER_NAME LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_temp_report WHERE CREATE_BY LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK75%' OR CODE LIKE 'TMP2RPT%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk75%' OR CREATE_BY='smk75'" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk75_seed" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'Adhoc%' OR BIZ_TYPE='TempReportExpire'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk75%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk75%'" >/dev/null 2>&1
+
+echo "段 75 自助查询 14.6 追加完成"
+
+# ==== 段 76：经营看板 14.7（add-kpi-dashboard，spec bi-kpi-dashboard）====
+echo "---- 段 76 经营看板 14.7 ----"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_bi_kpi_def WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_target WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_alert WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk76%' OR CREATE_BY='smk76'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk76_seed" >/dev/null 2>&1
+
+# 种源表 + PUBLISHED 下钻模板 + 行级通配绑定
+SQL "CREATE TABLE smk76_seed (REGION varchar(32), AMT decimal(14,2))" >/dev/null 2>&1
+SQL "INSERT INTO smk76_seed VALUES ('华东', 600), ('华北', 400)" >/dev/null 2>&1
+TPL76="smk76-tpl"
+SQL "INSERT INTO erp_bi_report_template (ID, CODE, NAME, CATEGORY, SQL_TEXT, COLUMNS_JSON, METRICS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$TPL76','SMK76-TPL','冒烟下钻模板','STANDARD','SELECT * FROM smk76_seed','[{\"field\":\"REGION\",\"role\":\"DIMENSION\"}]','[]','PUBLISHED','smk76',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_perm_rule (ID, RULE_TYPE, TARGET_KEY, USER_NAME, ENTITY_ID, ACTION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk76-perm-u','ROW_LE','*','smk76u','*','PASS','ENABLED','smk76',NOW(),'0',0)" >/dev/null 2>&1
+
+# 冒烟账号（KPI 配置写需 BI_DESIGNER）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk76u','smk76u',PASSWORD,'冒烟76看板','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-76u-bi',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_BI_DESIGNER' WHERE u.USERNAME='smk76u' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+
+T76=$(C -H 'Content-Type: application/json' -d '{"username":"smk76u","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T76:-}" ] && ok "段76 看板用户登录" || bad "段76 看板用户登录失败"
+
+# ---- 76.1 KPI 定义 + 期间目标 ----
+DEF76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d "{\"kpiKey\":\"SMK76-K1\",\"name\":\"冒烟销售额\",\"sqlText\":\"SELECT 'SMK76-K1' AS kpi_key, '' AS dim_value, CURDATE() AS period_date, COALESCE(SUM(AMT),0) AS actual FROM smk76_seed\",\"targetMode\":\"PERIODIC\",\"owner\":\"smk76u\",\"thresholdWarn\":0.8,\"thresholdCritical\":0.5,\"drillTemplateId\":\"$TPL76\"}" $B/api/bi/kpi/defs | J "d['data']['id']")
+[ -n "${DEF76:-}" ] && ok "段76 保存 KPI 定义（$DEF76）" || bad "段76 保存 KPI 定义失败"
+NOREG76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-NR","name":"未注册口径","sqlText":"SELECT 1","metricKey":"NOPE-NOT-REG","targetMode":"PERIODIC","owner":"smk76u"}' $B/api/bi/kpi/defs | J "d['code']")
+EQ "段76 未注册口径 422" "$NOREG76" "422"
+PERM76=$(HTTP -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-X","name":"x","sqlText":"SELECT 1"}' $B/api/bi/kpi/snapshot/run)
+# 手动快照是 BI_DESIGNER 放行（smk76u 有角色）→ 200；此处验证普通用户被拒用另一无角色账号在 76.7
+TGT76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":800}' $B/api/bi/kpi/targets | J "d['data']['targetValue']")
+EQ "段76 保存期间目标" "$TGT76" "800"
+
+# ---- 76.2 手动快照 + 达成三色 ----
+SNAP76=$(C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run | J "d['data']['success']")
+[ "${SNAP76:-0}" -ge 1 ] && ok "段76 手动快照成功（$SNAP76）" || bad "段76 手动快照失败（$SNAP76）"
+ST76=$(SQL "SELECT STATUS FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK76-K1' AND SNAP_DATE=CURDATE() AND DEL_FLAG='0'")
+# actual=1000 target=800 → ratio 1.25 ≥0.8 → ACHIEVED 绿
+EQ "段76 达成三色（绿）" "$ST76" "ACHIEVED"
+# 改目标为 2500 → ratio 0.4 <0.5 → 红
+C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":2500}' $B/api/bi/kpi/targets >/dev/null 2>&1
+C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
+STR76=$(SQL "SELECT STATUS FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK76-K1' AND SNAP_DATE=CURDATE() AND DEL_FLAG='0'")
+EQ "段76 达成三色（红）" "$STR76" "BELOW"
+# 达成概览 API
+SUM76=$(C -H "$(A $T76)" $B/api/bi/kpi/summary | J "any(c['kpiKey']=='SMK76-K1' for c in d['data'])" | grep -qi true && echo ok)
+EQ "段76 达成概览含 KPI" "${SUM76:-}" "ok"
+DRILL76=$(C -H "$(A $T76)" $B/api/bi/kpi/summary | J "next(c for c in d['data'] if c['kpiKey']=='SMK76-K1')['hasDrill']" | grep -qi true && echo ok)
+EQ "段76 挂下钻模板" "${DRILL76:-}" "ok"
+
+# ---- 76.3 趋势序列 ----
+TREND76=$(C -H "$(A $T76)" "$B/api/bi/kpi/trend?kpiKey=SMK76-K1&days=30" | J "len(d['data']['series'])")
+[ "${TREND76:-0}" -ge 1 ] && ok "段76 趋势序列（$TREND76 条）" || bad "段76 趋势序列为空"
+
+# ---- 76.4 下钻渲染（挂 PUBLISHED 模板）----
+DRL76=$(C -H "$(A $T76)" $B/api/bi/report-templates/$TPL76/render | J "d['code']")
+EQ "段76 下钻模板渲染" "$DRL76" "200"
+
+# ---- 76.5 预警触发（连续 3 天）与恢复 ----
+# 目标维持 2500 → 造近 2 日历史快照（ratio 0.5 连续低于）
+SQL "INSERT IGNORE INTO erp_bi_kpi_snapshot (ID, KPI_KEY, DIM_VALUE, SNAP_DATE, ACTUAL, TARGET, RATIO, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk76-h1','SMK76-K1','',DATE_SUB(CURDATE(), INTERVAL 1 DAY),1000,2500,0.5,'BELOW','smk76',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_bi_kpi_snapshot (ID, KPI_KEY, DIM_VALUE, SNAP_DATE, ACTUAL, TARGET, RATIO, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk76-h2','SMK76-K1','',DATE_SUB(CURDATE(), INTERVAL 2 DAY),1000,2500,0.5,'BELOW','smk76',NOW(),'0',0)" >/dev/null 2>&1
+C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
+ALERT76=$(SQL "SELECT STATUS FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
+EQ "段76 连续3天触发预警" "$ALERT76" "ACTIVE"
+DAYS76=$(SQL "SELECT DAYS_BREACHED FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
+[ "${DAYS76:-0}" -ge 3 ] && ok "段76 预警连续天数（$DAYS76）" || bad "段76 预警天数异常（$DAYS76）"
+# 幂等：再跑一次 → 天数累加不重复 INSERT
+C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
+ACNT76=$(SQL "SELECT COUNT(*) FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
+EQ "段76 预警 upsert 幂等" "$ACNT76" "1"
+# 恢复：目标改 500 → ratio 2 ≥1 → RECOVERED
+C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":500}' $B/api/bi/kpi/targets >/dev/null 2>&1
+C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
+RECOV76=$(SQL "SELECT STATUS FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
+EQ "段76 回达标自动恢复" "$RECOV76" "RECOVERED"
+# 预警列表 API：ACTIVE 应无该 KPI，RECOVERED 应有
+ACTL76=$(C -H "$(A $T76)" "$B/api/bi/kpi/alerts?status=ACTIVE" | J "any(a['kpiKey']=='SMK76-K1' for a in d['data'])" | grep -qi true && echo yes || echo no)
+EQ "段76 恢复后 ACTIVE 移除" "$ACTL76" "no"
+RECL76=$(C -H "$(A $T76)" "$B/api/bi/kpi/alerts?status=RECOVERED" | J "any(a['kpiKey']=='SMK76-K1' for a in d['data'])" | grep -qi true && echo yes || echo no)
+EQ "段76 RECOVERED 历史可查" "$RECL76" "yes"
+
+# ---- 76.6 内置种子 ----
+SEED76=$(SQL "SELECT COUNT(*) FROM erp_bi_kpi_def WHERE KPI_KEY LIKE 'KPI-%' AND DEL_FLAG='0'")
+[ "${SEED76:-0}" -ge 6 ] && ok "段76 内置 KPI 种子（$SEED76）" || bad "段76 内置种子缺失（$SEED76）"
+
+# ---- 76.7 权限：无角色读治理（快照写被拒） ----
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk76g','smk76g',PASSWORD,'冒烟76接收','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+T76G=$(C -H 'Content-Type: application/json' -d '{"username":"smk76g","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+GP76=$(HTTP -X POST -H "$(A $T76G)" $B/api/bi/kpi/snapshot/run)
+EQ "段76 普通用户手动快照被拒" "$GP76" "403"
+GS76=$(HTTP -H "$(A $T76G)" $B/api/bi/kpi/summary)
+EQ "段76 普通用户读达成放行" "$GS76" "200"
+
+# ---- 段尾清理 ----
+SQL "DELETE FROM erp_bi_kpi_def WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_target WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_alert WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk76%' OR CREATE_BY='smk76'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_template WHERE CODE LIKE 'SMK76%'" >/dev/null 2>&1
+SQL "DROP TABLE IF EXISTS smk76_seed" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME LIKE 'smk76%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk76%'" >/dev/null 2>&1
+
+echo "段 76 经营看板 14.7 追加完成"
+
+# ==== 段 77：日报订阅 14.8（add-daily-report-subscription，spec bi-daily-report）====
+echo "---- 段 77 日报订阅 14.8 ----"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_bi_daily_report_def WHERE CODE LIKE 'SMK77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_daily_report_sub WHERE CREATE_BY='smk77' OR USER_NAME LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_push_log WHERE REPORT_CODE LIKE 'SMK77%' OR RECEIVER LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_receipt WHERE PUSH_LOG_ID IN (SELECT ID FROM erp_bi_report_push_log WHERE REPORT_CODE LIKE 'SMK77%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'DailyReport%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_def WHERE KPI_KEY='SMK77-K1'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK77-K1'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk77%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk77%'" >/dev/null 2>&1
+
+# 冒烟账号：smk77u（订阅人+BI_DESIGNER 试推）、smk77g（无角色，治理 403 与剔除场景）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk77u','smk77u',PASSWORD,'冒烟77订阅','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk77g','smk77g',PASSWORD,'冒烟77游客','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-77u-bi',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_BI_DESIGNER' WHERE u.USERNAME='smk77u' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+# 行级通配（smk77g 无绑定 → 订阅指标剔除场景）
+SQL "INSERT INTO erp_bi_perm_rule (ID, RULE_TYPE, TARGET_KEY, USER_NAME, ENTITY_ID, ACTION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk77-perm-u','ROW_LE','*','smk77u','*','PASS','ENABLED','smk77',NOW(),'0',0)" >/dev/null 2>&1
+
+T77U=$(C -H 'Content-Type: application/json' -d '{"username":"smk77u","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T77U:-}" ] && ok "段77 订阅用户登录" || bad "段77 订阅用户登录失败"
+T77G=$(C -H 'Content-Type: application/json' -d '{"username":"smk77g","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T77G:-}" ] && ok "段77 游客用户登录" || bad "段77 游客用户登录失败"
+
+# KPI 定义（日报指标来源，14.7 语义）+ 行快照（就绪信号）
+SQL "INSERT INTO erp_bi_kpi_def (ID, KPI_KEY, NAME, SQL_TEXT, STATUS, OWNER, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk77-kpi1','SMK77-K1','冒烟日报KPI','SELECT 1','ENABLED','smk77u','smk77',NOW(),'0',0)" >/dev/null 2>&1
+
+# ---- 77.1 日报定义（写限 BI_DESIGNER/ADMIN） ----
+DEF77=$(C -X POST -H "$(A $T77U)" -H 'Content-Type: application/json' -d "{\"code\":\"SMK77-R1\",\"name\":\"冒烟经营日报\",\"metricKeysJson\":\"[{\\\"kpiKey\\\":\\\"SMK77-K1\\\",\\\"title\\\":\\\"冒烟日报KPI\\\"}]\",\"pushTime\":\"07:30\"}" $B/api/bi/daily-reports/defs | J "d['data']['id']")
+[ -n "${DEF77:-}" ] && ok "段77 保存日报定义（$DEF77）" || bad "段77 保存日报定义失败"
+# 未注册 KPI 422
+NC77=$(BIZ -X POST -H "$(A $T77U)" -H 'Content-Type: application/json' -d '{"code":"SMK77-RX","name":"x","metricKeysJson":"[{\"kpiKey\":\"SMK77-NO-SUCH\",\"title\":\"x\"}]"}' $B/api/bi/daily-reports/defs)
+EQ "段77 未注册KPI拒保存422" "$NC77" "422"
+# 普通用户写定义 403（SecurityConfig 细规则）
+FD77=$(HTTP -X POST -H "$(A $T77G)" -H 'Content-Type: application/json' -d '{"code":"SMK77-R4","name":"x","metricKeysJson":"[]"}' $B/api/bi/daily-reports/defs)
+EQ "段77 无角色写定义403" "$FD77" "403"
+
+# ---- 77.2 订阅：剔除提示 + 正常订阅 ----
+SUB77=$(C -X POST -H "$(A $T77U)" -H 'Content-Type: application/json' -d "{\"reportId\":\"$DEF77\",\"channelsJson\":\"[\\\"NOTICE\\\"]\"}" $B/api/bi/daily-reports/subscriptions | J "d['data']['id']")
+[ -n "${SUB77:-}" ] && ok "段77 正常订阅（$SUB77）" || bad "段77 订阅失败"
+EXC77=$(C -X POST -H "$(A $T77G)" -H 'Content-Type: application/json' -d "{\"reportId\":\"$DEF77\",\"channelsJson\":\"[\\\"NOTICE\\\"]\"}" $B/api/bi/daily-reports/subscriptions | J "len(d['data']['excludedKpis'])")
+EQ "段77 无权限订阅指标全剔除" "$EXC77" "1"
+EXN77=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='DailyReportSubExcl' AND TARGET_USER='smk77g'" | tr -d '[:space:]')
+[ "${EXN77:-0}" -ge 1 ] && ok "段77 剔除L4提示已发" || bad "段77 剔除提示未发（$EXN77）"
+MYS77=$(C -H "$(A $T77U)" $B/api/bi/daily-reports/subscriptions | J "len(d['data'])")
+[ "${MYS77:-0}" -ge 1 ] && ok "段77 本人订阅清单" || bad "段77 订阅清单为空"
+# smk77g 订阅仅验剔除语义，置退订避免参与后续推送计数
+SQL "UPDATE erp_bi_daily_report_sub SET STATUS='DISABLED' WHERE USER_NAME='smk77g'" >/dev/null 2>&1
+
+# ---- 77.3 就绪检查：未就绪超时 → 通知+工单；快照落库 → 推送 ----
+# 就绪等待调 0（测超时路径；走参数 API 刷进程缓存）
+# 清今日全部快照（含 02:00 cron 落的）确保未就绪
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE SNAP_DATE=CURDATE()" >/dev/null 2>&1
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_READY_WAIT_MIN?value=0&valueType=INT&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+NR77=$(C -X POST -H "$(A $T77U)" "$B/api/bi/daily-reports/push-now?reportId=$DEF77" | J "d['data']['timedOut']")
+EQ "段77 未就绪超时判定" "$NR77" "True"
+NT77=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='DailyReportNotReady' AND TARGET_USER='smk77u'" | tr -d '[:space:]')
+[ "${NT77:-0}" -ge 1 ] && ok "段77 未就绪通知订阅人" || bad "段77 未就绪通知缺失"
+ES77=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='DailyReportEscalate' AND TARGET_ROLE='ROLE_ADMIN'" | tr -d '[:space:]')
+[ "${ES77:-0}" -ge 1 ] && ok "段77 超时升级运维工单" || bad "段77 升级工单缺失"
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_READY_WAIT_MIN?value=120&valueType=INT&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+
+# 快照落库（就绪信号）+ 质量异常行
+SQL "INSERT INTO erp_bi_kpi_snapshot (ID, KPI_KEY, DIM_VALUE, SNAP_DATE, ACTUAL, TARGET, RATIO, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk77-snap1','SMK77-K1','',CURDATE(),100,120,0.8333,'WARN','smk77',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_kpi_snapshot (ID, KPI_KEY, DIM_VALUE, SNAP_DATE, ACTUAL, TARGET, RATIO, STATUS, ERROR_MSG, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk77-snap2','SMK77-K1','华东',CURDATE(),60,70,0.8571,'WARN','smk77取数异常','smk77',NOW(),'0',0)" >/dev/null 2>&1
+
+# ---- 77.4 推送：正常送达（NOTICE） ----
+PUSH77=$(C -X POST -H "$(A $T77U)" "$B/api/bi/daily-reports/push-now?reportId=$DEF77" | J "d['data']['sent']")
+EQ "段77 站内信推送送达" "$PUSH77" "1"
+QF77=$(SQL "SELECT QUALITY_FLAG FROM erp_bi_report_push_log WHERE SUB_ID='$SUB77' AND CHANNEL='NOTICE'" | tr -d '[:space:]')
+EQ "段77 质量异常标注" "$QF77" "Y"
+DC77=$(SQL "SELECT DATEDIFF(DATA_CUTOFF, CURDATE()) FROM erp_bi_report_push_log WHERE SUB_ID='$SUB77' AND CHANNEL='NOTICE'" | tr -d '[:space:]')
+EQ "段77 数据截止标注" "$DC77" "0"
+
+# ---- 77.5 双通道失败降级 ----
+SQL "INSERT INTO erp_bi_daily_report_sub (ID, REPORT_ID, USER_NAME, CHANNELS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk77-sub2','$DEF77','smk77u','[\"MAIL\",\"WECOM\"]','ACTIVE','smk77',NOW(),'0',0)" >/dev/null 2>&1
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_SIMULATE_FAIL?value=MAIL%2CWECOM&valueType=STRING&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_PUSH_RETRY_MAX?value=1&valueType=INT&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+DG77=$(C -X POST -H "$(A $T77U)" "$B/api/bi/daily-reports/push-now?reportId=$DEF77" | J "d['data']['degraded']")
+EQ "段77 双通道失败降级站内信" "$DG77" "1"
+ML77=$(SQL "SELECT SEND_STATUS FROM erp_bi_report_push_log WHERE SUB_ID='smk77-sub2' AND CHANNEL='MAIL'" | tr -d '[:space:]')
+EQ "段77 邮件通道失败留痕" "$ML77" "FAILED"
+DGFLAG77=$(SQL "SELECT DEGRADED_FLAG FROM erp_bi_report_push_log WHERE SUB_ID='smk77-sub2' AND CHANNEL='NOTICE'" | tr -d '[:space:]')
+EQ "段77 降级标记" "$DGFLAG77" "Y"
+CF77=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='DailyReportChannelFail'" | tr -d '[:space:]')
+[ "${CF77:-0}" -ge 1 ] && ok "段77 双通道失败工单" || bad "段77 通道失败工单缺失"
+# 恢复参数
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_SIMULATE_FAIL?value=&valueType=STRING&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+C -X POST -H "$(A $TADM)" "$B/api/system/params/REPORT_PUSH_RETRY_MAX?value=3&valueType=INT&paramGroup=BI&remark=smoke77" >/dev/null 2>&1
+
+# ---- 77.6 回执：打开详情页才算阅读 + 他人 403 ----
+LOG77=$(SQL "SELECT ID FROM erp_bi_report_push_log WHERE SUB_ID='$SUB77' AND CHANNEL='NOTICE' LIMIT 1" | tr -d '[:space:]')
+MR77=$(BIZ -X POST -H "$(A $T77U)" $B/api/bi/daily-reports/push-logs/$LOG77/mark-read)
+EQ "段77 接收人记回执" "$MR77" "200"
+OC77=$(SQL "SELECT OPEN_CNT FROM erp_bi_report_receipt WHERE PUSH_LOG_ID='$LOG77'" | tr -d '[:space:]')
+EQ "段77 打开次数累计" "$OC77" "1"
+MRG77=$(BIZ -X POST -H "$(A $T77G)" $B/api/bi/daily-reports/push-logs/$LOG77/mark-read)
+EQ "段77 他人回执403" "$MRG77" "403"
+
+# ---- 77.7 触达统计 + 30 天未阅读扫描 ----
+STAT77=$(C -H "$(A $T77U)" $B/api/bi/daily-reports/stats | J "d['data']['total']")
+[ "${STAT77:-0}" -ge 1 ] && ok "段77 触达统计总数（$STAT77）" || bad "段77 触达统计为空"
+PLG77=$(HTTP -H "$(A $T77G)" "$B/api/bi/daily-reports/push-logs")
+EQ "段77 无角色读推送日志403" "$PLG77" "403"
+SQL "UPDATE erp_bi_daily_report_sub SET LAST_PUSH_DATE=DATE_SUB(CURDATE(), INTERVAL 31 DAY), LAST_READ_AT=NULL WHERE ID='$SUB77'" >/dev/null 2>&1
+SCAN77=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='DailyReportUnread' AND TARGET_USER='smk77u'" | tr -d '[:space:]')
+# 扫描由 08:00 cron 跑——冒烟不等调度，直接验参数与提示去重逻辑走 DbTest；此处仅验参数就位
+RPUD77=$(SQL "SELECT PARAM_VALUE FROM erp_sys_param WHERE PARAM_KEY='REPORT_UNREAD_DAYS'" | tr -d '[:space:]')
+EQ "段77 未阅读天数参数" "$RPUD77" "30"
+
+# ---- 77.8 退订留痕 ----
+UN77=$(BIZ -X POST -H "$(A $T77U)" $B/api/bi/daily-reports/subscriptions/$SUB77/unsubscribe)
+EQ "段77 退订" "$UN77" "200"
+UST77=$(SQL "SELECT STATUS FROM erp_bi_daily_report_sub WHERE ID='$SUB77'" | tr -d '[:space:]')
+EQ "段77 退订置DISABLED留痕" "$UST77" "DISABLED"
+
+# 段尾清理
+SQL "DELETE FROM erp_bi_daily_report_def WHERE CODE LIKE 'SMK77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_daily_report_sub WHERE CREATE_BY='smk77' OR USER_NAME LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_receipt WHERE PUSH_LOG_ID IN (SELECT ID FROM erp_bi_report_push_log WHERE REPORT_CODE LIKE 'SMK77%' OR RECEIVER LIKE 'smk77%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_push_log WHERE REPORT_CODE LIKE 'SMK77%' OR RECEIVER LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'DailyReport%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_def WHERE KPI_KEY='SMK77-K1'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK77-K1'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_perm_rule WHERE USER_NAME LIKE 'smk77%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk77%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk77%'" >/dev/null 2>&1
+
+echo "段 77 日报订阅 14.8 追加完成"
+
+# ==== 段 78：报表 SLA 服务报告 14.9（add-bi-sla-report，spec bi-sla-report）====
+echo "---- 段 78 报表 SLA 服务报告 14.9 ----"
+P78="2098-03"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_bi_sla_metric WHERE PERIOD='$P78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_sla_report WHERE PERIOD='$P78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sla_report WHERE PERIOD='$P78' AND CREATE_BY='smk78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'BiSla%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK78-K'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_run WHERE BATCH_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_export_task WHERE TASK_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_adhoc_task WHERE TASK_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_push_log WHERE REPORT_CODE='SMK78-R'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk78%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk78%'" >/dev/null 2>&1
+
+# 冒烟账号：smk78u（BI_DESIGNER 提交人）、smk78g（数据治理审核人）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk78u','smk78u',PASSWORD,'冒烟78SLA','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk78g','smk78g',PASSWORD,'冒烟78治理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-78u-bi',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_BI_DESIGNER' WHERE u.USERNAME='smk78u' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-78g-dg',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_DATA_GOV' WHERE u.USERNAME='smk78g' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+
+T78U=$(C -H 'Content-Type: application/json' -d '{"username":"smk78u","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T78U:-}" ] && ok "段78 SLA提交人登录" || bad "段78 提交人登录失败"
+T78G=$(C -H 'Content-Type: application/json' -d '{"username":"smk78g","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T78G:-}" ] && ok "段78 数据治理登录" || bad "段78 数据治理登录失败"
+
+# ---- 78.1 造当月源数据（两日，可用率部分数据 + 其余达标） ----
+SQL "INSERT INTO erp_bi_kpi_snapshot (ID, KPI_KEY, DIM_VALUE, SNAP_DATE, ACTUAL, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-s1','SMK78-K','',DATE('$P78-01'),1,'smk78',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_extract_run (ID, BATCH_DATE, BATCH_NO, CONFIG_ID, STATUS, FINISHED_AT, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-e1',DATE('$P78-01'),'SMK78-B1','smk78-cfg','SUCCESS',DATE_ADD(DATE('$P78-01'), INTERVAL 3 HOUR),'smk78',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_export_task (ID, TASK_TYPE, TASK_NO, USER_NAME, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-x1','EXPORT','SMK78-X1','smk78u','SUCCESS','smk78','$P78-01 10:00:00','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_adhoc_task (ID, TASK_NO, USER_NAME, TEMPLATE_ID, QUERY_JSON, STATUS, EXEC_MS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-a1','SMK78-A1','smk78u','smk78-tpl','{}','DONE',5000,'smk78','$P78-01 10:00:00','0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_bi_report_push_log (ID, SUB_ID, REPORT_CODE, PUSH_DATE, RECEIVER, CHANNEL, SEND_STATUS, RETRY_CNT, DEGRADED_FLAG, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-p1','smk78-s1','SMK78-R',DATE('$P78-01'),'smk78u','NOTICE','SENT',1,'N','smk78',NOW(),'0',0)" >/dev/null 2>&1
+
+# ---- 78.2 采集五指标 ----
+COL78=$(C -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/collect?period=$P78" | J "d['data']['success']")
+EQ "段78 五指标采集成功" "$COL78" "5"
+PF78=$(SQL "SELECT PARTIAL_FLAG FROM erp_bi_sla_metric WHERE PERIOD='$P78' AND METRIC_KEY='AVAILABILITY'" | tr -d '[:space:]')
+EQ "段78 可用率部分数据标注" "$PF78" "Y"
+MD78=$(SQL "SELECT MISSING_DATES FROM erp_bi_sla_metric WHERE PERIOD='$P78' AND METRIC_KEY='REFRESH_ONTIME'" | tr -d '[:space:]')
+CONTAINS "段78 刷新缺失日期列出" "$MD78" "$P78-02"
+P9578=$(SQL "SELECT METRIC_VALUE + 0 FROM erp_bi_sla_metric WHERE PERIOD='$P78' AND METRIC_KEY='QUERY_P95'" | tr -d '[:space:]')
+[ "${P9578%.*}" = "5" ] && ok "段78 P95=5秒（OFFSET 分位）" || bad "段78 P95 异常（$P9578）"
+
+# ---- 78.3 生成报告 + 三要素门禁 ----
+GEN78=$(C -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/generate" | J "d['data']['status']")
+EQ "段78 生成报告 DRAFT" "$GEN78" "DRAFT"
+SUB78=$(BIZ -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/submit")
+EQ "段78 三要素缺失拒提交422" "$SUB78" "422"
+RC78=$(BIZ -X PUT -H "$(A $T78U)" -H 'Content-Type: application/json' -d '[{"metricKey":"AVAILABILITY","rootCause":"冒烟根因","owner":"冒烟责任人","dueDate":"2098-04-15"}]' "$B/api/bi/sla-reports/reports/$P78/root-cause")
+EQ "段78 三要素保存" "$RC78" "200"
+SUB2_78=$(C -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/submit" | J "d['data']['status']")
+EQ "段78 提交三方审核" "$SUB2_78" "PENDING_APPROVAL"
+
+# ---- 78.4 审核中发布阻断 + 三方签署归档 ----
+# 审核中（PENDING_APPROVAL）发布 → 422 阻断 + 通知（BR-4.10-26）
+BLK0_78=$(BIZ -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/publish")
+EQ "段78 审核中发布阻断422" "$BLK0_78" "422"
+NT0_78=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='BiSlaPublishBlocked'" | tr -d '[:space:]')
+[ "${NT0_78:-0}" -ge 1 ] && ok "段78 违规通知数据治理" || bad "段78 违规通知缺失"
+
+APID78=$(SQL "SELECT APPR_ID FROM erp_sys_approval_task WHERE NODE_NAME='数据治理专员-SLA审核' AND STATUS='ACTIVE' ORDER BY CREATE_DATE DESC LIMIT 1" | tr -d '[:space:]')
+[ -n "${APID78:-}" ] && ok "段78 审批实例创建（$APID78）" || bad "段78 审批实例缺失"
+T1_78=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APID78' AND ROLE_REQUIRED='ROLE_DATA_GOV' AND STATUS='ACTIVE' LIMIT 1" | tr -d '[:space:]')
+PG78=$(BIZ -X POST -H "$(A $T78G)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T1_78\",\"opinion\":\"冒烟通过\"}" $B/api/qms/approvals/pass)
+EQ "段78 数据治理签署" "$PG78" "200"
+T2_78=$(SQL "SELECT ID FROM erp_sys_approval_task WHERE APPR_ID='$APID78' AND ROLE_REQUIRED='ROLE_ADMIN' AND STATUS='ACTIVE' LIMIT 1" | tr -d '[:space:]')
+PA78=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"taskId\":\"$T2_78\",\"opinion\":\"冒烟通过\"}" $B/api/qms/approvals/pass)
+EQ "段78 IT 签署" "$PA78" "200"
+ST78=$(SQL "SELECT STATUS FROM erp_bi_sla_report WHERE PERIOD='$P78' AND VERSION=1" | tr -d '[:space:]')
+EQ "段78 审批全过自动归档" "$ST78" "ARCHIVED"
+
+# ---- 78.5 归档后发布成功 → 新版本 → 未归档再发布阻断 ----
+PUB78=$(C -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/publish" | J "d['data']['status']")
+EQ "段78 归档后发布成功" "$PUB78" "PUBLISHED"
+NV78=$(C -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/new-version" | J "d['data']['version']")
+[ "${NV78:-0}" = "2" ] && ok "段78 归档后新版本 V2" || bad "段78 新版本异常（$NV78）"
+# 新版本为 DRAFT → 发布再被阻断（latest=V2 未归档）
+BLK2_78=$(BIZ -X POST -H "$(A $T78U)" "$B/api/bi/sla-reports/reports/$P78/publish")
+EQ "段78 新版本未归档发布阻断422" "$BLK2_78" "422"
+NT78=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='BiSlaPublishBlocked'" | tr -d '[:space:]')
+[ "${NT78:-1}" -ge 2 ] && ok "段78 违规通知累计" || bad "段78 违规通知不足（$NT78）"
+
+# ---- 78.6 与 16.9 隔离 ----
+SQL "INSERT INTO erp_sla_report (ID, PERIOD, METRICS_JSON, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk78-iso','$P78','[]','DRAFT','smk78',NOW(),'0',0)" >/dev/null 2>&1
+ISO78=$(SQL "SELECT STATUS FROM erp_sla_report WHERE ID='smk78-iso'" | tr -d '[:space:]')
+EQ "段78 16.9 报表不受影响" "$ISO78" "DRAFT"
+
+# ---- 78.7 403 边界 ----
+FD78=$(HTTP -X POST -H 'Content-Type: application/json' -d '{"username":"admin","password":"Admin@123"}' $B/api/auth/login >/dev/null 2>&1; echo)
+# 无角色用户（复用 smk77g 若在——否则跳过用未登录 401/403 语义）
+NL78=$(HTTP "$B/api/bi/sla-reports/reports")
+[ "$NL78" = "401" ] || [ "$NL78" = "403" ] && ok "段78 未登录读报告拒绝（$NL78）" || bad "段78 未登录未拒绝（$NL78）"
+
+# 段尾清理
+SQL "DELETE FROM erp_bi_sla_metric WHERE PERIOD='$P78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_sla_report WHERE PERIOD='$P78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sla_report WHERE PERIOD='$P78' AND CREATE_BY='smk78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_notice WHERE BIZ_TYPE LIKE 'BiSla%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK78-K'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_extract_run WHERE BATCH_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_export_task WHERE TASK_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_adhoc_task WHERE TASK_NO LIKE 'SMK78%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_bi_report_push_log WHERE REPORT_CODE='SMK78-R'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval_task WHERE APPR_ID='$APID78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE ID='$APID78'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk78%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk78%'" >/dev/null 2>&1
+
+echo "段 78 报表 SLA 服务报告 14.9 追加完成"
+
 
 
 

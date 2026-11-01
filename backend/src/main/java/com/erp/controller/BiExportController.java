@@ -57,4 +57,17 @@ public class BiExportController {
         IntfGuard.requireAdmin("查看待审批导出");
         return R.ok(service.pendingApproval());
     }
+
+    @Operation(summary = "下载导出文件（属主或 ADMIN，7 天有效，AES 解密流出）")
+    @GetMapping("/{id}/download")
+    public org.springframework.http.ResponseEntity<byte[]> download(@PathVariable String id) {
+        Map<String, Object> d = service.download(id);
+        byte[] bytes = (byte[]) d.get("bytes");
+        return org.springframework.http.ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + d.get("fileName") + "\"")
+                .header(org.springframework.http.HttpHeaders.CONTENT_TYPE,
+                        String.valueOf(d.get("contentType")))
+                .body(bytes);
+    }
 }

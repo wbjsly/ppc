@@ -13,6 +13,7 @@ import com.erp.entity.hr.HrOvertimeConfirm;
 import com.erp.service.hr.HrCompTimeService;
 import com.erp.service.hr.HrOvertimeConfirmService;
 import com.erp.service.hr.HrOvertimeService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,6 +61,12 @@ class OvertimeDbTest {
     void setUp() {
         purge();
         loginRole("ROLE_HR");
+    }
+
+    @AfterEach
+    void tearDown() {
+        // 回归末尾数据残留会拦冒烟段34终审（C-4.7-01 全表扫）——跑完即清
+        purge();
     }
 
     private void purge() {
@@ -113,12 +120,15 @@ class OvertimeDbTest {
     @Test
     void cap36HoursBlocked() {
         String empId = seedEmp("cap", "21750"); // 月薪 21750 → 小时基数 100
+        // 两笔锚定同月（36h 为月上限；plusDays 跨月即累计断裂——月末日期边界脆弱）
+        LocalDate d1 = LocalDate.now().plusDays(1);
+        LocalDate d2 = d1.plusDays(1).getMonth() == d1.getMonth() ? d1.plusDays(1) : d1;
         // 先申请 34h（审批通过计入累计）
-        HrOvertimeApply a1 = overtimeService.submit(payload(empId, LocalDate.now().plusDays(1), "34", false));
+        HrOvertimeApply a1 = overtimeService.submit(payload(empId, d1, "34", false));
         overtimeService.approve(a1.getId(), Map.of("approve", "true"));
         // 再申请 4h → 34+4=38 > 36 L1 阻断
         ServiceException e = assertThrows(ServiceException.class,
-                () -> overtimeService.submit(payload(empId, LocalDate.now().plusDays(2), "4", false)));
+                () -> overtimeService.submit(payload(empId, d2, "4", false)));
         assertTrue(e.getMessage().contains("36"), e.getMessage());
     }
 
@@ -321,10 +331,12 @@ class OvertimeDbTest {
     @Test
     void gmSpecialChannelFlow() {
         String empId = seedEmp("gm", "21750");
-        HrOvertimeApply a1 = overtimeService.submit(payload(empId, LocalDate.now().plusDays(1), "34", false));
+        // 两笔锚定同月（36h 月上限，跨月累计断裂——月末日期边界脆弱）
+        LocalDate d1 = LocalDate.now().plusDays(1);
+        HrOvertimeApply a1 = overtimeService.submit(payload(empId, d1, "34", false));
         overtimeService.approve(a1.getId(), Map.of("approve", "true"));
         // 未勾特批 → 422 且提示可特批
-        LocalDate d2 = LocalDate.now().plusDays(2);
+        LocalDate d2 = d1.plusDays(1).getMonth() == d1.getMonth() ? d1.plusDays(1) : d1;
         ServiceException e = assertThrows(ServiceException.class,
                 () -> overtimeService.submit(payload(empId, d2, "4", false)));
         assertTrue(e.getMessage().contains("总经理特批"), e.getMessage());

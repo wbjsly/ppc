@@ -1688,6 +1688,188 @@ const routes = [
         meta: { title: '班次模板', group: '系统管理', perm: 'ROLE_ADMIN,ROLE_PLANNER' }
       },
       {
+        // 14.1.1 模板设计（可执行元数据登记 + 口径 diff 硬阻断 + 渲染预览）
+        path: '/m/14.1.1',
+        name: 'ReportTemplateDesign',
+        component: () => import('@/views/bi/report-template/index.vue'),
+        meta: { title: '模板设计', group: '报表分析', tab: 'design', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.1.2 模板测试（三项报告：样本/性能/权限 + 变更强制作废重测）
+        path: '/m/14.1.2',
+        name: 'ReportTemplateTest',
+        component: () => import('@/views/bi/report-template/index.vue'),
+        meta: { title: '模板测试', group: '报表分析', tab: 'test', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.1.3 模板发布（三方串行审批 + 二次口径校验 BR-4.10-11）
+        path: '/m/14.1.3',
+        name: 'ReportTemplatePublish',
+        component: () => import('@/views/bi/report-template/index.vue'),
+        meta: { title: '模板发布', group: '报表分析', tab: 'publish', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.1.4 版本控制（发布即快照 + 口径版本双维度 + 回退保留链 BR-4.10-07）
+        path: '/m/14.1.4',
+        name: 'ReportTemplateVersion',
+        component: () => import('@/views/bi/report-template/index.vue'),
+        meta: { title: '版本控制', group: '报表分析', tab: 'version', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.2.1 抽取配置（逻辑数据源 + 模板驱动批次：波动暂停/断点续抽/就绪标志）
+        path: '/m/14.2.1',
+        name: 'BiExtractConfig',
+        component: () => import('@/views/bi/data-extract/index.vue'),
+        meta: { title: '抽取配置', group: '报表分析', tab: 'extract', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.2.2 脱敏规则（类型化掩码样式 + 角色差异化 + 数据治理单签审批激活）
+        path: '/m/14.2.2',
+        name: 'BiMaskRule',
+        component: () => import('@/views/bi/data-extract/index.vue'),
+        meta: { title: '脱敏规则', group: '报表分析', tab: 'mask', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.2.3 质量校验（NOT_NULL/RECONCILE/RANGE 规则 + SEVERE 阻断就绪 BR-4.10-14）
+        path: '/m/14.2.3',
+        name: 'BiQualityCheck',
+        component: () => import('@/views/bi/data-extract/index.vue'),
+        meta: { title: '质量校验', group: '报表分析', tab: 'quality', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.3.1 口径定义（十二要素登记 + 编码格式校验 + 版本历史）
+        path: '/m/14.3.1',
+        name: 'MetricDictDefine',
+        component: () => import('@/views/bi/metric-dict/index.vue'),
+        meta: { title: '口径定义', group: '报表分析', tab: 'define', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.3.2 口径变更（治理单签→灰度→切换双审 C-4.10-08 + 血缘图谱 S-4.10-15）
+        path: '/m/14.3.2',
+        name: 'MetricDictChange',
+        component: () => import('@/views/bi/metric-dict/index.vue'),
+        meta: { title: '口径变更', group: '报表分析', tab: 'change', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.3.3 口径校验（批量扫描 PUBLISHED 模板 × 当前版，模板×指标×结论）
+        path: '/m/14.3.3',
+        name: 'MetricDictCheck',
+        component: () => import('@/views/bi/metric-dict/index.vue'),
+        meta: { title: '口径校验', group: '报表分析', tab: 'check', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.4.1 行级权限（三维度矩阵 + 多角色并集 BR-4.10-16 + 回退 BR-4.10-17）
+        path: '/m/14.4.1',
+        name: 'BiRowPerm',
+        component: () => import('@/views/bi/perm-control/index.vue'),
+        meta: { title: '行级权限', group: '报表分析', tab: 'row', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.4.2 列级权限（COL_SENSITIVE 登记位管理 + 审计日志查询）
+        path: '/m/14.4.2',
+        name: 'BiSensitiveField',
+        component: () => import('@/views/bi/perm-control/index.vue'),
+        meta: { title: '列级权限', group: '报表分析', tab: 'col', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.4.3 字段掩码（生效规则总览 + 效果预览 + 临时授权 ≤24h）
+        path: '/m/14.4.3',
+        name: 'BiMaskPreview',
+        component: () => import('@/views/bi/perm-control/index.vue'),
+        meta: { title: '字段掩码', group: '报表分析', tab: 'mask', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.5.1 导出申请（模板/数据集双源 + 三格式水印 + 加密下载 7 天有效）
+        path: '/m/14.5.1',
+        name: 'BiExportApply',
+        component: () => import('@/views/bi/export-console/index.vue'),
+        meta: { title: '导出申请', group: '报表分析', tab: 'apply', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.5.2 水印标记（水印记录查看 + 规范说明，FR-4.10-4-4）
+        path: '/m/14.5.2',
+        name: 'BiExportWatermark',
+        component: () => import('@/views/bi/export-console/index.vue'),
+        meta: { title: '水印标记', group: '报表分析', tab: 'watermark', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.5.3 超量审批（ApprovalEngine 分级单签：经理 ≤5万 / 总监 >5万，C-4.10-03）
+        path: '/m/14.5.3',
+        name: 'BiExportOverlimit',
+        component: () => import('@/views/bi/export-console/index.vue'),
+        meta: { title: '超量审批', group: '报表分析', tab: 'approval', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.6.1 即席查询（结构化构建+预检阻断+转后台，spec bi-adhoc-query）
+        path: '/m/14.6.1',
+        name: 'AdhocQuery',
+        component: () => import('@/views/bi/adhoc-query/index.vue'),
+        meta: { title: '即席查询', group: '报表分析', tab: 'query' }
+      },
+      {
+        // 14.6.2 查询治理（配额/用量/任务列表，spec bi-adhoc-query）
+        path: '/m/14.6.2',
+        name: 'AdhocGovernance',
+        component: () => import('@/views/bi/adhoc-query/index.vue'),
+        meta: { title: '查询治理', group: '报表分析', tab: 'governance', perm: 'ROLE_BI_DESIGNER,ROLE_ADMIN' }
+      },
+      {
+        // 14.6.3 临时报表（另存/共享/30天生命周期/转正，spec bi-temp-report）
+        path: '/m/14.6.3',
+        name: 'TempReports',
+        component: () => import('@/views/bi/adhoc-query/index.vue'),
+        meta: { title: '临时报表', group: '报表分析', tab: 'temp' }
+      },
+      {
+        // 14.8.1 订阅配置（日报定义+本人订阅/退订，spec bi-daily-report）
+        path: '/m/14.8.1',
+        name: 'DailyReportSub',
+        component: () => import('@/views/bi/daily-report/index.vue'),
+        meta: { title: '订阅配置', group: '报表分析', tab: 'config' }
+      },
+      {
+        // 14.8.2 自动推送（推送日志+触达统计+手动试推，spec bi-daily-report）
+        path: '/m/14.8.2',
+        name: 'DailyReportPush',
+        component: () => import('@/views/bi/daily-report/index.vue'),
+        meta: { title: '自动推送', group: '报表分析', tab: 'push' }
+      },
+      {
+        // 14.7.1 指标达成（KPI 卡片三色+下钻+配置抽屉，spec bi-kpi-dashboard）
+        path: '/m/14.7.1',
+        name: 'KpiAchievement',
+        component: () => import('@/views/bi/kpi-dashboard/index.vue'),
+        meta: { title: '指标达成', group: '报表分析', tab: 'summary' }
+      },
+      {
+        // 14.7.2 趋势展示（快照时间序列 echarts 折线+目标参考线）
+        path: '/m/14.7.2',
+        name: 'KpiTrend',
+        component: () => import('@/views/bi/kpi-dashboard/index.vue'),
+        meta: { title: '趋势展示', group: '报表分析', tab: 'trend' }
+      },
+      {
+        // 14.7.3 异常预警（连续 N 天低于目标 ACTIVE/RECOVERED 生命周期）
+        path: '/m/14.7.3',
+        name: 'KpiAlert',
+        component: () => import('@/views/bi/kpi-dashboard/index.vue'),
+        meta: { title: '异常预警', group: '报表分析', tab: 'alert' }
+      },
+      {
+        // 14.9.1 月度报告（五指标概览+趋势+三要素，spec bi-sla-report）
+        path: '/m/14.9.1',
+        name: 'BiSlaMonthly',
+        component: () => import('@/views/bi/sla-report/index.vue'),
+        meta: { title: '月度报告', group: '报表分析', tab: 'monthly' }
+      },
+      {
+        // 14.9.2 归档发布（审批归档+发布门禁+PDF，spec bi-sla-report）
+        path: '/m/14.9.2',
+        name: 'BiSlaPublish',
+        component: () => import('@/views/bi/sla-report/index.vue'),
+        meta: { title: '归档发布', group: '报表分析', tab: 'publish' }
+      },
+      {
         // 5.7.1 报工录入（SHOP_FLOOR 作业台：扫派工单→开工→投料→产出→工时→提交，spec shop-floor-reporting）
         path: '/m/5.7.1',
         name: 'ReportWorkbench',

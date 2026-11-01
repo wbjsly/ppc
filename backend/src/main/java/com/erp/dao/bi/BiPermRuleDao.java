@@ -16,6 +16,12 @@ public interface BiPermRuleDao extends BaseMapper<BiPermRule> {
             "AND STATUS = 'ENABLED' AND DEL_FLAG = '0'")
     List<BiPermRule> selectRowBindings(@Param("user") String user);
 
+    /** 按角色集合收集行级规则（BR-4.10-16 并集；角色集为空时调用方不得调用） */
+    @Select("<script>SELECT * FROM erp_bi_perm_rule WHERE RULE_TYPE LIKE 'ROW%' " +
+            "AND STATUS = 'ENABLED' AND DEL_FLAG = '0' AND ROLE_CODE IN " +
+            "<foreach item='r' collection='roles' open='(' separator=',' close=')'>#{r}</foreach></script>")
+    List<BiPermRule> selectRowByRoles(@Param("roles") java.util.Collection<String> roles);
+
     /** 列级掩码规则（COL_MASK，命中即掩码；COL_SENSITIVE 未命中默认掩码） */
     @Select("SELECT * FROM erp_bi_perm_rule WHERE RULE_TYPE IN ('COL_MASK','COL_SENSITIVE') " +
             "AND STATUS = 'ENABLED' AND DEL_FLAG = '0'")

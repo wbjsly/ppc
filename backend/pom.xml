@@ -49,6 +49,18 @@
             <version>${mybatis-plus.version}</version>
         </dependency>
 
+        <!-- 导出三格式（add-export-console，spec bi-export-lifecycle）：xlsx 水印 / pdf 斜置水印 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>1.3.39</version>
+        </dependency>
+
         <!-- MySQL -->
         <dependency>
             <groupId>mysql</groupId>

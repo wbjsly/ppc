@@ -146,6 +146,11 @@ class VarianceDbTest {
 
     private static LocalDate minusWorkdays(int n) {
         LocalDate d = LocalDate.now();
+        // 对齐 service workdaysBetween 口径：终点若为周末不计入，故先回退到最近工作日，
+        // 保证 workdaysBetween(结果, 今天)==n 与运行日（含周末）无关，消除 off-by-one。
+        while (d.getDayOfWeek().getValue() > 5) {
+            d = d.minusDays(1);
+        }
         int c = 0;
         while (c < n) {
             d = d.minusDays(1);

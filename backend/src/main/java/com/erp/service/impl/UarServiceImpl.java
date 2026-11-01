@@ -119,7 +119,8 @@ public class UarServiceImpl implements UarService {
             try {
                 snapJson = MAPPER.writeValueAsString(snap);
             } catch (Exception e) {
-                throw new ServiceException(500, "快照序列化失败");
+                log.error("UAR 快照序列化失败 uid={} keys={}", uid, snap.keySet(), e);
+                throw new ServiceException(500, "快照序列化失败：" + e.getMessage());
             }
             // 复核人推导（D4：REPORT_TO 按人 → DEPT_HEAD → ADMIN 兜底）
             String reviewerUser = null;
@@ -548,7 +549,11 @@ public class UarServiceImpl implements UarService {
                         + "WHERE EMP_ID = ? AND CHANGE_AT >= ?", userId, LocalDateTime.now().minusDays(90));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("cnt", row.get("cnt") == null ? 0 : row.get("cnt"));
-        out.put("lastAt", row.get("lastAt"));
+        // MAX(CHANGE_AT) 经 JdbcTemplate 返回 LocalDateTime，Jackson 无 JSR310 模块 → 转字符串
+        Object lastAt = row.get("lastAt");
+        out.put("lastAt", lastAt == null ? null
+                : (lastAt instanceof java.time.LocalDateTime ldt
+                        ? ldt.toString() : String.valueOf(lastAt)));
         return out;
     }
 

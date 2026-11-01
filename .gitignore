@@ -48,5 +48,9 @@ frontend/vite.config.js.timestamp-*
 uploads/
 backend/uploads/
 
+# 运行时导出产物（加密 PDF/中间文件，非代码）
+backend/data/
+data/
+
 # 前端构建备份目录（safe-delete shim 超时的 mv dist 产物）
 frontend/dist.old-*/

@@ -441,7 +441,10 @@ public class ApprovalServiceImpl implements ApprovalEngine {
     private void rejectSelfSign(ApprovalInstance inst, String action) {
         String biz = inst.getBizType();
         String me = SecurityUtils.getCurrentUserId();
-        if ("PermRequest".equals(biz) || "BreakGlassRequest".equals(biz)) {
+        if ("PermRequest".equals(biz) || "BreakGlassRequest".equals(biz)
+                || "ReportTemplate".equals(biz)
+                || "BiRowPerm".equals(biz) || "BiTempGrant".equals(biz)
+                || "BiExportOverLimit".equals(biz)) {
             if (me != null && me.equals(inst.getApplyBy())) {
                 // REQUIRES_NEW 独立事务：主事务随 throw 回滚，违规日志须存活
                 violationAudit.recordSelfSignViolation(inst.getApplyBy(), biz,

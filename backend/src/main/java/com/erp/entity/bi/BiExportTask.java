@@ -32,10 +32,18 @@ public class BiExportTask extends BaseEntity {
     private String status;
     /** 超量审批 PENDING / APPROVED / REJECTED（C-4.10-05） */
     private String approvalStatus;
+    /** 超量导出用途说明（≥10字，FR-4.10-4-2） */
+    private String purpose;
+    /** 优先级 SMALL≤1000 / NORMAL≤1万 / LOW>1万（FR-4.10-4-3） */
+    private String priority;
     private String filePath;
     private String watermark;
     private String reqId;
     private Boolean notify;
     private LocalDateTime expireAt;
+    /** 生命周期清理时间（FR-4.10-4-6） */
+    private LocalDateTime cleanAt;
+    /** 删除前 24h 提醒时间 */
+    private LocalDateTime remindAt;
     private String errorMsg;
 }

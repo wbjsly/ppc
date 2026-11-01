@@ -22,6 +22,12 @@ public class BiMetricDictHistory extends BaseEntity {
     private String timeDim;
     private String filterCond;
     private String srcMapping;
+    /** 十二要素扩展（与 BiMetricDict 同表列） */
+    private String formulaType;
+    private String numerator;
+    private String denominator;
+    private String dimensions;
+    private String owner;
     private Integer version;
     private Boolean isCurrent;
     private String status;

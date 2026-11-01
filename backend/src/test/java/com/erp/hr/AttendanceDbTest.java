@@ -12,6 +12,7 @@ import com.erp.entity.hr.HrLeaveType;
 import com.erp.entity.hr.HrPunchRecord;
 import com.erp.entity.hr.HrSchedule;
 import com.erp.entity.hr.HrShift;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,12 @@ class AttendanceDbTest {
 
     @BeforeEach
     void setUp() {
+        purge();
+    }
+
+    @AfterEach
+    void tearDown() {
+        // 回归末尾数据残留会拦冒烟段34终审（C-4.7-01 全表扫）——跑完即清
         purge();
     }
 

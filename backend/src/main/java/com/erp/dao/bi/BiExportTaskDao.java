@@ -16,10 +16,12 @@ public interface BiExportTaskDao extends BaseMapper<BiExportTask> {
             "AND USER_NAME = #{user} AND STATUS IN ('QUEUED','RUNNING') AND DEL_FLAG = '0'")
     int countActiveExports(@Param("user") String user);
 
-    /** 待执行导出（超量行仅取审批通过的） */
+    /** 待执行导出（超量行仅取审批通过的；优先级 SMALL→NORMAL→LOW，FR-4.10-4-3） */
     @Select("SELECT * FROM erp_bi_export_task WHERE TASK_TYPE = 'EXPORT' AND STATUS = 'QUEUED' " +
             "AND (APPROVAL_STATUS IS NULL OR APPROVAL_STATUS = 'APPROVED') " +
-            "AND DEL_FLAG = '0' ORDER BY CREATE_DATE ASC LIMIT 5")
+            "AND DEL_FLAG = '0' " +
+            "ORDER BY FIELD(COALESCE(PRIORITY, 'NORMAL'), 'SMALL', 'NORMAL', 'LOW'), CREATE_DATE ASC " +
+            "LIMIT 5")
     List<BiExportTask> selectDueExports();
 
     /** 用户导出任务列表（站内通知数据源） */

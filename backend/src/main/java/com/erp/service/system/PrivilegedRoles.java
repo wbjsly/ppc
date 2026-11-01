@@ -23,10 +23,13 @@ public final class PrivilegedRoles {
             // --- 审批节点角色（ApprovalNodeSpec.sign 扫描同源，勿手工增删，先过扫描测试）---
             "ROLE_ADMIN",
             "ROLE_ASSET_ADMIN",
+            "ROLE_BI_DESIGNER",
+            "ROLE_BIZ_OWNER",
             "ROLE_CCB_ARCH",
             "ROLE_CCB_BIZ",
             "ROLE_CCB_OPS",
             "ROLE_COMPLIANCE",
+            "ROLE_DATA_GOV",
             "ROLE_DEPT_HEAD",
             "ROLE_DUTY_MGR",
             "ROLE_EQUIP_MGR",
