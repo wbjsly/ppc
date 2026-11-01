@@ -58,7 +58,9 @@ class EamDepreciationRunDbTest {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
-    private static final String PERIOD = "202609";
+    // 动态当月期间（硬编码跨月会因 currentPeriod()=YearMonth.now() 而失效）
+    private static final String PERIOD = java.time.YearMonth.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMM"));
 
     @BeforeEach
     void setUp() {

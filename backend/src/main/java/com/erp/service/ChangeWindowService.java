@@ -19,4 +19,10 @@ public interface ChangeWindowService {
 
     /** 当前时刻是否落在任一启用窗口内 */
     boolean isInWindow(LocalDateTime now);
+
+    /**
+     * 当前所处窗口的剩余分钟数（不在窗口内返回 0）。
+     * ops-sla 变更单启动校验消费（BR-5.8-06 剩余×1.5 门禁），只读不改窗口本体。
+     */
+    int remainingMin(LocalDateTime now);
 }

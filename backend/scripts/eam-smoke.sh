@@ -8733,6 +8733,8 @@ echo "段 75 自助查询 14.6 追加完成"
 # ==== 段 76：经营看板 14.7（add-kpi-dashboard，spec bi-kpi-dashboard）====
 echo "---- 段 76 经营看板 14.7 ----"
 # 段首清理（可重跑）
+# 动态当月 period（快照用 today.format(YM)；硬编码跨月会查不到目标致三色 NULL）
+PERIOD76=$(date +%Y-%m)
 SQL "DELETE FROM erp_bi_kpi_def WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_bi_kpi_target WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_bi_kpi_snapshot WHERE KPI_KEY LIKE 'SMK76%'" >/dev/null 2>&1
@@ -8762,7 +8764,7 @@ NOREG76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpi
 EQ "段76 未注册口径 422" "$NOREG76" "422"
 PERM76=$(HTTP -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-X","name":"x","sqlText":"SELECT 1"}' $B/api/bi/kpi/snapshot/run)
 # 手动快照是 BI_DESIGNER 放行（smk76u 有角色）→ 200；此处验证普通用户被拒用另一无角色账号在 76.7
-TGT76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":800}' $B/api/bi/kpi/targets | J "d['data']['targetValue']")
+TGT76=$(C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d "{\"kpiKey\":\"SMK76-K1\",\"period\":\"$PERIOD76\",\"targetValue\":800}" $B/api/bi/kpi/targets | J "d['data']['targetValue']")
 EQ "段76 保存期间目标" "$TGT76" "800"
 
 # ---- 76.2 手动快照 + 达成三色 ----
@@ -8772,7 +8774,7 @@ ST76=$(SQL "SELECT STATUS FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK76-K1' AND 
 # actual=1000 target=800 → ratio 1.25 ≥0.8 → ACHIEVED 绿
 EQ "段76 达成三色（绿）" "$ST76" "ACHIEVED"
 # 改目标为 2500 → ratio 0.4 <0.5 → 红
-C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":2500}' $B/api/bi/kpi/targets >/dev/null 2>&1
+C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d "{\"kpiKey\":\"SMK76-K1\",\"period\":\"$PERIOD76\",\"targetValue\":2500}" $B/api/bi/kpi/targets >/dev/null 2>&1
 C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
 STR76=$(SQL "SELECT STATUS FROM erp_bi_kpi_snapshot WHERE KPI_KEY='SMK76-K1' AND SNAP_DATE=CURDATE() AND DEL_FLAG='0'")
 EQ "段76 达成三色（红）" "$STR76" "BELOW"
@@ -8804,7 +8806,7 @@ C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
 ACNT76=$(SQL "SELECT COUNT(*) FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
 EQ "段76 预警 upsert 幂等" "$ACNT76" "1"
 # 恢复：目标改 500 → ratio 2 ≥1 → RECOVERED
-C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d '{"kpiKey":"SMK76-K1","period":"2026-10","targetValue":500}' $B/api/bi/kpi/targets >/dev/null 2>&1
+C -X POST -H "$(A $T76)" -H 'Content-Type: application/json' -d "{\"kpiKey\":\"SMK76-K1\",\"period\":\"$PERIOD76\",\"targetValue\":500}" $B/api/bi/kpi/targets >/dev/null 2>&1
 C -X POST -H "$(A $T76)" $B/api/bi/kpi/snapshot/run >/dev/null 2>&1
 RECOV76=$(SQL "SELECT STATUS FROM erp_bi_kpi_alert WHERE KPI_KEY='SMK76-K1' AND DEL_FLAG='0'")
 EQ "段76 回达标自动恢复" "$RECOV76" "RECOVERED"
@@ -9081,6 +9083,350 @@ SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_
 SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk78%'" >/dev/null 2>&1
 
 echo "段 78 报表 SLA 服务报告 14.9 追加完成"
+
+# ==== 段 79：集成门户 15.x（add-intf-portal-menus，spec interface-console/interface-sso/interface-canary-release）====
+echo "---- 段 79 集成门户 15.x ----"
+APP79="smk79-app"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_intf_sso_app WHERE APP_ID='$APP79'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_gray_step_log WHERE RELEASE_ID IN (SELECT ID FROM erp_intf_gray_release WHERE CHANNEL_CODE='SMK79-P')" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_gray_release WHERE CHANNEL_CODE='SMK79-P'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_credential WHERE PARTNER_CODE='SMK79-P'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk79%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk79%'" >/dev/null 2>&1
+
+# 冒烟账号：smk79u（INTF_OPS 读）、smk79a（ADMIN 高危）
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk79u','smk79u',PASSWORD,'冒烟79运维','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO) SELECT 'smk79a','smk79a',PASSWORD,'冒烟79管理','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_admin_user_role (ID,USER_ID,ROLE_ID) SELECT 'ur-79u-if',u.ID,r.ID FROM erp_admin_user u JOIN erp_admin_role r ON r.ROLE_CODE='ROLE_INTF_OPS' WHERE u.USERNAME='smk79u' AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role x WHERE x.USER_ID=u.ID AND x.ROLE_ID=r.ID)" >/dev/null 2>&1
+
+T79U=$(C -H 'Content-Type: application/json' -d '{"username":"smk79u","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T79U:-}" ] && ok "段79 运维登录" || bad "段79 运维登录失败"
+# smk79a 用 admin 密码登录拿 ADMIN token（TADM 已有）
+
+# ---- 79.1 八页路由可达（API 通即可，页面为前端） ----
+for ep in "sso/apps" "gray-releases"; do
+  CC=$(HTTP -H "$(A $T79U)" "$B/api/intf/$ep")
+  [ "$CC" = "200" ] && ok "段79 /api/intf/$ep 可达" || bad "段79 /api/intf/$ep 不可达（$CC）"
+done
+
+# ---- 79.2 SSO：注册/签发/元数据/停用拒签/未注册 422 ----
+RG79=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"appId\":\"$APP79\",\"appName\":\"冒烟兄弟系统\",\"audience\":\"oa-$APP79\",\"redirectUri\":\"https://oa.example/logout\"}" $B/api/intf/sso/apps)
+EQ "段79 SSO 注册兄弟系统" "$RG79" "200"
+DUP79=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d "{\"appId\":\"$APP79\",\"appName\":\"x\",\"audience\":\"y\"}" $B/api/intf/sso/apps)
+EQ "段79 SSO 重复 appId 422" "$DUP79" "422"
+AS79=$(C -X POST -H "$(A $T79U)" "$B/api/intf/sso/assertion?appId=$APP79" | J "d['data']['audience']")
+EQ "段79 SSO 签发限定 audience" "$AS79" "oa-$APP79"
+NF79=$(BIZ -X POST -H "$(A $T79U)" "$B/api/intf/sso/assertion?appId=smk79-none")
+EQ "段79 SSO 未注册 422" "$NF79" "422"
+ST79=$(BIZ -X PUT -H "$(A $TADM)" "$B/api/intf/sso/apps/$APP79/status?status=DISABLED")
+EQ "段79 SSO 停用" "$ST79" "200"
+DS79=$(BIZ -X POST -H "$(A $T79U)" "$B/api/intf/sso/assertion?appId=$APP79")
+EQ "段79 SSO 停用拒签 422" "$DS79" "422"
+ST79B=$(BIZ -X PUT -H "$(A $TADM)" "$B/api/intf/sso/apps/$APP79/status?status=ACTIVE")
+EQ "段79 SSO 重新启用" "$ST79B" "200"
+MD79=$(C -H "$(A $T79U)" $B/api/intf/sso/metadata | J "d['data']['issuer']")
+EQ "段79 SSO 元数据 issuer" "$MD79" "erp-idp"
+
+# ---- 79.3 灰度：配置/切量/回滚/中止/非 ADMIN 403 ----
+# 造灰度所需双凭证
+OLD79="smk79-old"; NEW79="smk79-new"
+SQL "INSERT INTO erp_intf_credential (ID, CHANNEL_ID, PARTNER_CODE, API_KEY, SECRET_HASH, SECRET_SALT, SIGN_KEY, ENV, RATE_TIER, LIMIT_PER_MIN, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk79-co','smk79-ch','SMK79-P','$OLD79','h','s','k','PROD','NORMAL',100,'ACTIVE','smk79',NOW(),'0',0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_intf_credential (ID, CHANNEL_ID, PARTNER_CODE, API_KEY, SECRET_HASH, SECRET_SALT, SIGN_KEY, ENV, RATE_TIER, LIMIT_PER_MIN, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('smk79-cn','smk79-ch','SMK79-P','$NEW79','h','s','k','PROD','NORMAL',100,'ACTIVE','smk79',NOW(),'0',0)" >/dev/null 2>&1
+
+CR79=$(BIZ -X POST -H "$(A $TADM)" -H 'Content-Type: application/json' -d '{"channelCode":"SMK79-P","oldCredId":"smk79-co","newCredId":"smk79-cn","ladderJson":"[10,50,100]","rollbackErrorRate":"50","observeMin":"60"}' $B/api/intf/gray-releases)
+EQ "段79 灰度配置" "$CR79" "200"
+RID79=$(SQL "SELECT ID FROM erp_intf_gray_release WHERE CHANNEL_CODE='SMK79-P' LIMIT 1" | tr -d '[:space:]')
+[ -n "${RID79:-}" ] && ok "段79 灰度规则创建（$RID79）" || bad "段79 灰度规则缺失"
+# 非 ADMIN 配置 403（Spring Security 403 非 JSON，用 HTTP 取状态码，沿段77 先例）
+NA79=$(HTTP -X POST -H "$(A $T79U)" -H 'Content-Type: application/json' -d '{"channelCode":"X","oldCredId":"a","newCredId":"b","ladderJson":"[10]"}' $B/api/intf/gray-releases)
+EQ "段79 灰度配置非 ADMIN 403" "$NA79" "403"
+# 非 ADMIN 切量 403
+NS79=$(HTTP -X POST -H "$(A $T79U)" "$B/api/intf/gray-releases/$RID79/step")
+EQ "段79 灰度切量非 ADMIN 403" "$NS79" "403"
+# 切量三档
+S1_79=$(C -X POST -H "$(A $TADM)" "$B/api/intf/gray-releases/$RID79/step" | J "d['data']['pct']")
+EQ "段79 灰度切量首档 10%" "$S1_79" "10"
+S2_79=$(C -X POST -H "$(A $TADM)" "$B/api/intf/gray-releases/$RID79/step" | J "d['data']['pct']")
+EQ "段79 灰度切量二档 50%" "$S2_79" "50"
+# 回滚到首档
+RB79=$(C -X POST -H "$(A $TADM)" "$B/api/intf/gray-releases/$RID79/rollback" | J "d['data']['currentStep']")
+EQ "段79 灰度回滚到首档" "$RB79" "1"
+# 首档回滚=中止
+RB2_79=$(C -X POST -H "$(A $TADM)" "$B/api/intf/gray-releases/$RID79/rollback" | J "d['data']['status']")
+EQ "段79 灰度首档回滚中止" "$RB2_79" "ABORTED"
+
+# 段尾清理
+SQL "DELETE FROM erp_intf_sso_app WHERE APP_ID='$APP79'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_gray_step_log WHERE RELEASE_ID='$RID79'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_gray_release WHERE ID='$RID79'" >/dev/null 2>&1
+SQL "DELETE FROM erp_intf_credential WHERE PARTNER_CODE='SMK79-P'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user_role WHERE USER_ID IN (SELECT ID FROM erp_admin_user WHERE USERNAME LIKE 'smk79%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME LIKE 'smk79%'" >/dev/null 2>&1
+
+echo "段 79 集成门户 15.x 追加完成"
+
+# ============================================================
+# 段 80: MDM 版本中心与事件同步 1.7/1.8 (add-mdm-version-sync)
+# ============================================================
+echo "---- 段 80: MDM 版本中心与事件同步 ----"
+T80=$TADM
+SMK80="SMK80-$(date +%s)"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_mdm_item_version WHERE ENTITY_ID IN (SELECT ID FROM erp_mdm_item WHERE ITEM_CODE LIKE '$SMK80%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_item WHERE ITEM_CODE LIKE '$SMK80%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_listener_log WHERE EVENT_ID LIKE '$SMK80%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_outbox WHERE PAYLOAD LIKE '%$SMK80%'" >/dev/null 2>&1
+E80="$SMK80-E1"
+SQL "INSERT INTO erp_mdm_item (ID, ITEM_CODE, ITEM_NAME, BASE_UNIT, CATEGORY_CODE, MATERIAL_GROUP, PURCHASE_TYPE, STORAGE_CONDITION, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$E80', '$SMK80', '段80测试物料', 'PC', 'GEN', 'STRUCT', 'BUY', 'NORMAL', '1', 'smk80', NOW(), '0', 0)" >/dev/null 2>&1
+SQL "INSERT INTO erp_mdm_item_version (ID, ENTITY_ID, VERSION_NO, SNAPSHOT_JSON, OP_TYPE, CREATE_BY, CREATE_DATE) VALUES ('$SMK80-V1', '$E80', 1, '{\"itemName\":\"段80测试物料\",\"baseUnit\":\"PC\",\"safetyStock\":100}', 'CREATE', 'smk80', NOW())" >/dev/null 2>&1
+SQL "INSERT INTO erp_mdm_item_version (ID, ENTITY_ID, VERSION_NO, SNAPSHOT_JSON, OP_TYPE, CHANGE_REASON, CHANGE_TYPE, CREATE_BY, CREATE_DATE) VALUES ('$SMK80-V2', '$E80', 2, '{\"itemName\":\"段80测试物料-改\",\"baseUnit\":\"SET\",\"safetyStock\":100}', 'UPDATE', '冒烟变更', 'CRITICAL', 'smk80', NOW())" >/dev/null 2>&1
+
+# ---- 80.1 版本列表（历史回溯 1.7.2）----
+VL80=$(C -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/$E80/versions" | J "len(d['data'])")
+[ "${VL80:-0}" = "2" ] && ok "段80 版本列表 2 条倒序" || bad "段80 版本列表异常（$VL80）"
+VN80=$(C -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/$E80/versions" | J "d['data'][0]['versionNo']")
+[ "${VN80:-0}" = "2" ] && ok "段80 最新版本 V2 在前" || bad "段80 版本排序异常（$VN80）"
+
+# ---- 80.2 两版本对比（1.7.1 三态）----
+DF80=$(C -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/$E80/diff?from=1&to=2" | J "[(f['field'],f['state']) for f in d['data']['fields']]")
+echo "$DF80" | grep -q "CHANGED" && ok "段80 diff 值变化态" || bad "段80 diff 缺 CHANGED（$DF80）"
+echo "$DF80" | grep -Eq "ADDED|REMOVED|CHANGED" && ok "段80 diff 三态产出" || bad "段80 diff 无差异行"
+
+# ---- 80.3 回滚原因必填（422）----
+RR80=$(C -X POST -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/$E80/rollback?sourceVersionNo=1&reason=x" | J "d['code']")
+EQ "段80 回滚原因<2字422" "$RR80" "422"
+
+# ---- 80.4 一键回滚生成 V3（1.7.3）----
+RB80=$(C -X POST -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/$E80/rollback?sourceVersionNo=1&reason=smk80-rollback-v1" | J "d['data']['newVersionNo']")
+[ "${RB80:-0}" = "3" ] && ok "段80 回滚生成 V3" || bad "段80 回滚版本号异常（$RB80）"
+BU80=$(SQL "SELECT BASE_UNIT FROM erp_mdm_item WHERE ID='$E80'" | tr -d '[:space:]')
+EQ "段80 主表字段恢复V1值" "$BU80" "PC"
+OT80=$(SQL "SELECT OP_TYPE FROM erp_mdm_item_version WHERE ENTITY_ID='$E80' AND VERSION_NO=3" | tr -d '[:space:]')
+EQ "段80 新版本 OP_TYPE=ROLLBACK" "$OT80" "ROLLBACK"
+HC80=$(SQL "SELECT COUNT(*) FROM erp_mdm_item_version WHERE ENTITY_ID='$E80'" | tr -d '[:space:]')
+[ "${HC80:-0}" = "3" ] && ok "段80 历史版本全保留（C-4.1-06）" || bad "段80 历史完整性破坏（$HC80）"
+AU80=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE FIELD_NAME LIKE 'MDM_ROLLBACK:ITEM:%'" | tr -d '[:space:]')
+[ "${AU80:-0}" -ge 1 ] && ok "段80 回滚审计留痕" || bad "段80 审计缺失"
+
+# ---- 80.5 回滚事件双路（内部广播 + 发件箱）----
+OB80=$(SQL "SELECT COUNT(*) FROM erp_ops_outbox WHERE EVENT_TYPE='MDM.ITEM.UPDATED' AND PAYLOAD LIKE '%$E80%'" | tr -d '[:space:]')
+[ "${OB80:-0}" -ge 1 ] && ok "段80 回滚事件入发件箱" || bad "段80 发件箱事件缺失"
+
+# ---- 80.6 MDM 事件类型注册 ----
+ET80=$(SQL "SELECT COUNT(*) FROM erp_intf_event_type WHERE EVENT_TYPE LIKE 'MDM.%' AND DEL_FLAG='0'" | tr -d '[:space:]')
+[ "${ET80:-0}" -ge 40 ] && ok "段80 MDM 事件类型注册≥40（$ET80）" || bad "段80 事件类型注册不足（$ET80）"
+
+# ---- 80.7 事件台账（1.8.1）----
+EV80=$(C -H "$(A $T80)" "$B/api/mdm/events?type=MDM.ITEM.UPDATED" | J "d['data']['total']")
+[ "${EV80:-0}" -ge 1 ] && ok "段80 变更事件台账可查" || bad "段80 事件台账为空"
+
+# ---- 80.8 监听台账（1.8.2 内部）----
+SQL "INSERT INTO erp_mdm_listener_log (ID, EVENT_ID, EVENT_TYPE, ENTITY_ID, LISTENER_NAME, STATUS, RETRY_CNT, EXEC_MS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK80-L1', '$SMK80-evt', 'MDM.TAX_CODE.UPDATED', '$E80', 'taxSyncHint', 'SUCCESS', 0, 5, 'smk80', NOW(), '0', 0)" >/dev/null 2>&1
+LL80=$(C -H "$(A $T80)" "$B/api/mdm/events/listeners?status=SUCCESS" | J "len(d['data'])")
+[ "${LL80:-0}" -ge 1 ] && ok "段80 内部监听台账可查" || bad "段80 监听台账为空"
+
+# ---- 80.9 外部投递视图（1.8.2 外部）----
+C -H "$(A $T80)" "$B/api/mdm/events/deliveries" >/dev/null 2>&1 && ok "段80 外部投递视图可达" || bad "段80 投递视图 500"
+
+# ---- 80.10 缓存强刷（ADMIN）----
+CI80=$(C -X POST -H "$(A $T80)" "$B/api/mdm/events/cache-invalidate" | J "str(d['data']['ok']).lower()")
+EQ "段80 缓存强刷" "$CI80" "true"
+
+# ---- 80.11 实体选择器 ----
+ES80=$(C -H "$(A $T80)" "$B/api/mdm/version-center/ITEM/entities?keyword=$SMK80" | J "len(d['data'])")
+[ "${ES80:-0}" -ge 1 ] && ok "段80 实体选择器命中" || bad "段80 实体选择器为空"
+
+# ---- 80.12 未知类型 422 ----
+UT80=$(C -H "$(A $T80)" "$B/api/mdm/version-center/NO_SUCH/xx/versions" | J "d['code']")
+EQ "段80 未知类型422" "$UT80" "422"
+
+# ---- 80.13 未登录拒绝 ----
+NL80=$(HTTP "$B/api/mdm/version-center/ITEM/$E80/versions")
+EQ "段80 未登录401" "$NL80" "401"
+
+echo "段 80 MDM 版本中心与事件同步 1.7/1.8 追加完成"
+
+# ============================================================
+# 段 81: 运维 SLA 18 域 (add-ops-sla)
+# ============================================================
+echo "---- 段 81: 运维 SLA 18 域 ----"
+T81=$TADM
+SMK81="SMK81-$(date +%s)"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_ops_alert WHERE SOURCE LIKE 'smk81%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_change_ticket WHERE TITLE LIKE 'SMK81%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_incident WHERE INC_NO LIKE 'IMP-SMK81%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_escalation_log WHERE REASON LIKE '%SMK81%' OR ALERT_ID IN (SELECT ID FROM erp_ops_alert WHERE SOURCE='smk81-esc')" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_alert WHERE SOURCE='smk81-esc'" >/dev/null 2>&1
+SQL "DELETE FROM erp_ops_capacity_metric WHERE METRIC_KEY='SMK81_TEST'" >/dev/null 2>&1
+
+# ---- 81.1 告警产生与台账 ----
+AL81=$(C -X POST -H "$(A $T81)" "$B/api/ops/alerts" -H 'Content-Type: application/json' -d '{}' 2>/dev/null | J "d['code']" 2>/dev/null)
+# 告警无直接 create 端点（由业务产生）——用升级扫描/容量采集等真实入口
+CP81=$(C -X POST -H "$(A $T81)" "$B/api/ops/capacity/collect" | J "d['data']['collected']")
+[ "${CP81:-0}" -ge 1 ] && ok "段81 容量采集（≥1 指标）" || bad "段81 容量采集失败（$CP81）"
+MT81=$(C -H "$(A $T81)" "$B/api/ops/capacity/metrics?days=7" | J "len(d['data'])")
+[ "${MT81:-0}" -ge 1 ] && ok "段81 容量指标台账可查" || bad "段81 容量台账为空"
+
+# ---- 81.2 结账保障开关 ----
+CG1=$(C -X POST -H "$(A $T81)" "$B/api/ops/capacity/accounting-guard?enabled=true" | J "str(d['data']['enabled']).lower()")
+EQ "段81 结账保障开启" "$CG1" "true"
+CGS=$(C -H "$(A $T81)" "$B/api/ops/capacity/accounting-guard" | J "str(d['data']['enabled']).lower()")
+EQ "段81 结账保障状态回读" "$CGS" "true"
+CG0=$(C -X POST -H "$(A $T81)" "$B/api/ops/capacity/accounting-guard?enabled=false" | J "str(d['data']['enabled']).lower()")
+EQ "段81 结账保障关闭" "$CG0" "false"
+
+# ---- 81.3 变更单五门禁 ----
+# 提交（回滚预案不齐）
+SUB81=$(C -X POST -H "$(A $T81)" -H 'Content-Type: application/json' -d "{\"title\":\"SMK81-无预案\",\"changeType\":\"NORMAL\",\"estimateMin\":60,\"rollbackMin\":10,\"rollbackPlanJson\":\"{}\"}" "$B/api/ops/change-tickets" | J "d['data']['id']")
+[ -n "${SUB81:-}" ] && ok "段81 变更单提交" || bad "段81 提交失败"
+# 审批被阻断（预案三件套 BR-5.8-01）
+AP81=$(C -X POST -H "$(A $T81)" "$B/api/ops/change-tickets/$SUB81/approve" | J "d['code']")
+EQ "段81 预案不齐审批422" "$AP81" "422"
+# 完整预案提交+审批
+SUB2_81=$(C -X POST -H "$(A $T81)" -H 'Content-Type: application/json' -d "{\"title\":\"SMK81-完整预案\",\"changeType\":\"NORMAL\",\"estimateMin\":60,\"rollbackMin\":10,\"rollbackPlanJson\":\"{\\\"script\\\":\\\"down.sh\\\",\\\"drillValid\\\":true,\\\"estimateMin\\\":10}\"}" "$B/api/ops/change-tickets" | J "d['data']['id']")
+AP2_81=$(C -X POST -H "$(A $T81)" "$B/api/ops/change-tickets/$SUB2_81/approve" | J "d['data']['status']")
+EQ "段81 预案齐备审批通过" "$AP2_81" "APPROVED"
+# 回滚原因为空阻断关闭（BR-5.8-04）
+RB81=$(C -X POST -H "$(A $T81)" "$B/api/ops/change-tickets/$SUB2_81/rollback?reason=smk81-rollback" | J "d['data']['status']")
+EQ "段81 回滚" "$RB81" "ROLLED_BACK"
+CL81=$(C -X POST -H "$(A $T81)" "$B/api/ops/change-tickets/$SUB2_81/close" | J "d['code']")
+EQ "段81 无原因关闭422" "$CL81" "422"
+CL2_81=$(C -X POST -H "$(A $T81)" "$B/api/ops/change-tickets/$SUB2_81/close?rollbackReason=smk81-fixed" | J "d['data']['status']")
+EQ "段81 有原因关闭成功" "$CL2_81" "CLOSED"
+
+# ---- 81.4 结账期阻断（当前若在 1~5 日才生效）----
+DAY81=$(date +%d | sed 's/^0//')
+if [ "$DAY81" -ge 1 ] && [ "$DAY81" -le 5 ]; then
+  CGON81=$(C -X POST -H "$(A $T81)" "$B/api/ops/capacity/accounting-guard?enabled=true" | J "d['data']['enabled']")
+  BLK81=$(C -X POST -H "$(A $T81)" -H 'Content-Type: application/json' -d "{\"title\":\"SMK81-结账阻断\",\"changeType\":\"NORMAL\",\"estimateMin\":30,\"rollbackPlanJson\":\"{\\\"script\\\":\\\"s\\\",\\\"drillValid\\\":true,\\\"estimateMin\\\":5}\"}" "$B/api/ops/change-tickets" | J "d['code']")
+  EQ "段81 结账期普通变更阻断422" "$BLK81" "422"
+  C -X POST -H "$(A $T81)" "$B/api/ops/capacity/accounting-guard?enabled=false" >/dev/null 2>&1
+else
+  ok "段81 结账期阻断跳过（今日 ${DAY81} 日非 1~5 日）"
+fi
+
+# ---- 81.5 值班排班与升级扫描 ----
+D81=$(date +%F)
+SV81=$(C -X POST -H "$(A $T81)" "$B/api/ops/escalations/oncall/save?dutyDate=$D81&level=L1&userName=smk81-l1" | J "d['code']")
+EQ "段81 排班保存" "$SV81" "200"
+OC81=$(C -H "$(A $T81)" "$B/api/ops/escalations/oncall?days=7" | J "len(d['data'])")
+[ "${OC81:-0}" -ge 1 ] && ok "段81 值班看板可查" || bad "段81 值班看板为空"
+# 造 20 分钟前 OPEN P1 → 扫描应升级 L1
+SQL "INSERT INTO erp_ops_alert (ID, ALERT_NO, LEVEL, SOURCE, TITLE, STATUS, SUPPRESSED, ESCALATION_LEVEL, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK81-A1', '$SMK81-N1', 'P1', 'smk81-esc', 'SMK81 升级测试', 'OPEN', '0', 0, 'smk81', DATE_SUB(NOW(), INTERVAL 20 MINUTE), '0', 0)" >/dev/null 2>&1
+SC81=$(C -X POST -H "$(A $T81)" "$B/api/ops/escalations/scan" | J "d['data']['handled']")
+[ "${SC81:-0}" -ge 1 ] && ok "段81 升级扫描处理（$SC81）" || bad "段81 升级扫描空"
+EL81=$(SQL "SELECT ESCALATION_LEVEL FROM erp_ops_alert WHERE ID='$SMK81-A1'" | tr -d '[:space:]')
+[ "${EL81:-0}" = "1" ] && ok "段81 P1 超时升级 L1" || bad "段81 升级层级异常（$EL81）"
+HD81=$(SQL "SELECT HANDLER FROM erp_ops_alert WHERE ID='$SMK81-A1'" | tr -d '[:space:]')
+EQ "段81 改派 L1 值班人" "$HD81" "smk81-l1"
+LG81=$(C -H "$(A $T81)" "$B/api/ops/escalations/logs?alertId=$SMK81-A1" | J "len(d['data'])")
+[ "${LG81:-0}" -ge 1 ] && ok "段81 升级日志留痕" || bad "段81 升级日志缺失"
+TK81=$(C -H "$(A $T81)" "$B/api/ops/escalations/tickets" | J "len(d['data'])")
+[ "${TK81:-0}" -ge 1 ] && ok "段81 升级工单视图" || bad "段81 升级工单为空"
+
+# ---- 81.6 同步延迟采集与趋势 ----
+DL81=$(C -X POST -H "$(A $T81)" "$B/api/ops/alerts/sync-delay/collect" | J "d['code']")
+EQ "段81 延迟采集触发" "$DL81" "200"
+TR81=$(C -H "$(A $T81)" "$B/api/ops/alerts/sync-delay/trend?days=7" | J "d['code']")
+EQ "段81 延迟趋势可达" "$TR81" "200"
+
+# ---- 81.7 SLA 报告五指标 + 未归档发布阻断 ----
+P81="2099-07"
+SQL "DELETE FROM erp_ops_sla_report WHERE PERIOD='$P81'" >/dev/null 2>&1
+GN81=$(C -X POST -H "$(A $T81)" "$B/api/ops/sla-reports/$P81/generate" | J "len(d['data']['metrics']['items'])")
+[ "${GN81:-0}" = "5" ] && ok "段81 报告五指标生成" || bad "段81 报告指标数异常（$GN81）"
+PB81=$(C -X POST -H "$(A $T81)" "$B/api/ops/sla-reports/$P81/publish" | J "d['code']")
+EQ "段81 未归档发布阻断422" "$PB81" "422"
+AR81=$(C -X POST -H "$(A $T81)" "$B/api/ops/sla-reports/$P81/archive" | J "d['data']['status']")
+EQ "段81 归档" "$AR81" "ARCHIVED"
+PU81=$(C -X POST -H "$(A $T81)" "$B/api/ops/sla-reports/$P81/publish?scope=ALL" | J "d['data']['status']")
+EQ "段81 归档后发布" "$PU81" "PUBLISHED"
+IM81=$(C -H "$(A $T81)" "$B/api/ops/sla-reports/improvements" | J "d['code']")
+EQ "段81 改进项台账可达" "$IM81" "200"
+SQL "DELETE FROM erp_ops_sla_report WHERE PERIOD='$P81'" >/dev/null 2>&1
+
+# ---- 81.8 权限与未登录 ----
+NL81=$(HTTP "$B/api/ops/alerts")
+EQ "段81 未登录401" "$NL81" "401"
+
+echo "段 81 运维 SLA 18 域 追加完成"
+
+# ============================================================
+# 段 82: 11.1 线索商机链页面 11.1.3/11.1.4 (add-crm-opp-chain-pages)
+# ============================================================
+echo "---- 段 82: 11.1 线索商机链页面 ----"
+T82=$TADM
+SMK82="SMK82-$(date +%s)"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_crm_lead_followup WHERE LEAD_ID IN (SELECT ID FROM erp_crm_lead WHERE LEAD_NO LIKE '$SMK82%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_opp_followup WHERE OPP_ID IN (SELECT ID FROM erp_crm_opportunity WHERE OPP_NO LIKE '$SMK82%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_opp_stage_log WHERE OPP_ID IN (SELECT ID FROM erp_crm_opportunity WHERE OPP_NO LIKE '$SMK82%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_opportunity WHERE OPP_NO LIKE '$SMK82%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_lead WHERE LEAD_NO LIKE '$SMK82%'" >/dev/null 2>&1
+
+# ---- 82.1 看板统计与清单（11.1.3 数据源）----
+ST82=$(C -H "$(A $T82)" "$B/api/crm/opportunities/stats" | J "len(d['data']['funnel'])")
+[ "${ST82:-0}" = "5" ] && ok "段82 漏斗五阶段统计" || bad "段82 漏斗阶段数异常（$ST82）"
+LS82=$(C -H "$(A $T82)" "$B/api/crm/opportunities?current=1&size=10&status=OPEN" | J "d['code']")
+EQ "段82 待推进清单可达" "$LS82" "200"
+
+# ---- 82.2 造 A 线索 → 11.1.4 转化 → 线索回写 CONVERTED（全链）----
+# 需先有客户主数据：取一个既有客户
+CUST82=$(SQL "SELECT ID FROM erp_mdm_customer_group WHERE DEL_FLAG='0' LIMIT 1" | tr -d '[:space:]')
+if [ -z "$CUST82" ]; then
+  SQL "INSERT INTO erp_mdm_customer_group (ID, CUSTOMER_CODE, CUSTOMER_NAME, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK82-C1', '$SMK82-CODE', '段82测试客户', '1', 'smk82', NOW(), '0', 0)" >/dev/null 2>&1
+  CUST82="$SMK82-C1"
+fi
+SQL "INSERT INTO erp_crm_lead (ID, LEAD_NO, SOURCE_CHANNEL, COMPANY_NAME, CONTACT_NAME, DEMAND_DESC, SCORE, GRADE, STATUS, OWNER_ID, OWNER_NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK82-L1', '$SMK82-L01', 'WEB', '段82公司', '王销售', '测试需求', 92, 'A', 'OPEN', 'smk82', 'smk82', 'smk82', NOW(), '0', 0)" >/dev/null 2>&1
+CNV82=$(C -X POST -H "$(A $T82)" -H 'Content-Type: application/json' -d "{\"oppName\":\"$SMK82 商机\",\"customerId\":\"$CUST82\",\"leadId\":\"$SMK82-L1\",\"expectAmount\":500000,\"expectCloseDate\":\"2026-12-31\",\"competition\":\"竞品A\",\"demandSummary\":\"测试需求摘要\"}" "$B/api/crm/opportunities" | J "d['data']['oppNo']")
+[ -n "${CNV82:-}" ] && ok "段82 线索转化生成商机（$CNV82）" || bad "段82 转化失败"
+LST82=$(SQL "SELECT STATUS FROM erp_crm_lead WHERE ID='$SMK82-L1'" | tr -d '[:space:]')
+EQ "段82 线索回写 CONVERTED" "$LST82" "CONVERTED"
+LOI82=$(SQL "SELECT COUNT(*) FROM erp_crm_opportunity WHERE LEAD_ID='$SMK82-L1'" | tr -d '[:space:]')
+[ "${LOI82:-0}" = "1" ] && ok "段82 商机关联线索ID" || bad "段82 关联缺失"
+# 重复转化阻断（服务端 422）
+SQL "INSERT INTO erp_crm_lead (ID, LEAD_NO, SOURCE_CHANNEL, COMPANY_NAME, CONTACT_NAME, SCORE, GRADE, STATUS, OWNER_ID, OWNER_NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK82-L2', '$SMK82-L02', 'WEB', '段82公司2', '李转化', 88, 'B', 'CONVERTED', 'smk82', 'smk82', 'smk82', NOW(), '0', 0)" >/dev/null 2>&1
+DUP82=$(C -X POST -H "$(A $T82)" -H 'Content-Type: application/json' -d "{\"oppName\":\"$SMK82 重复\",\"customerId\":\"$CUST82\",\"leadId\":\"$SMK82-L2\",\"expectAmount\":100,\"expectCloseDate\":\"2026-12-31\",\"competition\":\"c\",\"demandSummary\":\"d\"}" "$B/api/crm/opportunities" | J "d['code']")
+EQ "段82 已转化线索重复转化422" "$DUP82" "422"
+# C 级线索阻断
+SQL "INSERT INTO erp_crm_lead (ID, LEAD_NO, SOURCE_CHANNEL, COMPANY_NAME, CONTACT_NAME, SCORE, GRADE, STATUS, OWNER_ID, OWNER_NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK82-L3', '$SMK82-L03', 'WEB', '段82公司3', '张三', 40, 'C', 'OPEN', 'smk82', 'smk82', 'smk82', NOW(), '0', 0)" >/dev/null 2>&1
+CGR82=$(C -X POST -H "$(A $T82)" -H 'Content-Type: application/json' -d "{\"oppName\":\"$SMK82 C级\",\"customerId\":\"$CUST82\",\"leadId\":\"$SMK82-L3\",\"expectAmount\":100,\"expectCloseDate\":\"2026-12-31\",\"competition\":\"c\",\"demandSummary\":\"d\"}" "$B/api/crm/opportunities" | J "d['code']")
+EQ "段82 C级线索转化422" "$CGR82" "422"
+
+# ---- 82.3 报价闸口两分支（BR-4.3-07）----
+# 未达报价阶段（新商机 REQUIREMENT）→ check-quote 阻断
+OPP82=$(SQL "SELECT ID FROM erp_crm_opportunity WHERE LEAD_ID='$SMK82-L1' LIMIT 1" | tr -d '[:space:]')
+G1_82=$(C -X POST -H "$(A $T82)" "$B/api/crm/opportunities/$OPP82/check-quote" | J "str(d['data']['ok']).lower()")
+EQ "段82 未达报价闸口阻断" "$G1_82" "false"
+# 推进到报价阶段 → check-quote 通过
+SQL "UPDATE erp_crm_opportunity SET STAGE='QUOTE' WHERE ID='$OPP82'" >/dev/null 2>&1
+G2_82=$(C -X POST -H "$(A $T82)" "$B/api/crm/opportunities/$OPP82/check-quote" | J "str(d['data']['ok']).lower()")
+EQ "段82 报价阶段闸口通过" "$G2_82" "true"
+# QUOTE 阶段清单（11.1.4 下区数据源）
+QL82=$(C -H "$(A $T82)" "$B/api/crm/opportunities?current=1&size=10&status=OPEN&stage=QUOTE" | J "d['data']['total']")
+[ "${QL82:-0}" -ge 1 ] && ok "段82 可转化商机清单（$QL82）" || bad "段82 清单为空"
+
+# ---- 82.4 A/B 级线索列表（11.1.4 上区数据源）----
+SQL "INSERT INTO erp_crm_lead (ID, LEAD_NO, SOURCE_CHANNEL, COMPANY_NAME, CONTACT_NAME, SCORE, GRADE, STATUS, OWNER_ID, OWNER_NAME, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK82-L4', '$SMK82-L04', 'WEB', '段82公司4', '王五', 95, 'A', 'OPEN', 'smk82', 'smk82', 'smk82', NOW(), '0', 0)" >/dev/null 2>&1
+AL82=$(C -H "$(A $T82)" "$B/api/crm/leads?current=1&size=50&status=OPEN&grade=A" | J "len(d['data']['records'])")
+[ "${AL82:-0}" -ge 1 ] && ok "段82 A级未转化线索列表（$AL82）" || bad "段82 A级列表为空"
+
+# ---- 82.5 3.1.x 零回归 + 未登录 ----
+R311=$(C -H "$(A $T82)" "$B/api/crm/opportunities?current=1&size=5" | J "d['code']")
+EQ "段82 3.1.1 数据源零回归" "$R311" "200"
+NL82=$(HTTP "$B/api/crm/opportunities/stats")
+EQ "段82 未登录401" "$NL82" "401"
+
+# 段尾清理
+SQL "DELETE FROM erp_crm_opp_followup WHERE OPP_ID='$OPP82'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_opp_stage_log WHERE OPP_ID='$OPP82'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_opportunity WHERE ID='$OPP82'" >/dev/null 2>&1
+SQL "DELETE FROM erp_crm_lead WHERE ID IN ('$SMK82-L1','$SMK82-L2','$SMK82-L3','$SMK82-L4')" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_customer_group WHERE ID='$SMK82-C1'" >/dev/null 2>&1
+
+echo "段 82 11.1 线索商机链页面 追加完成"
 
 
 

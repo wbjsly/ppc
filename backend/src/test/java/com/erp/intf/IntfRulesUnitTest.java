@@ -95,8 +95,15 @@ class IntfRulesUnitTest {
             row.setId("audit-1");
             return 1;
         });
+        com.erp.service.intf.GrayReleaseService grayMock =
+                mock(com.erp.service.intf.GrayReleaseService.class);
+        // 灰度 hook 未命中时返回原值（生产契约），避免 mock 默认返 null 致 apiKey 变 null
+        org.mockito.Mockito.when(grayMock.remapApiKey(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         OpenApiGatewayServiceImpl g = new OpenApiGatewayServiceImpl(channelDao, credentialDao,
-                callLogDao, rateStateDao, alertDao, mock(com.erp.service.intf.TierChangeLogService.class));
+                callLogDao, rateStateDao, alertDao, mock(com.erp.service.intf.TierChangeLogService.class),
+                grayMock);
         ReflectionTestUtils.setField(g, "auditFailClosed", true);
         ReflectionTestUtils.setField(g, "rateNormal", 100);
         ReflectionTestUtils.setField(g, "rateStrategic", 500);

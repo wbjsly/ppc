@@ -1,6 +1,7 @@
 package com.erp.fin;
 
 import com.erp.common.ServiceException;
+import java.time.LocalDate;
 import com.erp.dao.fin.ArInvoiceDao;
 import com.erp.dao.fin.RedFlushApplyDao;
 import com.erp.dao.fin.RedInvoiceDao;
@@ -244,7 +245,7 @@ class RedFlushVoidDbTest {
 
     @Test
     void approvedGeneratesInfoSheetSellerFiller() {
-        SalesInvoice inv = seedInvoice("seller", "2026-10-01");
+        SalesInvoice inv = seedInvoice("seller", LocalDate.now().withDayOfMonth(1).toString());
         Map<String, Object> created = redFlushService.create(payload(inv, "50000"));
         String id = (String) created.get("id");
         redFlushService.submit(id);
@@ -258,7 +259,7 @@ class RedFlushVoidDbTest {
 
     @Test
     void approvedBuyerConfirmedFiller() {
-        SalesInvoice inv = seedInvoice("buyer", "2026-10-01");
+        SalesInvoice inv = seedInvoice("buyer", LocalDate.now().withDayOfMonth(1).toString());
         // 同客户存在已确认发票 → 购方填开
         jdbc.update("UPDATE erp_fin_sales_invoice SET STATUS = 'CONFIRMED' WHERE ID = ?",
                 inv.getId());

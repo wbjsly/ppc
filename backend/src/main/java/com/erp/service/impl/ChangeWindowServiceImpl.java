@@ -108,6 +108,30 @@ public class ChangeWindowServiceImpl implements ChangeWindowService {
         return cnt != null && cnt > 0;
     }
 
+    @Override
+    public int remainingMin(LocalDateTime now) {
+        int day = now.getDayOfWeek().getValue();
+        String time = now.toLocalTime().format(TIME_FMT);
+        // 取当前所处窗口最晚的结束时刻
+        List<String> ends = jdbc.queryForList(
+                "SELECT END_TIME FROM erp_change_window WHERE STATUS='1' AND DEL_FLAG='0' "
+                        + "AND DAY_OF_WEEK=? AND START_TIME<=? AND END_TIME>?",
+                String.class, day, time, time);
+        int maxMin = 0;
+        for (String e : ends) {
+            try {
+                LocalTime end = LocalTime.parse(e.length() == 5 ? e + ":00" : e, TIME_FMT);
+                int m = (int) java.time.Duration.between(now.toLocalTime(), end).toMinutes();
+                if (m > maxMin) {
+                    maxMin = m;
+                }
+            } catch (Exception ignored) {
+                // 非法时刻跳过
+            }
+        }
+        return maxMin;
+    }
+
     private LocalTime parseTime(String v, String label) {
         if (!StringUtils.hasText(v)) {
             throw new ServiceException(422, label + "必填");

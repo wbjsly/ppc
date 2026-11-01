@@ -579,6 +579,81 @@ const routes = [
         meta: { title: '接口对接', group: '采购管理', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
       },
       {
+        // 集成门户 15.x（add-intf-portal-menus，spec interface-console/interface-sso/interface-canary-release）
+        path: '/m/15.1',
+        name: 'IntfDirectory',
+        component: () => import('@/views/proc/intf-portal/DirectoryPage.vue'),
+        meta: { title: '接口目录', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.2',
+        name: 'IntfAuth',
+        component: () => import('@/views/proc/intf-portal/AuthPage.vue'),
+        meta: { title: '认证鉴权', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.3',
+        name: 'IntfCredential',
+        component: () => import('@/views/proc/intf-portal/CredentialPage.vue'),
+        meta: { title: '凭证管理', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.4',
+        name: 'IntfMessage',
+        component: () => import('@/views/proc/intf-portal/MessagePage.vue'),
+        meta: { title: '报文网关', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.5',
+        name: 'IntfRateLimit',
+        component: () => import('@/views/proc/intf-portal/RateLimitPage.vue'),
+        meta: { title: '限流熔断', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.6',
+        name: 'IntfSandbox',
+        component: () => import('@/views/proc/intf-portal/SandboxPage.vue'),
+        meta: { title: '沙箱联调', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.7',
+        name: 'IntfAudit',
+        component: () => import('@/views/proc/intf-portal/AuditPage.vue'),
+        meta: { title: '调用审计', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      {
+        path: '/m/15.8',
+        name: 'IntfSla',
+        component: () => import('@/views/proc/intf-portal/SlaPage.vue'),
+        meta: { title: '服务报告', group: '集成门户', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' }
+      },
+      // ---- 15.x 三级叶 25 条（add-15-leaf-routes：八页扩 Tab 后逐叶接链，meta.tab 切换）----
+      { path: '/m/15.1.1', name: 'IntfDirRegister', component: () => import('@/views/proc/intf-portal/DirectoryPage.vue'), meta: { title: '目录登记', group: '集成门户', tab: 'register', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.1.2', name: 'IntfDirReview', component: () => import('@/views/proc/intf-portal/DirectoryPage.vue'), meta: { title: '契约评审', group: '集成门户', tab: 'review', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.1.3', name: 'IntfDirVersion', component: () => import('@/views/proc/intf-portal/DirectoryPage.vue'), meta: { title: '版本登记', group: '集成门户', tab: 'version', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.2.1', name: 'IntfAuthToken', component: () => import('@/views/proc/intf-portal/AuthPage.vue'), meta: { title: '令牌认证', group: '集成门户', tab: 'auth', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.2.2', name: 'IntfAuthSign', component: () => import('@/views/proc/intf-portal/AuthPage.vue'), meta: { title: '签名校验', group: '集成门户', tab: 'sign', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.2.3', name: 'IntfAuthSso', component: () => import('@/views/proc/intf-portal/AuthPage.vue'), meta: { title: '单点登录', group: '集成门户', tab: 'sso', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.3.1', name: 'IntfCredIssue', component: () => import('@/views/proc/intf-portal/CredentialPage.vue'), meta: { title: '凭证签发', group: '集成门户', tab: 'issue', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.3.2', name: 'IntfCredRotate', component: () => import('@/views/proc/intf-portal/CredentialPage.vue'), meta: { title: '定期轮换', group: '集成门户', tab: 'rotate', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.3.3', name: 'IntfCredRevoke', component: () => import('@/views/proc/intf-portal/CredentialPage.vue'), meta: { title: '紧急吊销', group: '集成门户', tab: 'revoke', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.3.4', name: 'IntfCredTrace', component: () => import('@/views/proc/intf-portal/CredentialPage.vue'), meta: { title: '泄露追溯', group: '集成门户', tab: 'trace', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.4.1', name: 'IntfMsgCheck', component: () => import('@/views/proc/intf-portal/MessagePage.vue'), meta: { title: '逐级校验', group: '集成门户', tab: 'check', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.4.2', name: 'IntfMsgIdempotent', component: () => import('@/views/proc/intf-portal/MessagePage.vue'), meta: { title: '幂等判定', group: '集成门户', tab: 'idempotent', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.4.3', name: 'IntfMsgReceipt', component: () => import('@/views/proc/intf-portal/MessagePage.vue'), meta: { title: '结果回执', group: '集成门户', tab: 'receipt', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.4.4', name: 'IntfMsgDlq', component: () => import('@/views/proc/intf-portal/MessagePage.vue'), meta: { title: '死信处理', group: '集成门户', tab: 'dlq', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.5.1', name: 'IntfRateLimit', component: () => import('@/views/proc/intf-portal/RateLimitPage.vue'), meta: { title: '令牌限流', group: '集成门户', tab: 'ratelimit', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.5.2', name: 'IntfCircuit', component: () => import('@/views/proc/intf-portal/RateLimitPage.vue'), meta: { title: '熔断降级', group: '集成门户', tab: 'circuit', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.5.3', name: 'IntfQuota', component: () => import('@/views/proc/intf-portal/RateLimitPage.vue'), meta: { title: '配额管理', group: '集成门户', tab: 'quota', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.5.4', name: 'IntfGrayRelease', component: () => import('@/views/proc/intf-portal/RateLimitPage.vue'), meta: { title: '灰度发布', group: '集成门户', tab: 'gray', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.6.1', name: 'IntfSandboxConfig', component: () => import('@/views/proc/intf-portal/SandboxPage.vue'), meta: { title: '沙箱配置', group: '集成门户', tab: 'config', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.6.2', name: 'IntfSandboxTest', component: () => import('@/views/proc/intf-portal/SandboxPage.vue'), meta: { title: '联调测试', group: '集成门户', tab: 'test', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.6.3', name: 'IntfProdRelease', component: () => import('@/views/proc/intf-portal/SandboxPage.vue'), meta: { title: '生产放行', group: '集成门户', tab: 'release', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.7.1', name: 'IntfAuditLog', component: () => import('@/views/proc/intf-portal/AuditPage.vue'), meta: { title: '审计日志', group: '集成门户', tab: 'audit', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.7.2', name: 'IntfCallTrace', component: () => import('@/views/proc/intf-portal/AuditPage.vue'), meta: { title: '调用追踪', group: '集成门户', tab: 'trace', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.8.1', name: 'IntfSlaGenerate', component: () => import('@/views/proc/intf-portal/SlaPage.vue'), meta: { title: '月度生成', group: '集成门户', tab: 'generate', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      { path: '/m/15.8.2', name: 'IntfSlaPublish', component: () => import('@/views/proc/intf-portal/SlaPage.vue'), meta: { title: '归档发布', group: '集成门户', tab: 'publish', perm: 'ROLE_INTF_OPS,ROLE_ADMIN' } },
+      {
         // 2.9.1 成本分析（add-procurement-analysis，spec procurement-cost-analysis 三 Tab）
         path: '/m/2.9.1',
         name: 'CostAnalysis',
@@ -726,6 +801,20 @@ const routes = [
         name: 'LeadScore',
         component: () => import('@/views/crm/lead-score/index.vue'),
         meta: { title: '线索评分', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.1.3 商机推进（add-crm-opp-chain-pages，spec opportunity-management）
+        path: '/m/11.1.3',
+        name: 'OppBoard',
+        component: () => import('@/views/crm/opportunity-board/index.vue'),
+        meta: { title: '商机推进', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
+      },
+      {
+        // 11.1.4 商机转化（线索转化区 + 报价闸口区，X1+Y 合并）
+        path: '/m/11.1.4',
+        name: 'OppConvertWorkbench',
+        component: () => import('@/views/crm/opportunity-convert-workbench/index.vue'),
+        meta: { title: '商机转化', group: '项目研发', perm: 'ROLE_SALES,ROLE_SALES_MGR,ROLE_ADMIN' }
       },
       {
         // 3.1.1 商机录入（add-sales-lead-to-cash，spec opportunity-management）
@@ -3231,6 +3320,142 @@ const routes = [
         name: 'TaxCodeBatch',
         component: () => import('@/views/mdm/tax-code-batch/index.vue'),
         meta: { title: '批量导入', group: '基础数据' }
+      },
+      {
+        // 1.7.1 版本对比（通用版本中心，13 类主数据）
+        path: '/m/1.7.1',
+        name: 'MdmVersionCompare',
+        component: () => import('@/views/mdm/version-center/index.vue'),
+        meta: { title: '版本对比', group: '基础数据', tab: 'compare' }
+      },
+      {
+        // 1.7.2 历史回溯
+        path: '/m/1.7.2',
+        name: 'MdmVersionHistory',
+        component: () => import('@/views/mdm/version-center/index.vue'),
+        meta: { title: '历史回溯', group: '基础数据', tab: 'history' }
+      },
+      {
+        // 1.7.3 版本回滚（ADMIN）
+        path: '/m/1.7.3',
+        name: 'MdmVersionRollback',
+        component: () => import('@/views/mdm/version-center/index.vue'),
+        meta: { title: '版本回滚', group: '基础数据', tab: 'rollback' }
+      },
+      {
+        // 1.8.1 变更事件（outbox MDM 台账）
+        path: '/m/1.8.1',
+        name: 'MdmEventLog',
+        component: () => import('@/views/mdm/event-sync/index.vue'),
+        meta: { title: '变更事件', group: '基础数据', tab: 'events' }
+      },
+      {
+        // 1.8.2 下游刷新（内部监听+外部投递双 Tab）
+        path: '/m/1.8.2',
+        name: 'MdmDownstreamRefresh',
+        component: () => import('@/views/mdm/event-sync/index.vue'),
+        meta: { title: '下游刷新', group: '基础数据', tab: 'refresh' }
+      },
+      {
+        // 18.1.1 变更申请（ops-sla 五门禁）
+        path: '/m/18.1.1',
+        name: 'OpsChangeApply',
+        component: () => import('@/views/ops/change/index.vue'),
+        meta: { title: '变更申请', group: '运维管理', tab: 'apply' }
+      },
+      {
+        path: '/m/18.1.2',
+        name: 'OpsChangeCalendar',
+        component: () => import('@/views/ops/change/index.vue'),
+        meta: { title: '变更日历', group: '运维管理', tab: 'calendar' }
+      },
+      {
+        path: '/m/18.1.3',
+        name: 'OpsChangeWindow',
+        component: () => import('@/views/ops/change/index.vue'),
+        meta: { title: '窗口发布', group: '运维管理', tab: 'window' }
+      },
+      {
+        path: '/m/18.1.4',
+        name: 'OpsChangeRollback',
+        component: () => import('@/views/ops/change/index.vue'),
+        meta: { title: '失败回滚', group: '运维管理', tab: 'rollback' }
+      },
+      {
+        path: '/m/18.1.5',
+        name: 'OpsChangeRollbackReason',
+        component: () => import('@/views/ops/change/index.vue'),
+        meta: { title: '回滚原因', group: '运维管理', tab: 'reason' }
+      },
+      {
+        // 18.2 服务监控
+        path: '/m/18.2.1',
+        name: 'OpsDelayCollect',
+        component: () => import('@/views/ops/monitor/index.vue'),
+        meta: { title: '延迟采集', group: '运维管理', tab: 'delay' }
+      },
+      {
+        path: '/m/18.2.2',
+        name: 'OpsAlertThreshold',
+        component: () => import('@/views/ops/monitor/index.vue'),
+        meta: { title: '阈值告警', group: '运维管理', tab: 'alert' }
+      },
+      {
+        path: '/m/18.2.3',
+        name: 'OpsDelayTrend',
+        component: () => import('@/views/ops/monitor/index.vue'),
+        meta: { title: '趋势分析', group: '运维管理', tab: 'trend' }
+      },
+      {
+        // 18.3 升级管理
+        path: '/m/18.3.1',
+        name: 'OpsOncallBoard',
+        component: () => import('@/views/ops/escalation/index.vue'),
+        meta: { title: '值班看板', group: '运维管理', tab: 'oncall' }
+      },
+      {
+        path: '/m/18.3.2',
+        name: 'OpsEscalationChain',
+        component: () => import('@/views/ops/escalation/index.vue'),
+        meta: { title: '层级升级', group: '运维管理', tab: 'chain' }
+      },
+      {
+        path: '/m/18.3.3',
+        name: 'OpsEscalationTickets',
+        component: () => import('@/views/ops/escalation/index.vue'),
+        meta: { title: '升级工单', group: '运维管理', tab: 'tickets' }
+      },
+      {
+        // 18.4 容量管理
+        path: '/m/18.4.1',
+        name: 'OpsCapacityAlert',
+        component: () => import('@/views/ops/capacity/index.vue'),
+        meta: { title: '容量预警', group: '运维管理', tab: 'alert' }
+      },
+      {
+        path: '/m/18.4.2',
+        name: 'OpsCapacityScale',
+        component: () => import('@/views/ops/capacity/index.vue'),
+        meta: { title: '扩容执行', group: '运维管理', tab: 'scale' }
+      },
+      {
+        path: '/m/18.4.3',
+        name: 'OpsAccountingGuard',
+        component: () => import('@/views/ops/capacity/index.vue'),
+        meta: { title: '结账保障', group: '运维管理', tab: 'guard' }
+      },
+      {
+        // 18.5 服务报告
+        path: '/m/18.5.1',
+        name: 'OpsSlaReport',
+        component: () => import('@/views/ops/report/index.vue'),
+        meta: { title: '月度报告', group: '运维管理', tab: 'report' }
+      },
+      {
+        path: '/m/18.5.2',
+        name: 'OpsSlaPublish',
+        component: () => import('@/views/ops/report/index.vue'),
+        meta: { title: '归档发布', group: '运维管理', tab: 'publish' }
       },
       {
         path: '/m/1.4.1',

@@ -57,6 +57,7 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
     private final IntfRateStateDao rateStateDao;
     private final IntfSlaAlertDao alertDao;
     private final TierChangeLogService tierChangeLog;
+    private final com.erp.service.intf.GrayReleaseService grayReleaseService;
 
     @Value("${app.intf.rate-limit-strategic:500}") private int rateStrategic;
     @Value("${app.intf.rate-limit-normal:100}") private int rateNormal;
@@ -68,13 +69,15 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
 
     public OpenApiGatewayServiceImpl(IntfChannelDao channelDao, IntfCredentialDao credentialDao,
                                      IntfCallLogDao callLogDao, IntfRateStateDao rateStateDao,
-                                     IntfSlaAlertDao alertDao, TierChangeLogService tierChangeLog) {
+                                     IntfSlaAlertDao alertDao, TierChangeLogService tierChangeLog,
+                                     com.erp.service.intf.GrayReleaseService grayReleaseService) {
         this.channelDao = channelDao;
         this.credentialDao = credentialDao;
         this.callLogDao = callLogDao;
         this.rateStateDao = rateStateDao;
         this.alertDao = alertDao;
         this.tierChangeLog = tierChangeLog;
+        this.grayReleaseService = grayReleaseService;
     }
 
     // ------------------------------------------------------------------ evaluate
@@ -124,6 +127,9 @@ public class OpenApiGatewayServiceImpl implements OpenApiGatewayService {
             return deny(d, 401, "UNAUTHENTICATED", "缺少 API Key", null);
         }
         d.setCaller(apiKey.trim());
+        // 灰度分流只读 hook（add-intf-portal-menus design D4）：命中 RUNNING 灰度规则的旧凭证时
+        // 按档位百分比改路由至新凭证；未命中返回原值走原逻辑，不改限流/熔断判定
+        apiKey = grayReleaseService.remapApiKey(apiKey.trim(), resolveRequestId(request));
         IntfCredential cred = credentialDao.selectByApiKey(apiKey.trim());
         if (cred == null) {
             return deny(d, 401, "UNAUTHENTICATED", "API Key 不存在", null);

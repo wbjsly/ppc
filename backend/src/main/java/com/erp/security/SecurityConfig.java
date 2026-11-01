@@ -143,6 +143,15 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/mdm/item-categories/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/item-categories/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/customer-groups/**").hasRole("ADMIN")
+                // 1.7 版本中心 / 1.8 集成同步（add-mdm-version-sync）：回滚/缓存强刷=ADMIN，读=登录
+                .antMatchers(HttpMethod.POST, "/api/mdm/version-center/**/rollback").hasRole("ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/mdm/events/cache-invalidate").hasRole("ADMIN")
+                .antMatchers("/api/mdm/version-center/**", "/api/mdm/events/**").authenticated()
+                // 18 域运维 SLA（add-ops-sla）：手动扫描/结账开关/报告发布=ADMIN，读=登录
+                .antMatchers(HttpMethod.POST, "/api/ops/escalations/scan").hasRole("ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/ops/capacity/accounting-guard").hasRole("ADMIN")
+                .antMatchers(HttpMethod.POST, "/api/ops/sla-reports/*/publish").hasRole("ADMIN")
+                .antMatchers("/api/ops/**").authenticated()
                 .antMatchers(HttpMethod.PUT, "/api/mdm/customer-groups/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/customer-views/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/customer-views/**").hasRole("ADMIN")
@@ -528,6 +537,10 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/intf/sla/reports/generate",
                         "/api/intf/sla/reports/*/review")
                         .hasAnyRole("ADMIN", "INTF_OPS", "INTF_ARCH")
+                // 集成门户 15.x（add-intf-portal-menus design D5）：
+                // 灰度切量/回滚/配置高危动作仅 ADMIN（服务层再校验）；SSO/灰度读走下方兜底 INTF_OPS/ADMIN
+                .antMatchers(HttpMethod.POST, "/api/intf/gray-releases/**").hasAnyRole("ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/intf/gray-releases/**").hasAnyRole("ADMIN")
                 .antMatchers("/api/intf/**").hasAnyRole("ADMIN", "INTF_OPS")
                 .antMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
