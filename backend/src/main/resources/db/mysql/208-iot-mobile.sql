@@ -1,0 +1,317 @@
+-- 208: 移动物联 13 域（add-iot-mobile）
+-- 12 张 erp_iot_* 表 + 参数五枚 + 现场/IoT 角色补种
+-- 幂等：可重复执行（CREATE IF NOT EXISTS + INSERT IGNORE）
+
+-- ---------- 1) 移动终端注册（C-4.11-18 未注册拒绝，双因子签审的设备侧） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_terminal (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    DEVICE_CODE varchar(64) NOT NULL COMMENT '终端唯一编码（业务键）',
+    DEVICE_TYPE varchar(16) NOT NULL DEFAULT 'PDA' COMMENT 'PDA/TABLET/PHONE',
+    IMEI_MAC varchar(64) NULL COMMENT '设备唯一标识 IMEI/MAC',
+    BIND_USER_ID varchar(64) NULL COMMENT '绑定操作人员账号',
+    CERT_SN varchar(64) NULL COMMENT '设备证书序列号',
+    CERT_STATUS varchar(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/REVOKED',
+    LAST_ONLINE_AT datetime NULL,
+    FAIL_CNT int NOT NULL DEFAULT 0 COMMENT '签审密码连续失败次数',
+    LOCKED_FLAG varchar(1) NOT NULL DEFAULT '0' COMMENT '连续 3 次失败临时锁定',
+    LOCK_REASON varchar(200) NULL,
+    LOCK_AT datetime NULL,
+    UNLOCK_BY varchar(64) NULL COMMENT '管理员解锁留痕',
+    UNLOCK_AT datetime NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_TERMINAL (DEVICE_CODE),
+    KEY IDX_IOT_TERMINAL_USER (BIND_USER_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动终端注册与证书';
+
+-- ---------- 2) IoT 设备档案（13.6.1 接入注册） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_device (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    DEVICE_NO varchar(64) NOT NULL COMMENT '设备编号（唯一，关联物理资产台账）',
+    DEVICE_TYPE varchar(32) NOT NULL DEFAULT 'SENSOR' COMMENT 'SENSOR/RFID/PLC_GATEWAY',
+    DEVICE_NAME varchar(128) NULL,
+    PROTOCOL varchar(20) NOT NULL DEFAULT 'MQTT' COMMENT 'MQTT/OPC-UA/MODBUS_TCP/MODBUS_RTU',
+    PROTOCOL_PRIORITY int NOT NULL DEFAULT 2 COMMENT '优先级 OPC-UA=1 > MQTT=2 > Modbus TCP=3 > RTU=4',
+    SAMPLE_FREQ_SEC int NOT NULL DEFAULT 60 COMMENT '采集频率秒（关键设备 1，一般 60）',
+    POINT_MAP_JSON longtext NULL COMMENT '数据点映射',
+    ALERT_RULE_JSON longtext NULL COMMENT '多级阈值规则 [{point, warn, severe, level, notify}]',
+    STATUS varchar(16) NOT NULL DEFAULT 'OFFLINE' COMMENT 'ONLINE/OFFLINE/FAULT/MAINT',
+    HEARTBEAT_AT datetime NULL,
+    CERT_SN varchar(64) NULL COMMENT '设备证书（无效 L1 拒绝接入，C-4.11-18）',
+    CERT_STATUS varchar(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/REVOKED',
+    ASSET_NO varchar(64) NULL COMMENT '关联 EAM 物理资产编号',
+    WORK_AREA varchar(64) NULL COMMENT '所在工位/区域',
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_DEVICE (DEVICE_NO),
+    KEY IDX_IOT_DEVICE_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='IoT 设备接入档案';
+
+-- ---------- 3) 测点时序（按月 RANGE 分区；原始 90 天/聚合 3 年由归档任务切换） ----------
+-- 主键必须含分区键 → PK (ID, TS)；滚动分区由 IotTelemetrySimulator 归档任务维护
+CREATE TABLE IF NOT EXISTS erp_iot_telemetry (
+    ID varchar(64) NOT NULL,
+    TS datetime NOT NULL COMMENT '采样时间戳（分区键）',
+    DEVICE_NO varchar(64) NOT NULL,
+    POINT_CODE varchar(64) NOT NULL COMMENT '测点编码（temperature/vibration/current...）',
+    VAL decimal(18,4) NULL COMMENT '测点值',
+    QUALITY varchar(8) NOT NULL DEFAULT 'GOOD' COMMENT 'GOOD/SUSPECT（物理合理范围外）',
+    BATCH_TAG varchar(64) NULL COMMENT '注入批次标记（演示/测试造数）',
+    CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (ID, TS),
+    KEY IDX_IOT_TEL_QUERY (DEVICE_NO, POINT_CODE, TS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='IoT 测点时序（月分区）'
+PARTITION BY RANGE COLUMNS (TS) (
+    PARTITION p2026_11 VALUES LESS THAN ('2026-12-01'),
+    PARTITION p2026_12 VALUES LESS THAN ('2027-01-01'),
+    PARTITION p2027_01 VALUES LESS THAN ('2027-02-01'),
+    PARTITION p2027_02 VALUES LESS THAN ('2027-03-01'),
+    PARTITION p2027_03 VALUES LESS THAN ('2027-04-01'),
+    PARTITION p2027_04 VALUES LESS THAN ('2027-05-01'),
+    PARTITION p2027_05 VALUES LESS THAN ('2027-06-01'),
+    PARTITION p2027_06 VALUES LESS THAN ('2027-07-01'),
+    PARTITION p2027_07 VALUES LESS THAN ('2027-08-01'),
+    PARTITION p2027_08 VALUES LESS THAN ('2027-09-01'),
+    PARTITION p2027_09 VALUES LESS THAN ('2027-10-01'),
+    PARTITION p2027_10 VALUES LESS THAN ('2027-11-01'),
+    PARTITION p2027_11 VALUES LESS THAN ('2027-12-01'),
+    PARTITION p2027_12 VALUES LESS THAN ('2028-01-01'),
+    PARTITION pmax  VALUES LESS THAN (MAXVALUE)
+) ;
+
+-- ---------- 4) 离线同步队列（13.5，幂等键防重） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_offline_queue (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    IDEMPOTENT_KEY varchar(160) NOT NULL COMMENT '业务幂等键 工单号+工序+时间戳+设备ID',
+    DEVICE_CODE varchar(64) NOT NULL,
+    BIZ_TYPE varchar(16) NOT NULL COMMENT 'REPORT/SCAN/INSPECT/EXCEPTION',
+    PAYLOAD_JSON longtext NOT NULL COMMENT '业务载荷',
+    CLIENT_VER_NO int NOT NULL DEFAULT 0 COMMENT '客户端版本号（冲突三重检测）',
+    CLIENT_TS datetime NOT NULL COMMENT '客户端操作时间戳',
+    STATUS varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/SYNCED/FAILED/CONFLICT',
+    RETRY_CNT int NOT NULL DEFAULT 0,
+    SYNCED_AT datetime NULL,
+    ERR_MSG varchar(500) NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_QUEUE (IDEMPOTENT_KEY),
+    KEY IDX_IOT_QUEUE_STATUS (STATUS, CLIENT_TS),
+    KEY IDX_IOT_QUEUE_DEVICE (DEVICE_CODE, STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='离线同步队列';
+
+-- ---------- 5) 冲突与差异记录（BL-4.11-01 字典序裁决，C-4.11-01/12） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_sync_conflict (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    QUEUE_ID varchar(64) NULL COMMENT '关联队列记录',
+    CONFLICT_TYPE varchar(16) NOT NULL COMMENT 'MERGE 数量合并/LATEST 状态最新/DIFF 差异待处理/REVIEW 人工',
+    FIELD_PATH varchar(128) NULL COMMENT '冲突字段',
+    BEFORE_SNAPSHOT longtext NULL COMMENT '冲突前快照',
+    AFTER_SNAPSHOT longtext NULL COMMENT '冲突后快照',
+    DICT_SEQ_KEY varchar(200) NULL COMMENT '字典序裁决键 VER_NO>CLIENT_TS>IDEMPOTENT_KEY',
+    NEED_FIN_APPROVAL varchar(1) NOT NULL DEFAULT '0' COMMENT '财务数据 L2 强制审批',
+    STATUS varchar(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/RESOLVED/NEED_REVIEW',
+    RESOLVED_BY varchar(64) NULL,
+    RESOLVED_AT datetime NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    KEY IDX_IOT_CONFLICT_QUEUE (QUEUE_ID),
+    KEY IDX_IOT_CONFLICT_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='离线同步冲突与差异记录';
+
+-- ---------- 6) 告警事件（13.6.3 多级阈值/5min 合并/确认-处理-关闭闭环） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_alarm_event (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    EVENT_NO varchar(64) NOT NULL COMMENT '告警事件号',
+    DEVICE_NO varchar(64) NOT NULL,
+    ALERT_LEVEL varchar(4) NOT NULL DEFAULT 'L3' COMMENT 'L1 停机/L2 冻结/L3 日志',
+    ALERT_TYPE varchar(20) NOT NULL DEFAULT 'THRESHOLD' COMMENT 'THRESHOLD/TREND/OFFLINE/EXCEPTION',
+    POINT_CODE varchar(64) NULL,
+    RULE_SNAP longtext NULL COMMENT '触发规则快照',
+    MERGE_KEY varchar(160) NULL COMMENT '合并键 设备+规则+级别（5min 窗口）',
+    MERGE_CNT int NOT NULL DEFAULT 1 COMMENT '窗口内合并次数',
+    STATUS varchar(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/CONFIRMED/PROCESSING/CLOSED',
+    CONFIRM_BY varchar(64) NULL, CONFIRM_AT datetime NULL,
+    CLOSE_BY varchar(64) NULL, CLOSE_AT datetime NULL,
+    ESCALATE_TO varchar(64) NULL COMMENT '超时升级对象',
+    ESCALATE_AT datetime NULL,
+    LINK_WO_ID varchar(64) NULL COMMENT '预测维护建单指向（幂等键=事件 ID）',
+    LINK_FREEZE_ID varchar(64) NULL COMMENT '质量冻结单指向（L2 联动）',
+    STOP_CMD_AT datetime NULL COMMENT 'L1 停机指令下发打点（仿真通道）',
+    STOP_ACK_MS int NULL COMMENT '下发到确认时效 ms',
+    FALSE_POSITIVE varchar(1) NOT NULL DEFAULT '0' COMMENT '误报标记（趋势转工单后判定非故障）',
+    OCCURRED_AT datetime NOT NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_ALARM_NO (EVENT_NO),
+    KEY IDX_IOT_ALARM_MERGE (MERGE_KEY, OCCURRED_AT),
+    KEY IDX_IOT_ALARM_STATUS (STATUS, OCCURRED_AT),
+    KEY IDX_IOT_ALARM_DEVICE (DEVICE_NO, OCCURRED_AT)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='IoT 告警事件';
+
+-- ---------- 7) 移动待办（13.7 聚合 + 30min 超时升级计时） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_mobile_todo (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    TODO_TYPE varchar(20) NOT NULL COMMENT 'APPROVAL/EXCEPTION/INSPECT/ESCALATE/REPORT/ALERT',
+    REF_TYPE varchar(32) NULL COMMENT '原单类型（APPROVAL_FLOW/NCR/EAM_WO...）',
+    REF_ID varchar(64) NULL COMMENT '原单 ID（处理回写用）',
+    TITLE varchar(200) NOT NULL,
+    DETAIL_JSON longtext NULL,
+    ASSIGNEE varchar(64) NOT NULL COMMENT '当前处理人',
+    DUE_AT datetime NULL COMMENT '30min 超时计时',
+    ESCALATED_TO varchar(64) NULL,
+    ESCALATED_AT datetime NULL,
+    STATUS varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/DONE/ESCALATED/CANCELLED',
+    HANDLED_BY varchar(64) NULL, HANDLED_AT datetime NULL,
+    HANDLING_OPINION varchar(500) NULL,
+    NEED_FIN_SIGN varchar(1) NOT NULL DEFAULT '0' COMMENT '财务岗位签署要求',
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    KEY IDX_IOT_TODO_ASSIGNEE (ASSIGNEE, STATUS),
+    KEY IDX_IOT_TODO_DUE (STATUS, DUE_AT)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动待办中心';
+
+-- ---------- 8) 首件检验记录（13.1.2 首件强制 + 离线例外 BR-4.11-10/54） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_first_article (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    DISPATCH_ID varchar(64) NOT NULL COMMENT '派工单（一单一首件）',
+    MO_NO varchar(64) NULL,
+    OP_SEQ int NULL,
+    ITEM_CODE varchar(64) NULL,
+    CTQ_JSON longtext NULL COMMENT 'CTQ 检验数据（关键尺寸/外观/性能）',
+    PHOTO_URL varchar(500) NULL COMMENT '首件照片',
+    STATUS varchar(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING 待 IPQC 确认/CONFIRMED/REJECTED',
+    OFFLINE_FLAG varchar(1) NOT NULL DEFAULT '0' COMMENT '离线「首件待确认」条件放行标记',
+    RECHECK_RESULT varchar(16) NULL COMMENT '联网复核 PASS/FAIL（BR-4.11-54）',
+    RECHECK_BY varchar(64) NULL, RECHECK_AT datetime NULL,
+    DIFF_CONFLICT_ID varchar(64) NULL COMMENT '复核不合格整批转差异单指向',
+    SUBMIT_BY varchar(64) NULL, SUBMIT_AT datetime NULL,
+    CONFIRM_BY varchar(64) NULL, CONFIRM_AT datetime NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_FA_DISPATCH (DISPATCH_ID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动端首件检验记录';
+
+-- ---------- 9) 巡检执行记录（13.3 扫码签到/逐项点检/异常标记/拍照留证） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_inspect_record (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    PLAN_CODE varchar(64) NULL COMMENT '来源 QMS 巡检计划编码',
+    DEVICE_NO varchar(64) NOT NULL COMMENT '被检设备（扫码签到）',
+    CHECKIN_AT datetime NULL,
+    CHECKIN_BY varchar(64) NULL,
+    ITEMS_JSON longtext NULL COMMENT '逐点检项 [{item, value, unit, abnormal, remark}]',
+    ABNORMAL_FLAG varchar(1) NOT NULL DEFAULT '0',
+    EXCEPTION_ID varchar(64) NULL COMMENT '异常标记关联 erp_iot_exception',
+    PHOTO_URLS longtext NULL COMMENT '拍照留证（JSON 数组，缺图提交校验提示补拍）',
+    STATUS varchar(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/SUBMITTED',
+    OVERDUE_FLAG varchar(1) NOT NULL DEFAULT '0' COMMENT '超时漏检提醒',
+    DUE_AT datetime NULL,
+    SUBMIT_AT datetime NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    KEY IDX_IOT_INSPECT_DEVICE (DEVICE_NO, CREATE_DATE),
+    KEY IDX_IOT_INSPECT_PLAN (PLAN_CODE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='设备巡检执行记录';
+
+-- ---------- 10) 异常上报单（13.4 三类 + 联动 + 同班次合并） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_exception (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    EXC_NO varchar(64) NOT NULL COMMENT '异常单号',
+    EXC_TYPE varchar(16) NOT NULL COMMENT 'QUALITY 质量异常/EQUIPMENT 设备故障/SAFETY 安全事件',
+    SEVERITY varchar(10) NOT NULL DEFAULT 'GENERAL' COMMENT 'GENERAL/SEVERE/URGENT',
+    TITLE varchar(200) NULL,
+    DESCRIPTION varchar(2000) NULL,
+    DEVICE_NO varchar(64) NULL,
+    MO_NO varchar(64) NULL,
+    ITEM_CODE varchar(64) NULL,
+    STATION varchar(64) NULL COMMENT '工位',
+    PHOTO_URLS longtext NULL COMMENT '照片/视频附件',
+    SOURCE varchar(10) NOT NULL DEFAULT 'MANUAL' COMMENT 'MANUAL 人工/IOT 传感器自动',
+    CONFIRM_FLAG varchar(1) NOT NULL DEFAULT '0' COMMENT 'IoT 自动上报现场确认门禁',
+    STATUS varchar(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/PROCESSING/CLOSED',
+    LINK_WO_ID varchar(64) NULL COMMENT '设备故障→EAM 维修工单',
+    LINK_FREEZE_ID varchar(64) NULL COMMENT '质量异常→质量冻结单',
+    STOP_CMD_AT datetime NULL COMMENT '安全事件停机指令打点（仿真通道）',
+    STOP_ACK_MS int NULL,
+    MERGE_OF varchar(64) NULL COMMENT '同班次≥3 合并指向首单',
+    MERGE_CNT int NOT NULL DEFAULT 1,
+    DUE_AT datetime NULL COMMENT '30min 响应计时',
+    CLOSED_AT datetime NULL,
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_EXC_NO (EXC_NO),
+    KEY IDX_IOT_EXC_MERGE (DEVICE_NO, EXC_TYPE, CREATE_DATE),
+    KEY IDX_IOT_EXC_STATUS (STATUS)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动端异常上报单';
+
+-- ---------- 11) 移动/IoT SLA 月度报告（13.9 复用 OpsSlaReport 范式） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_sla_report (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    PERIOD varchar(7) NOT NULL COMMENT 'yyyy-MM',
+    STATUS varchar(16) NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/ARCHIVED/PUBLISHED',
+    METRICS_JSON longtext NULL COMMENT '五指标快照：可用率/同步成功率/响应时间/离线占比/告警响应',
+    PUBLISH_AT datetime NULL,
+    PUBLISH_LOG varchar(500) NULL COMMENT '未归档发布阻断尝试留痕',
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_SLA_PERIOD (PERIOD)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动/IoT SLA 月度报告';
+
+-- ---------- 12) 报告订阅（13.9.2 归档自动推送） ----------
+CREATE TABLE IF NOT EXISTS erp_iot_sla_sub (
+    ID varchar(64) NOT NULL PRIMARY KEY,
+    SUBSCRIBER varchar(64) NOT NULL COMMENT '订阅人账号',
+    REPORT_TYPE varchar(16) NOT NULL DEFAULT 'IOT' COMMENT '报告类型（预留多类型）',
+    ACTIVE varchar(1) NOT NULL DEFAULT '1',
+    LAST_PUSH_PERIOD varchar(7) NULL COMMENT '最近推送期（防重复）',
+    REMARK varchar(500) NULL,
+    CREATE_BY varchar(64) NULL, CREATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    UPDATE_BY varchar(64) NULL, UPDATE_DATE datetime NULL DEFAULT CURRENT_TIMESTAMP,
+    DEL_FLAG varchar(1) NOT NULL DEFAULT '0', VER_NO int NOT NULL DEFAULT 0,
+    UNIQUE UK_IOT_SLASUB (SUBSCRIBER, REPORT_TYPE)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动/IoT SLA 报告订阅';
+
+-- ---------- 13) 参数五枚 ----------
+INSERT IGNORE INTO erp_sys_param
+(ID, PARAM_KEY, PARAM_VALUE, VALUE_TYPE, PARAM_GROUP, REMARK, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES
+('param-iot-offline-max-h', 'OFFLINE_SYNC_MAX_HOURS', '72', 'INT', 'IOT',
+ '离线缓存超期强制锁定小时数（C-4.11-04）', 'seed', NOW(), '0', 0),
+('param-iot-offline-warn', 'OFFLINE_WARN_RATIO', '0.75', 'RATE', 'IOT',
+ '离线过期预警比例（0.75×72h=54h 起黄闪警告）', 'seed', NOW(), '0', 0),
+('param-iot-heartbeat-min', 'IOT_HEARTBEAT_TIMEOUT_MIN', '5', 'INT', 'IOT',
+ 'IoT 设备心跳丢失超时分钟数（离线通知）', 'seed', NOW(), '0', 0),
+('param-iot-alarm-merge', 'IOT_ALARM_MERGE_WINDOW_MIN', '5', 'INT', 'IOT',
+ '同条件告警自动合并窗口分钟数', 'seed', NOW(), '0', 0),
+('param-iot-sim-enabled', 'IOT_SIM_ENABLED', 'ON', 'ENUM', 'IOT',
+ '测点仿真器开关：ON=定时生成测点；OFF=仅手动注入（测试隔离）', 'seed', NOW(), '0', 0);
+
+-- ---------- 14) 现场/IoT 角色补种（缺者补；SHOP_FLOOR/WAREHOUSE 已存在） ----------
+INSERT IGNORE INTO erp_admin_role (ID, ROLE_CODE, ROLE_NAME, SORT_ORDER, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO)
+SELECT UUID(), t.c, t.n, 91, '1', 'migration-208', NOW(), '0', 0
+FROM (SELECT 'ROLE_IOT_ADMIN' c, '物联网管理员' n
+      UNION SELECT 'ROLE_EQUIPMENT', '设备安全员'
+      UNION SELECT 'ROLE_SECURITY', '安全管理员') t
+WHERE NOT EXISTS (SELECT 1 FROM erp_admin_role r WHERE r.ROLE_CODE=t.c AND r.DEL_FLAG='0');
+INSERT IGNORE INTO erp_admin_user_role (ID, USER_ID, ROLE_ID, CREATE_DATE)
+SELECT UUID(), 'user-admin', r.ID, NOW() FROM erp_admin_role r
+WHERE r.ROLE_CODE IN ('ROLE_IOT_ADMIN','ROLE_EQUIPMENT','ROLE_SECURITY')
+  AND NOT EXISTS (SELECT 1 FROM erp_admin_user_role ur WHERE ur.USER_ID='user-admin' AND ur.ROLE_ID=r.ID);

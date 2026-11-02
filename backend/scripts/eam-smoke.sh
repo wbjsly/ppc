@@ -5820,6 +5820,9 @@ echo "== 段 50 结项归档（发起→证据→确认→结算→审批→归�
 SQL "DELETE FROM erp_pm_closure_remediation WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_closure_check_item WHERE CHECK_ID IN (SELECT ID FROM (SELECT ID FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%') t)" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_closure_check WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
+# 自愈：清残留结项审批（上轮中途被打断会留 PENDING 实例 → 本轮 50.4 提交撞冲突返回非标响应）
+SQL "DELETE t FROM erp_sys_approval_task t JOIN erp_sys_approval a ON a.ID=t.APPR_ID WHERE a.BIZ_TYPE='ProjectClosure' AND a.BIZ_ID LIKE 'clc50-%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_approval WHERE BIZ_TYPE='ProjectClosure' AND BIZ_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_closure_settlement WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_cost_collect WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
 SQL "DELETE FROM erp_pm_ip_agreement WHERE PROJECT_ID LIKE 'clc50-%'" >/dev/null 2>&1
@@ -9427,6 +9430,277 @@ SQL "DELETE FROM erp_crm_lead WHERE ID IN ('$SMK82-L1','$SMK82-L2','$SMK82-L3','
 SQL "DELETE FROM erp_mdm_customer_group WHERE ID='$SMK82-C1'" >/dev/null 2>&1
 
 echo "段 82 11.1 线索商机链页面 追加完成"
+
+# ============================================================
+# 段 83: 本地适配 i18n 17 域 (add-i18n-l10n)
+# ============================================================
+echo "---- 段 83: 本地适配 i18n 17 域 ----"
+T83=$TADM
+SMK83="SMK83-$(date +%s)"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_i18n_key WHERE KEY_NAME LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_i18n_pack WHERE REMARK LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_i18n_gap WHERE KEY_NAME LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_param WHERE PARAM_KEY LIKE 'I18N_SLA_STATUS_2099-09'" >/dev/null 2>&1
+
+# ---- 83.1 三语键值与种子核验 ----
+SQL "INSERT INTO erp_i18n_key (ID, KEY_NAME, MODULE, PRIORITY, SOURCE_TEXT, LOCALE) VALUES ('$SMK83-K1', '$SMK83.btn', 'test', 'P0', '你好 {0}，欢迎 {name}', 'zh-CN')" >/dev/null 2>&1
+SQL "INSERT INTO erp_i18n_key (ID, KEY_NAME, LOCALE, TARGET_TEXT) VALUES ('$SMK83-K1E', '$SMK83.btn', 'en-US', 'Hello {0}, welcome {name}')" >/dev/null 2>&1
+ZH83=$(SQL "SELECT COUNT(*) FROM erp_i18n_key WHERE LOCALE='zh-CN' AND DEL_FLAG='0'" | tr -d '[:space:]')
+[ "${ZH83:-0}" -ge 200 ] && ok "段83 种子 zh 源语 $ZH83 键" || bad "段83 zh 种子缺失（$ZH83）"
+EN83=$(SQL "SELECT COUNT(*) FROM erp_i18n_key WHERE LOCALE='en-US' AND DEL_FLAG='0'" | tr -d '[:space:]')
+[ "${EN83:-0}" -ge 200 ] && ok "段83 种子 en 译文 $EN83 键" || bad "段83 en 种子缺失"
+JA83=$(SQL "SELECT COUNT(*) FROM erp_i18n_key WHERE LOCALE='ja-JP' AND DEL_FLAG='0'" | tr -d '[:space:]')
+[ "${JA83:-0}" -ge 150 ] && ok "段83 种子 ja 译文 $JA83 键（含缺口）" || bad "段83 ja 种子缺失"
+
+# ---- 83.2 占位符校验（BR-5.7-03）----
+# 不一致导入 → 422
+BAD83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d "{\"csv\":\"$SMK83.btn,こんにちは {9}\"}" "$B/api/i18n/keys/import?locale=ja-JP" | J "d['code']")
+EQ "段83 占位符不一致拒绝422" "$BAD83" "422"
+# 一致导入 → 成功
+OK83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d "{\"csv\":\"$SMK83.btn,こんにちは {0}、{name} さん\"}" "$B/api/i18n/keys/import?locale=ja-JP" | J "d['data']['imported']")
+EQ "段83 占位符一致导入" "$OK83" "1"
+
+# ---- 83.3 覆盖率与预检（BR-5.7-01/02）----
+COV83=$(C -H "$(A $T83)" "$B/api/i18n/gaps/coverage?locale=en-US" | J "d['data']['coverage']")
+python3 -c "import sys; sys.exit(0 if float('$COV83' or 0) >= 99 else 1)" && ok "段83 en 覆盖率 $COV83% ≥99" || bad "段83 en 覆盖率 $COV83"
+PC83=$(C -H "$(A $T83)" "$B/api/i18n/packs/precheck?locale=ja-JP" | J "str(d['data']['pass']).lower()")
+EQ "段83 ja 预检阻断（缺口>1%）" "$PC83" "false"
+PC2_83=$(C -H "$(A $T83)" "$B/api/i18n/packs/precheck?locale=en-US" | J "str(d['data']['pass']).lower()")
+EQ "段83 en 预检通过" "$PC2_83" "true"
+
+# ---- 83.4 语言包版本发布六步（SOP-5.7-B）----
+BID83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d "{\"locale\":\"ja-JP\",\"packNo\":\"1.0.0\",\"remark\":\"$SMK83\"}" "$B/api/i18n/packs/build" | J "d['data']['id']")
+[ -n "${BID83:-}" ] && ok "段83 构建版本 1.0.0" || bad "段83 构建失败"
+# 覆盖率不足审批 → 422（BR-5.7-01）
+AP83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/packs/$BID83/approve" | J "d['code']")
+EQ "段83 覆盖率不足审批阻断422" "$AP83" "422"
+# 无回退策略灰度 → 422（SOP 步3）
+SQL "UPDATE erp_i18n_pack SET STATUS='APPROVED' WHERE ID='$BID83'" >/dev/null 2>&1
+CN83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/packs/$BID83/canary?pct=10" | J "d['code']")
+EQ "段83 无回退策略灰度阻断422" "$CN83" "422"
+# 配回退策略 → 灰度成功；注入高异常率 → 自动回退（BR-5.7-07）
+SQL "UPDATE erp_i18n_pack SET FALLBACK_POLICY_JSON='{\"locale\":\"zh-CN\"}' WHERE ID='$BID83'" >/dev/null 2>&1
+CN2_83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/packs/$BID83/canary?pct=10" | J "d['data']['status']")
+EQ "段83 回退策略后灰度启动" "$CN2_83" "CANARY"
+SQL "UPDATE erp_i18n_pack SET RENDER_ERR_CNT=5, RENDER_REQ_CNT=100 WHERE ID='$BID83'" >/dev/null 2>&1
+RB83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/packs/$BID83/canary-check" | J "str(d['data']['rolledBack']).lower()")
+EQ "段83 灰度异常率>0.1%自动回退" "$RB83" "true"
+# 归档锁定（C-0-05）
+AR83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/packs/$BID83/archive" | J "d['data']['status']")
+EQ "段83 归档" "$AR83" "ARCHIVED"
+
+# ---- 83.5 缺口批量回传（BR-5.7-05）----
+GAP83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d "[{\"keyName\":\"$SMK83.gap1\",\"moduleName\":\"test\",\"priority\":\"P2\",\"hitCount\":600}]" "$B/api/i18n/gaps/batch" | J "d['data']['processed']")
+EQ "段83 缺口批量回传" "$GAP83" "1"
+GP83=$(SQL "SELECT PRIORITY FROM erp_i18n_gap WHERE KEY_NAME='$SMK83.gap1'" | tr -d '[:space:]')
+EQ "段83 高频>500自动升P1" "$GP83" "P1"
+HC83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d "[{\"keyName\":\"$SMK83.gap1\",\"hitCount\":5}]" "$B/api/i18n/gaps/batch" | J "d['code']")
+EQ "段83 二次回传累加成功" "$HC83" "200"
+HC2_83=$(SQL "SELECT HIT_COUNT FROM erp_i18n_gap WHERE KEY_NAME='$SMK83.gap1'" | tr -d '[:space:]')
+[ "${HC2_83:-0}" = "605" ] && ok "段83 HIT_COUNT 累加 600+5=605" || bad "段83 累加异常（$HC2_83）"
+
+# ---- 83.6 区域格式校验（C-5.7-08）----
+VF83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d '{"postalCode":"1000001"}' "$B/api/i18n/locales/validate?locale=ja-JP" | J "str(d['data']['pass']).lower()")
+EQ "段83 ja 邮编缺连字符阻断" "$VF83" "false"
+VF2_83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d '{"postalCode":"100-0001"}' "$B/api/i18n/locales/validate?locale=ja-JP" | J "str(d['data']['pass']).lower()")
+EQ "段83 ja 邮编正确格式通过" "$VF2_83" "true"
+
+# ---- 83.7 合规字段包（BR-5.7-13 / C-5.7-09 / 17.5.3）----
+JP83=$(C -H "$(A $T83)" "$B/api/i18n/compliance/load?regPlace=JP" | J "len(d['data'])")
+[ "${JP83:-0}" -ge 1 ] && ok "段83 JP 注册地加载字段（$JP83）" || bad "段83 JP 字段缺失"
+US83=$(C -H "$(A $T83)" "$B/api/i18n/compliance/load?regPlace=US" | J "len(d['data'])")
+EQ "段83 US 无包无冗余字段" "$US83" "0"
+CV83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d '{"invoiceRegNo":"1234567890123"}' "$B/api/i18n/compliance/validate?regPlace=JP" | J "str(d['data']['pass']).lower()")
+EQ "段83 登录番号缺T阻断" "$CV83" "false"
+CV2_83=$(C -X POST -H "$(A $T83)" -H 'Content-Type: application/json' -d '{"invoiceRegNo":"T1234567890123"}' "$B/api/i18n/compliance/validate?regPlace=JP" | J "str(d['data']['pass']).lower()")
+EQ "段83 T+13位通过" "$CV2_83" "true"
+
+# ---- 83.8 i18n SLA 报告（BR-5.7-14）----
+GN83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/sla-reports/2099-09/generate" | J "len(d['data']['metrics']['items'])")
+[ "${GN83:-0}" -ge 4 ] && ok "段83 报告生成（指标 $GN83 项）" || bad "段83 报告指标异常（$GN83）"
+PB83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/sla-reports/2099-09/publish" | J "d['code']")
+EQ "段83 未归档发布阻断422" "$PB83" "422"
+AR2_83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/sla-reports/2099-09/archive" | J "d['data']['status']")
+EQ "段83 报告归档" "$AR2_83" "ARCHIVED"
+PU83=$(C -X POST -H "$(A $T83)" "$B/api/i18n/sla-reports/2099-09/publish?scope=ALL" | J "d['data']['status']")
+EQ "段83 归档后发布" "$PU83" "PUBLISHED"
+
+# ---- 83.9 当前语言包 JSON（前端加载器消费）----
+CP83=$(C -H "$(A $T83)" "$B/api/i18n/packs/ja-JP/current" | J "len(d['data']['messages'])")
+[ "${CP83:-0}" -ge 150 ] && ok "段83 ja 当前语言包 JSON（$CP83 键）" || bad "段83 语言包 JSON 异常（$CP83）"
+
+# ---- 83.10 未登录 401 ----
+NL83=$(HTTP "$B/api/i18n/keys")
+EQ "段83 未登录401" "$NL83" "401"
+
+# 段尾清理
+SQL "DELETE FROM erp_i18n_key WHERE KEY_NAME LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_i18n_gap WHERE KEY_NAME LIKE 'SLA-2099-09%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_i18n_pack WHERE REMARK LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_i18n_gap WHERE KEY_NAME LIKE '$SMK83%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_param WHERE PARAM_KEY='I18N_SLA_STATUS_2099-09'" >/dev/null 2>&1
+SQL "DELETE FROM erp_sys_param WHERE PARAM_KEY LIKE 'I18N_SLA_PUBLISH_BLOCKED_%' AND PARAM_VALUE LIKE '%2099-09%'" >/dev/null 2>&1
+
+echo "段 83 本地适配 i18n 17 域 追加完成"
+
+# ============================================================
+# 段 84: 移动物联 13 域 (add-iot-mobile)
+# ============================================================
+echo "---- 段 84: 移动物联 13 域 ----"
+T84=$TADM
+SMK84="SMK84-$(date +%s)"
+# 专用低权限账号：段84 的 4 次故意 403（未注册终端 + 3 次错密码）改记在该账号名下，
+# 避免 admin 5 分钟窗口累积触发 AUTHZ_BURST 降权（16.8 阈值 10，会连锁拦 /api/qms 等敏感路径）
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME='smk84op'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME='smk84op'" >/dev/null 2>&1
+SQL "INSERT INTO erp_admin_user (ID,USERNAME,PASSWORD,NICK_NAME,STATUS,CREATE_BY,CREATE_DATE,DEL_FLAG,VER_NO)
+     SELECT 'smk84-op','smk84op',PASSWORD,'冒烟84终端操作','1','smoke',NOW(),'0',0 FROM erp_admin_user WHERE USERNAME='admin'" >/dev/null 2>&1
+T84OP=$(C -H 'Content-Type: application/json' -d '{"username":"smk84op","password":"Admin@123"}' $B/api/auth/login | J "d['data']['token']")
+[ -n "${T84OP:-}" ] && ok "段84 低权限账号登录" || bad "段84 低权限账号登录失败"
+# 段首清理（可重跑）
+SQL "DELETE FROM erp_iot_terminal WHERE DEVICE_CODE LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_offline_queue WHERE IDEMPOTENT_KEY LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_device WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_telemetry WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_alarm_event WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_mobile_todo WHERE TITLE LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_sync_conflict WHERE QUEUE_ID IN (SELECT ID FROM erp_iot_offline_queue WHERE IDEMPOTENT_KEY LIKE '$SMK84%')" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_sla_report WHERE PERIOD='2099-08'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_sla_sub WHERE REPORT_TYPE='IOT'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mrp_dispatch WHERE ID='$SMK84-DP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mrp_mo WHERE ID='$SMK84-MO'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_item WHERE ITEM_CODE='$SMK84-IT'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_supplier WHERE SUPPLIER_CODE='$SMK84-SUP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_serial WHERE SERIAL_NO LIKE '$SMK84%'" >/dev/null 2>&1
+
+# ---- 84.1 终端注册与签审双因子（C-4.11-18） ----
+REG84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"deviceCode\":\"$SMK84-PDA\",\"deviceType\":\"PDA\",\"certSn\":\"CERT-$SMK84\"}" "$B/api/iot/terminals/register" | J "d['code']")
+EQ "段84 终端注册签发证书" "$REG84" "200"
+CS84=$(C -H "$(A $T84)" "$B/api/iot/terminals/$SMK84-PDA" | J "d['data']['certStatus']")
+EQ "段84 证书ACTIVE" "$CS84" "ACTIVE"
+UN84=$(C -X POST -H "$(A $T84OP)" -H 'Content-Type: application/json' -d '{"deviceCode":"ghost-dev-84","password":"x"}' "$B/api/iot/terminals/verify-sign" | J "d['code']")
+EQ "段84 未注册终端拒绝403" "$UN84" "403"
+for i in 1 2 3; do
+  C -X POST -H "$(A $T84OP)" -H 'Content-Type: application/json' -d "{\"deviceCode\":\"$SMK84-PDA\",\"password\":\"bad-pwd-$i\"}" "$B/api/iot/terminals/verify-sign" >/dev/null 2>&1
+done
+LK84=$(C -H "$(A $T84)" "$B/api/iot/terminals/$SMK84-PDA" | J "str(d['data']['lockedFlag'])")
+EQ "段84 连续3次失败锁定" "$LK84" "1"
+UL84=$(C -X POST -H "$(A $T84)" "$B/api/iot/terminals/$SMK84-PDA/unlock?reason=smoke-unlock" | J "str(d['data']['lockedFlag'])")
+EQ "段84 管理员解锁留痕" "$UL84" "0"
+
+# ---- 84.2 扫码作业五场景（FR-4.11-2-x） ----
+DMG84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"serialNo\":\"DAMAGE-$SMK84\"}" "$B/api/iot/scan/receive" | J "d['code']")
+EQ "段84 RFID损坏拒收409" "$DMG84" "409"
+SQL "INSERT IGNORE INTO erp_mdm_supplier (ID, SUPPLIER_CODE, SUPPLIER_NAME, BLACKLIST_RESULT, STATUS, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK84-SUP', '$SMK84-SUP', '冒烟供应商', 'PASS', 'ACTIVE', 'smoke', NOW(), '0', 0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_mdm_item (ID, ITEM_CODE, ITEM_NAME, CATEGORY_CODE, BASE_UNIT, MATERIAL_GROUP, PURCHASE_TYPE, STORAGE_CONDITION, BATCH_FLAG, STATUS, CREATE_BY) VALUES ('$SMK84-IT', '$SMK84-IT', '冒烟物料', '0001', 'PC', 'STRUCT', 'BUY', 'NORMAL', '0', '1', 'smoke')" >/dev/null 2>&1
+RCV84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"supplierId\":\"$SMK84-SUP\",\"arrivalDate\":\"$(date +%F)\",\"serialNo\":\"SN-$SMK84-1\",\"lines\":[{\"itemCode\":\"$SMK84-IT\",\"receivedQty\":5}]}" "$B/api/iot/scan/receive" | J "d['code']")
+EQ "段84 收货扫码登记" "$RCV84" "200"
+DUP84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"supplierId\":\"$SMK84-SUP\",\"arrivalDate\":\"$(date +%F)\",\"serialNo\":\"SN-$SMK84-1\",\"lines\":[{\"itemCode\":\"$SMK84-IT\",\"receivedQty\":5}]}" "$B/api/iot/scan/receive" | J "d['code']")
+EQ "段84 重复扫码防重409" "$DUP84" "409"
+PUT84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d '{"grNo":"NO-GR-84","lineNo":1,"binCode":"X-84"}' "$B/api/iot/scan/putaway" | J "d['code']")
+EQ "段84 上架收货单不存在404" "$PUT84" "404"
+PCK84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d '{"taskId":"NO-TASK-84","lineNo":1,"itemCode":"X-84"}' "$B/api/iot/scan/pick" | J "d['code']")
+[ "$PCK84" = "422" ] || [ "$PCK84" = "404" ] && ok "段84 拣货任务不存在拒绝（$PCK84）" || bad "段84 拣货异常码 $PCK84"
+SHP84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d '{"shipId":"NO-SHIP-84","itemCode":"X-84","qty":1}' "$B/api/iot/scan/ship-review" | J "d['code']")
+EQ "段84 发货单不存在404" "$SHP84" "404"
+CNT84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d '{"lineId":"NO-LINE-84","actualQty":1}' "$B/api/iot/scan/count" | J "d['code']")
+EQ "段84 盘点行不存在422" "$CNT84" "422"
+
+# ---- 84.3 移动报工首件门禁（BR-4.11-10） ----
+SQL "INSERT IGNORE INTO erp_mrp_mo (ID, MO_NO, MO_TYPE, PRODUCT_CODE, PRODUCT_NAME, QTY, PRIORITY, STATUS, SHORTAGE_FLAG, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK84-MO', 'MO-$SMK84', 'NORMAL', '$SMK84-IT', '冒烟工单', 100, 5, 'RELEASED', '0', 'smoke', NOW(), '0', 0)" >/dev/null 2>&1
+SQL "INSERT IGNORE INTO erp_mrp_dispatch (ID, DISPATCH_NO, MO_ID, MO_NO, OP_SEQ, OP_NAME, WC_CODE, WC_TYPE, PLAN_START, PLAN_END, DURATION_HOURS, STATUS, RISK_FLAG, SHORTAGE_FIRST_FLAG, OUTSOURCE_FLAG, RECEIPT_FLAG, RECV_QTY, CREATE_BY, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK84-DP', 'DP-$SMK84', '$SMK84-MO', 'MO-$SMK84', 10, '冒烟工序', 'MOWC-SMK84', 'INTERNAL', CURDATE(), DATE_ADD(CURDATE(), INTERVAL 3 DAY), 800, 'RELEASED', '0', '0', '0', '0', 0, 'smoke', NOW(), '0', 0)" >/dev/null 2>&1
+FA84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"dispatchId\":\"$SMK84-DP\",\"goodQty\":5,\"ngQty\":0,\"idempotentKey\":\"$SMK84-ID1\",\"deviceCode\":\"$SMK84-PDA\",\"overprodAck\":false}" "$B/api/iot/reporting/output" | J "d['code']")
+EQ "段84 首件未提交阻断422" "$FA84" "422"
+
+# ---- 84.4 离线同步：批量/幂等/冲突/100上限（FR-4.11-4-x） ----
+EM84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d '[]' "$B/api/iot/sync/upload" | J "d['code']")
+EQ "段84 空批次422" "$EM84" "422"
+BIG84=$(python3 -c "import json;print(json.dumps([{'idempotentKey':'$SMK84-BIG'+str(i),'bizType':'SCAN','deviceCode':'$SMK84-PDA','payload':{}} for i in range(101)]))")
+BIGO84=$(printf '%s' "$BIG84" | C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d @- "$B/api/iot/sync/upload" | J "d['code']")
+EQ "段84 单批100上限422" "$BIGO84" "422"
+SYNC84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "[{\"idempotentKey\":\"$SMK84-K1\",\"bizType\":\"SCAN\",\"deviceCode\":\"$SMK84-PDA\",\"payload\":{\"n\":1}}]" "$B/api/iot/sync/upload" | J "d['data']['synced']")
+EQ "段84 离线批量同步成功" "$SYNC84" "1"
+DUPK84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "[{\"idempotentKey\":\"$SMK84-K1\",\"bizType\":\"SCAN\",\"deviceCode\":\"$SMK84-PDA\",\"payload\":{\"n\":1}}]" "$B/api/iot/sync/upload" | J "d['data']['duplicated']")
+EQ "段84 幂等键去重" "$DUPK84" "1"
+C1JSON=$(python3 -c "import json;print(json.dumps([{'idempotentKey':'$SMK84-KA','bizType':'SCAN','bizKey':'$SMK84-BIZ','deviceCode':'$SMK84-PDA','clientTs':'2026-11-01T10:00:00','clientVerNo':1,'payload':json.dumps({'bizKey':'$SMK84-BIZ','qty':10})}]))")
+C184=$(printf '%s' "$C1JSON" | C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d @- "$B/api/iot/sync/upload" | J "d['data']['synced']")
+EQ "段84 冲突基线首条同步" "$C184" "1"
+C2JSON=$(python3 -c "import json;print(json.dumps([{'idempotentKey':'$SMK84-KB','bizType':'SCAN','bizKey':'$SMK84-BIZ','deviceCode':'$SMK84-PDA','clientTs':'2026-11-01T09:00:00','clientVerNo':1,'payload':json.dumps({'bizKey':'$SMK84-BIZ','qty':20})}]))")
+C284=$(printf '%s' "$C2JSON" | C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d @- "$B/api/iot/sync/upload" | J "d['data']['conflicted']")
+EQ "段84 字典序冲突裁决" "$C284" "1"
+
+# ---- 84.5 72h 超期锁定（C-4.11-04） ----
+SQL "INSERT IGNORE INTO erp_iot_offline_queue (ID, IDEMPOTENT_KEY, DEVICE_CODE, BIZ_TYPE, PAYLOAD_JSON, CLIENT_VER_NO, CLIENT_TS, STATUS, RETRY_CNT, CREATE_DATE, DEL_FLAG, VER_NO) VALUES ('$SMK84-Q73', '$SMK84-K73', '$SMK84-PDA', 'SCAN', '{}', 0, DATE_SUB(NOW(), INTERVAL 73 HOUR), 'PENDING', 0, NOW(), '0', 0)" >/dev/null 2>&1
+LKS84=$(C -X POST -H "$(A $T84)" "$B/api/iot/sync/scan-locks" | J "('$SMK84-PDA' in str(d['data']['locked']))")
+EQ "段84 73h超期强制锁定" "$LKS84" "True"
+
+# ---- 84.6 设备接入/心跳/状态分布（FR-4.11-5-1） ----
+BODY84=$(SMK84="$SMK84" python3 <<'PYEOF84'
+import json, os
+s = os.environ["SMK84"]
+print(json.dumps({
+    "deviceNo": s + "-DEV",
+    "deviceType": "SENSOR",
+    "protocol": "MQTT",
+    "certSn": "CERT-" + s + "-DEV",
+    "alertRuleJson": json.dumps({"temperature": {"pre": 60, "warn": 70, "severe": 85}}),
+}))
+PYEOF84
+)
+DEVR84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "$BODY84" "$B/api/iot/devices/register")
+DEV84=$(printf '%s' "$DEVR84" | J "d['code']")
+[ "$DEV84" = "200" ] && ok "段84 IoT设备注册" || bad "段84 IoT设备注册（期望[200] 实际[$DEV84] body=$(printf '%s' "$BODY84" | head -c 240) resp=$(printf '%s' "$DEVR84" | head -c 160)）"
+CT84=$(C -X POST -H "$(A $T84)" "$B/api/iot/devices/$SMK84-DEV/connect-test" | J "d['code']")
+EQ "段84 连接测试握手" "$CT84" "200"
+HB84=$(C -X POST -H "$(A $T84)" "$B/api/iot/devices/$SMK84-DEV/heartbeat" | J "d['data']['status']")
+EQ "段84 心跳打点在线" "$HB84" "ONLINE"
+DIST84=$(C -H "$(A $T84)" "$B/api/iot/devices/status-distribution" | J "int(d['data']['ONLINE'])>=1")
+EQ "段84 状态分布在线计数" "$DIST84" "True"
+
+# ---- 84.7 测点注入/可疑过滤/阈值告警合并（FR-4.11-5-2/3） ----
+INJ84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"points\":[{\"deviceNo\":\"$SMK84-DEV\",\"pointCode\":\"temperature\",\"val\":90,\"quality\":\"GOOD\"},{\"deviceNo\":\"$SMK84-DEV\",\"pointCode\":\"temperature\",\"val\":-999,\"quality\":\"SUSPECT\"}]}" "$B/api/iot/telemetry/inject" | J "d['data']")
+EQ "段84 测点注入两点" "$INJ84" "2"
+SUS84=$(C -H "$(A $T84)" "$B/api/iot/telemetry/suspect?deviceNo=$SMK84-DEV" | J "len(d['data'])>=1")
+EQ "段84 可疑数据清单" "$SUS84" "True"
+ALM84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"deviceNo\":\"$SMK84-DEV\",\"pointCode\":\"temperature\",\"val\":95}" "$B/api/iot/alarms/evaluate" | J "str(d['data']['alarm']).lower()")
+EQ "段84 阈值触发严重告警" "$ALM84" "true"
+MER84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"deviceNo\":\"$SMK84-DEV\",\"pointCode\":\"temperature\",\"val\":96}" "$B/api/iot/alarms/evaluate" | J "str(d['data']['merged']).lower()")
+EQ "段84 5min窗口告警合并" "$MER84" "true"
+
+# ---- 84.8 移动待办 30min 超时升级（BR-4.11-44） ----
+TD84=$(C -X POST -H "$(A $T84)" -H 'Content-Type: application/json' -d "{\"todoType\":\"EXCEPTION\",\"title\":\"$SMK84-待办\",\"assignee\":\"user-admin\",\"dueAt\":\"$(date -u -v-31M +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -d '-31 min' +%Y-%m-%dT%H:%M:%S)\"}" "$B/api/iot/todos" | J "d['code']")
+EQ "段84 待办创建" "$TD84" "200"
+ESC84=$(C -X POST -H "$(A $T84)" "$B/api/iot/todos/scan-escalate" | J "int(d['data']['escalated'])>=1")
+EQ "段84 30min超时升级" "$ESC84" "True"
+
+# ---- 84.9 移动/IoT SLA 报告（FR-4.11-6-x / C-05 未归档不发布） ----
+GEN84=$(C -X POST -H "$(A $T84)" "$B/api/iot/sla-reports/generate?period=2099-08" | J "d['code']")
+EQ "段84 SLA月报生成" "$GEN84" "200"
+PUB84=$(C -X POST -H "$(A $T84)" "$B/api/iot/sla-reports/2099-08/publish" | J "d['code']")
+EQ "段84 未归档发布阻断422" "$PUB84" "422"
+ARC84=$(C -X POST -H "$(A $T84)" "$B/api/iot/sla-reports/2099-08/archive" | J "d['data']['status']")
+EQ "段84 报告归档" "$ARC84" "ARCHIVED"
+PUB284=$(C -X POST -H "$(A $T84)" "$B/api/iot/sla-reports/2099-08/publish" | J "d['data']['status']")
+EQ "段84 归档后发布成功" "$PUB284" "PUBLISHED"
+
+# ---- 84.10 段尾清理（可重跑） ----
+SQL "DELETE FROM erp_iot_sla_report WHERE PERIOD='2099-08'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_terminal WHERE DEVICE_CODE LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_offline_queue WHERE IDEMPOTENT_KEY LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_device WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_telemetry WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_alarm_event WHERE DEVICE_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_iot_mobile_todo WHERE TITLE LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mrp_dispatch WHERE ID='$SMK84-DP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mrp_mo WHERE ID='$SMK84-MO'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_item WHERE ITEM_CODE='$SMK84-IT'" >/dev/null 2>&1
+SQL "DELETE FROM erp_mdm_supplier WHERE SUPPLIER_CODE='$SMK84-SUP'" >/dev/null 2>&1
+SQL "DELETE FROM erp_inv_serial WHERE SERIAL_NO LIKE '$SMK84%'" >/dev/null 2>&1
+SQL "DELETE ur FROM erp_admin_user_role ur JOIN erp_admin_user u ON u.ID=ur.USER_ID WHERE u.USERNAME='smk84op'" >/dev/null 2>&1
+SQL "DELETE FROM erp_admin_user WHERE USERNAME='smk84op'" >/dev/null 2>&1
+
+echo "段 84 移动物联 13 域 追加完成"
 
 
 

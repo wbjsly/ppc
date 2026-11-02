@@ -152,6 +152,23 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/ops/capacity/accounting-guard").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/ops/sla-reports/*/publish").hasRole("ADMIN")
                 .antMatchers("/api/ops/**").authenticated()
+                // 17 域 i18n（add-i18n-l10n）：发布/归档/灰度/合规配置=本地化负责人，缺口回传=登录，读=JWT
+                .antMatchers(HttpMethod.POST, "/api/i18n/packs/*/approve",
+                        "/api/i18n/packs/*/canary", "/api/i18n/packs/*/archive",
+                        "/api/i18n/compliance").hasRole("LOCALIZATION_LEAD")
+                .antMatchers(HttpMethod.POST, "/api/i18n/sla-reports/*/publish").hasRole("LOCALIZATION_LEAD")
+                .antMatchers("/api/i18n/**").authenticated()
+                // 13 域移动物联（add-iot-mobile）：终端/设备注册与接入配置=物联网管理员，
+                // 现场执行（报工/扫码/巡检/异常/离线同步）=现场角色，读=登录
+                .antMatchers(HttpMethod.POST, "/api/iot/terminals/register",
+                        "/api/iot/terminals/*/unlock", "/api/iot/terminals/*/revoke-cert",
+                        "/api/iot/devices/register", "/api/iot/devices/*/alert-rule").hasRole("IOT_ADMIN")
+                .antMatchers(HttpMethod.POST,
+                        "/api/iot/reporting/**", "/api/iot/scan/**",
+                        "/api/iot/inspections/**", "/api/iot/exceptions/**",
+                        "/api/iot/sync/**").hasAnyRole("SHOP_FLOOR", "WAREHOUSE",
+                        "EQUIPMENT", "SECURITY", "IOT_ADMIN", "ADMIN")
+                .antMatchers("/api/iot/**").authenticated()
                 .antMatchers(HttpMethod.PUT, "/api/mdm/customer-groups/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.POST, "/api/mdm/customer-views/**").hasRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/mdm/customer-views/**").hasRole("ADMIN")
