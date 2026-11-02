@@ -124,7 +124,7 @@ async function openApprovalImpl(row) {
   approvalName.value = row.name
   approvalVisible.value = true
   try {
-    const res = await request.get('/api/qms/approvals/logs', {
+    const res = await request.get('/qms/approvals/logs', {
       params: { bizType: 'ReportTemplate', bizId: row.id }
     })
     approvalTasks.value = res.data?.tasks || []

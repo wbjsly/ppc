@@ -213,15 +213,15 @@ async function load() {
 
 async function loadContracts() {
   try {
-    const res = await request({ url: '/api/crm/contracts', method: 'get', params: { status: 'SIGNED' } })
+    const res = await request({ url: '/crm/contracts', method: 'get', params: { status: 'SIGNED' } })
     signedContracts.value = res.data || []
   } catch { signedContracts.value = [] }
 }
 
 async function loadUsers() {
   try {
-    const res = await request({ url: '/api/system/users', method: 'get', params: { status: '1' } })
-    pmUsers.value = res.data || []
+    const res = await request({ url: '/system/accounts', method: 'get', params: { status: '1', size: 200 } })
+    pmUsers.value = res.data.records || []
   } catch { pmUsers.value = [] }
 }
 

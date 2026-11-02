@@ -38,7 +38,7 @@ async function submit() {
   if (form.newPwd !== form.confirmPwd) { ElMessage.warning('两次输入的新密码不一致'); return }
   submitting.value = true
   try {
-    await request({ url: '/api/auth/change-password', method: 'post', data: { ...form } })
+    await request({ url: '/auth/change-password', method: 'post', data: { ...form } })
     ElMessage.success('密码已修改，请使用新密码继续')
     // 刷新用户信息清除强制改密标记后回工作台
     await userStore.getUserInfo()

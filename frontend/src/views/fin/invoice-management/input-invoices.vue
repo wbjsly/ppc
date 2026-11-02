@@ -174,7 +174,7 @@ async function openRegister() {
   regForm.value = { invoiceNo: '', supplierId: '', invoiceDate: '', amount: '', taxAmount: '' }
   try {
     // PO 选择器数据源（未关闭 PO 列表）
-    const { data } = await request({ url: '/api/proc/purchase-orders', method: 'get', params: { status: 'CONFIRMED', size: 100 } })
+    const { data } = await request({ url: '/proc/purchase-orders', method: 'get', params: { status: 'CONFIRMED', size: 100 } })
     poOptions.value = data.records || data || []
   } catch (e) {
     poOptions.value = []

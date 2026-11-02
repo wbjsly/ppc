@@ -68,9 +68,9 @@ export function renderApi(id, page, size) {
 
 /** 审批签署（复用既有审批台端点，详情抽屉就地签署） */
 export function approvalPass(taskId, opinion) {
-  return request({ url: '/api/qms/approvals/pass', method: 'post', data: { taskId, opinion } })
+  return request({ url: '/qms/approvals/pass', method: 'post', data: { taskId, opinion } })
 }
 
 export function approvalReject(taskId, opinion) {
-  return request({ url: '/api/qms/approvals/reject', method: 'post', data: { taskId, opinion } })
+  return request({ url: '/qms/approvals/reject', method: 'post', data: { taskId, opinion } })
 }

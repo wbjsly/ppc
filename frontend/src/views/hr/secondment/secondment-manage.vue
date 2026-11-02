@@ -257,7 +257,7 @@ async function loadAlloc() {
 }
 async function loadLes() {
   const { data } = await request({
-    url: '/api/mdm/legal-entities', method: 'get', params: { current: 1, size: 100 }
+    url: '/mdm/legal-entities', method: 'get', params: { current: 1, size: 100 }
   })
   les.value = data?.records || data || []
 }

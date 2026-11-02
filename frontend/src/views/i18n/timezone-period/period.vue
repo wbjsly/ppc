@@ -74,7 +74,8 @@ async function queryPeriod() {
   if (!pq.value.leId) { ElMessage.warning('选择法人主体'); return }
   try {
     const r = await request.get('/fin/periods/judge', {
-      params: { legalEntityId: pq.value.leId, bizTime: pq.value.bizTime }
+      params: { legalEntityId: pq.value.leId, bizTime: pq.value.bizTime },
+      silent: true
     })
     periodResult.value = r.data
   } catch (e) {

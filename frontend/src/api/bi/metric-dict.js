@@ -93,9 +93,9 @@ export function checkAllApi() {
 
 /** 审批签署（复用审批台端点，灰度看板就地签署） */
 export function approvalPass(taskId, opinion) {
-  return request({ url: '/api/qms/approvals/pass', method: 'post', data: { taskId, opinion } })
+  return request({ url: '/qms/approvals/pass', method: 'post', data: { taskId, opinion } })
 }
 
 export function approvalReject(taskId, opinion) {
-  return request({ url: '/api/qms/approvals/reject', method: 'post', data: { taskId, opinion } })
+  return request({ url: '/qms/approvals/reject', method: 'post', data: { taskId, opinion } })
 }

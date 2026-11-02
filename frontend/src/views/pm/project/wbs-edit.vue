@@ -289,8 +289,8 @@ async function loadProjects() {
 
 async function loadUsers() {
   try {
-    const res = await request({ url: '/api/system/users', method: 'get', params: { status: '1' } })
-    pmUsers.value = res.data || []
+    const res = await request({ url: '/system/accounts', method: 'get', params: { status: '1', size: 200 } })
+    pmUsers.value = res.data.records || []
   } catch { pmUsers.value = [] }
 }
 

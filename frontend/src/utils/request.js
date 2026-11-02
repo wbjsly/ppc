@@ -38,10 +38,11 @@ service.interceptors.response.use(
       if (error.response.status === 401 || error.response.status === 403) {
         localStorage.removeItem('token')
         router.push('/login')
-      } else {
+      } else if (!error.config?.silent) {
+        // silent: 调用方自带降级分支（端点差异按缺失处理），不弹全局错误
         ElMessage.error(error.response.data?.message || '系统错误')
       }
-    } else {
+    } else if (!error.config?.silent) {
       ElMessage.error('网络异常')
     }
     return Promise.reject(error)

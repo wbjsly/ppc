@@ -96,7 +96,7 @@ async function runTrial() {
 
 async function loadReval() {
   try {
-    const r = await request.get('/fin/fx-reval/trials', { params: { size: 10 } })
+    const r = await request.get('/fin/fx-reval/trials', { params: { size: 10 }, silent: true })
     reval.value = r.data?.records || r.data || []
   } catch { reval.value = [] }
 }
