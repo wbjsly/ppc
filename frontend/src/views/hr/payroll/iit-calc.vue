@@ -12,8 +12,8 @@
       </div>
       <el-alert type="info" :closable="false" style="margin-bottom:12px"
                 title="累计预扣法：本期税 = 累计应纳税所得额×预扣率 - 速算扣除数 - 累计已预扣；专项附加扣除由员工自助端维护+HR 代维护；税务系统实时同步为留桩（本期手工录入）" />
-      <el-tabs>
-        <el-tab-item label="税率表">
+      <el-tabs v-model="tab">
+        <el-tab-pane label="税率表" name="rate">
           <el-table :data="taxTable" height="320">
             <el-table-column prop="levelNo" label="级数" width="70" />
             <el-table-column prop="lowerBound" label="累计下限" width="120" />
@@ -25,15 +25,15 @@
             </el-table-column>
             <el-table-column prop="quickDeduct" label="速算扣除数" width="120" />
           </el-table>
-        </el-tab-item>
-        <el-tab-item label="专项附加扣除">
+        </el-tab-pane>
+        <el-tab-pane label="专项附加扣除" name="special">
           <el-table :data="specials" height="320">
             <el-table-column prop="empId" label="员工ID" width="200" />
             <el-table-column prop="deductType" label="类型" width="160" />
             <el-table-column prop="monthlyAmount" label="每月分摊" width="110" />
             <el-table-column prop="status" label="状态" width="90" />
           </el-table>
-        </el-tab-item>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -79,6 +79,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { iitTaxTable, iitSpecialList, saveSpecialDeduction, bonusTaxCalc } from '@/api/hr/payroll'
 
+const tab = ref('rate')
 const deductTypes = [
   { v: 'CHILD_EDUCATION', l: '子女教育' }, { v: 'CONTINUE_EDU', l: '继续教育' },
   { v: 'HOUSING_LOAN', l: '住房贷款利息' }, { v: 'HOUSING_RENT', l: '住房租金' },

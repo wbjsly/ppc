@@ -6842,7 +6842,7 @@ EQ "段60 归档后强停 422" "$(BIZ -X POST -H "$(A $TADM)" $B/api/system/acco
 
 # 60.6 路由与页面源码断言
 EQ "段60 路由四条" "$(grep -cE '/m/16.1.1|/m/16.1.2|/m/16.1.3|/m/16.1.4' frontend/src/router/index.js)" "4"
-EQ "段60 Tab 白名单存在" "$(grep -c 'TAB_WHITELIST' frontend/src/views/system/account/index.vue)" "2"
+EQ "段60 账号四页拆分" "$(ls frontend/src/views/system/account/*.vue 2>/dev/null | wc -l | tr -d ' ')" "4"
 EQ "段60 强制改密守卫存在" "$(grep -c 'mustChangePwd' frontend/src/router/index.js)" "2"
 EQ "段60 无令牌 401" "$(HTTP $B/api/system/accounts)" "401"
 
@@ -6972,8 +6972,8 @@ D61B=$(BIZ -X DELETE -H "$(A $TADM)" $B/api/system/roles/$R61RID)
 EQ "段61 解绑后删除成功" "$D61B" "200"
 
 # ---- 页面结构（16.2 前端）----
-EQ "段61 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/permission/index.vue)" "3"
-EQ "段61 矩阵边界说明" "$(grep -c '矩阵仅改菜单可见性' frontend/src/views/system/permission/index.vue)" "1"
+EQ "段61 角色三页拆分" "$(ls frontend/src/views/system/permission/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
+EQ "段61 矩阵边界说明" "$(grep -c '矩阵仅改菜单可见性' frontend/src/views/system/permission/matrix.vue)" "1"
 EQ "段61 三条路由" "$(grep -c /m/16.2 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -7140,7 +7140,7 @@ E62AU=$(SQL "SELECT COUNT(*) FROM hr_change_log WHERE EMP_ID='smk62-t5' AND FIEL
 [ "${E62AU:-0}" -ge 1 ] && ok "段62 例外审计快照" || bad "例外审计缺失（$E62AU）"
 
 # ---- 62.7 页面结构（16.3 前端；16.4 复用本页新增窗口外升级/双人复核两 Tab）----
-EQ "段62 页面五 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/permission-request/index.vue)" "5"
+EQ "段62 权限申请五页拆分" "$(ls frontend/src/views/system/permission-request/*.vue 2>/dev/null | wc -l | tr -d ' ')" "5"
 EQ "段62 三条路由" "$(grep -c /m/16.3 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -7244,7 +7244,7 @@ EQ "段63 特权 OUT_WINDOW=0" "$OW63P" "0"
 # ---- 63.6 页面结构（16.4 前端）----
 EQ "段63 窗口维护页存在" "$(grep -c '变更窗口维护' frontend/src/views/system/change-window/index.vue)" "1"
 EQ "段63 三条路由" "$(grep -c /m/16.4 frontend/src/router/index.js)" "3"
-EQ "段63 升级/复核两 Tab" "$(grep -cE 'el-tab-pane label=\"(窗口外升级|双人复核)\"' frontend/src/views/system/permission-request/index.vue)" "2"
+EQ "段63 升级/复核页存在" "$(ls frontend/src/views/system/permission-request/outwindow.vue frontend/src/views/system/permission-request/review.vue 2>/dev/null | wc -l | tr -d ' ')" "2"
 
 # ---- 段尾清理（恢复窗口快照）----
 SQL "UPDATE erp_change_window w JOIN smk63_win_backup b ON w.ID=b.ID SET w.STATUS=b.STATUS" >/dev/null 2>&1
@@ -7363,7 +7363,7 @@ R64ST4=$(SQL "SELECT STATUS FROM erp_admin_bg_request WHERE ID='$R64'")
 EQ "段64 申请单 AUDITED" "$R64ST4" "AUDITED"
 
 # ---- 64.5 页面结构（16.5 前端）----
-EQ "段64 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/break-glass/index.vue)" "3"
+EQ "段64 紧急权限三页拆分" "$(ls frontend/src/views/system/break-glass/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段64 三条路由" "$(grep -c /m/16.5 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -7487,7 +7487,7 @@ SW65B=$(C -X POST -H "$(A $TADM)" $B/api/system/uar/sweep-overdue | J "d['data']
 EQ "段65 升级幂等" "$SW65B" "0"
 
 # ---- 65.6 页面结构（16.6 前端）----
-EQ "段65 页面四 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/access-review/index.vue)" "4"
+EQ "段65 权限复核四页拆分" "$(ls frontend/src/views/system/access-review/*.vue 2>/dev/null | wc -l | tr -d ' ')" "4"
 EQ "段65 四条路由" "$(grep -c /m/16.6 frontend/src/router/index.js)" "4"
 
 # ---- 段尾清理 ----
@@ -7643,7 +7643,7 @@ SW66F=$(C -X POST -H "$(A $TADM)" $B/api/system/forensic/sweep-expired | J "d['d
 EQ "段66 sweep 幂等" "$SW66F" "0"
 
 # ---- 66.6 页面结构（16.7 前端）----
-EQ "段66 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/audit-log/index.vue)" "3"
+EQ "段66 审计三页拆分" "$(ls frontend/src/views/system/audit-log/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段66 三条路由" "$(grep -c /m/16.7 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -7756,7 +7756,7 @@ I67R=$(SQL "SELECT STATUS FROM erp_authz_incident WHERE ID='smk67-inc3'")
 EQ "段67 到期行 RESTORED" "$I67R" "RESTORED"
 
 # ---- 67.6 页面结构（16.8 前端）----
-EQ "段67 页面两 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/authz-detection/index.vue)" "2"
+EQ "段67 越权检测两页拆分" "$(ls frontend/src/views/system/authz-detection/*.vue 2>/dev/null | wc -l | tr -d ' ')" "2"
 EQ "段67 两条路由" "$(grep -c /m/16.8 frontend/src/router/index.js)" "2"
 
 # ---- 段尾清理 ----
@@ -7864,7 +7864,7 @@ SW68B=$(C -X POST -H "$(A $TADM)" $B/api/system/sla-reports/sweep | J "d['data']
 EQ "段68 sweep 已存在跳过" "$SW68B" "1"
 
 # ---- 68.5 页面结构（16.9 前端）----
-EQ "段68 页面两 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/system/sla-report/index.vue)" "2"
+EQ "段68 服务报告两页拆分" "$(ls frontend/src/views/system/sla-report/*.vue 2>/dev/null | wc -l | tr -d ' ')" "2"
 EQ "段68 两条路由" "$(grep -c /m/16.9 frontend/src/router/index.js)" "2"
 
 # ---- 段尾清理 ----
@@ -8084,7 +8084,7 @@ N70=$(SQL "SELECT COUNT(*) FROM erp_sys_notice WHERE BIZ_TYPE='ReportTemplatePub
 EQ "段70 冒烟期无二次校验告警" "$N70" "0"
 
 # ---- 70.9 页面结构（14.1 前端）----
-EQ "段70 页面四 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/report-template/index.vue)" "4"
+EQ "段70 模板四页拆分" "$(ls frontend/src/views/bi/report-template/*.vue 2>/dev/null | wc -l | tr -d ' ')" "4"
 EQ "段70 四条路由" "$(grep -c /m/14.1 frontend/src/router/index.js)" "4"
 
 # ---- 段尾清理 ----
@@ -8216,7 +8216,7 @@ PW71=$(HTTP -X POST -H "Authorization: Bearer $TPL71P" -H 'Content-Type: applica
 EQ "段71 非 BI 写数据源 403" "$PW71" "403"
 GR71=$(C -H "Authorization: Bearer $TPL71P" $B/api/bi/data-extract/ready | J "d['code']")
 EQ "段71 登录可读就绪状态" "$GR71" "200"
-EQ "段71 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/data-extract/index.vue)" "3"
+EQ "段71 数据抽取三页拆分" "$(ls frontend/src/views/bi/data-extract/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段71 三条路由" "$(grep -c /m/14.2 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -8356,7 +8356,7 @@ DF72=$(C -X POST -H "$(A $TADM)" $B/api/bi/dict/check-all | J "len([r for r in d
 [ "$DF72" -ge 2 ] && ok "段72 差异项（$DF72）" || bad "差异项不足"
 
 # ---- 72.5 页面结构 ----
-EQ "段72 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/metric-dict/index.vue)" "3"
+EQ "段72 指标口径三页拆分" "$(ls frontend/src/views/bi/metric-dict/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段72 三条路由" "$(grep -c /m/14.3 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -8491,7 +8491,7 @@ EQ "段73 登录可读规则列表" "$GR73" "200"
 TGW73=$(HTTP -X POST -H "Authorization: Bearer $TPL73P" -H 'Content-Type: application/json' \
   -d '{"fieldKey":"smk73_x","purpose":"普通用户申请用途"}' $B/api/bi/temp-grants/expire-scan)
 EQ "段73 非管理员过期扫描 403" "$TGW73" "403"
-EQ "段73 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/perm-control/index.vue)" "3"
+EQ "段73 权限控制三页拆分" "$(ls frontend/src/views/bi/perm-control/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段73 三条路由" "$(grep -c /m/14.4 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
@@ -8608,7 +8608,7 @@ GT74=$(C -H "Authorization: Bearer $TPL74P" $B/api/bi/export/tasks | J "d['code'
 EQ "段74 登录可读任务列表" "$GT74" "200"
 PD74=$(HTTP -H "Authorization: Bearer $TPL74P" $B/api/bi/export/pending)
 EQ "段74 非管理员看待审批 403" "$PD74" "403"
-EQ "段74 页面三 Tab" "$(grep -c 'el-tab-pane label' frontend/src/views/bi/export-console/index.vue)" "3"
+EQ "段74 导出控制台三页拆分" "$(ls frontend/src/views/bi/export-console/*.vue 2>/dev/null | wc -l | tr -d ' ')" "3"
 EQ "段74 三条路由" "$(grep -c /m/14.5 frontend/src/router/index.js)" "3"
 
 # ---- 段尾清理 ----
