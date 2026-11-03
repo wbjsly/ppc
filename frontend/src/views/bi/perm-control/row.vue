@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.4.1 行级权限 ==================== -->
-    <el-alert type="info" show-icon :closable="false" style="margin-bottom: 8px"
-              title="三维度（法人主体/组织部门树/数据密级）×（用户/角色）；SCOPE_EXPR 受控枚举 SELF/SELF_SUBTREE/LIST；变更经数据治理专员审批后生效并留版本快照" />
+    <PageInfo title="三维度（法人主体/组织部门树/数据密级）×（用户/角色）；SCOPE_EXPR 受控枚举 SELF/SELF_SUBTREE/LIST；变更经数据治理专员审批后生效并留版本快照" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-input v-model="rowFilter.userName" placeholder="按用户过滤" size="small"
@@ -144,6 +143,7 @@
  * 14.4.1 行级权限（拆分自原权限控制操作台）：规则 CRUD / 审批流转 / 版本快照 / 生效影响预览。
  * 三页逻辑互不共享，全部留在页内（design D2：单 tab 独有逻辑不强抽）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

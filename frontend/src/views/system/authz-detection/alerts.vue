@@ -46,9 +46,14 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:8px;text-align:right" background layout="total, prev, pager, next"
-      :total="alerts.total" :page-size="alerts.size" :current-page="alerts.page"
-      @current-change="loadAlerts" />
+        <AppPagination
+      style="margin-top:8px;text-align:right"
+      background
+      :total="alerts.total"
+      v-model:page-size="alerts.size"
+      :current-page="alerts.page"
+      @current-change="loadAlerts"
+    />
 
     <!-- 处置抽屉 -->
     <el-drawer v-model="disposeDrawer" :title="`越权事件处置（${current.targetUsername || current.targetUserId}）`" size="480px">
@@ -84,6 +89,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.8.1 拒绝告警（拆分自原越权检测操作台）：403 拒绝告警台账 + 越权事件处置。
  * 共享告警列表见 useAuthzDetection.js（临时降权页提前恢复后亦刷新该列表）。

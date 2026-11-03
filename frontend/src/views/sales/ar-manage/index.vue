@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.8.3 应收管理"
-              description="应收台账多维查询（客户/SO/发票号/合同/超期）→ 月度对账单（未核销逐笔明细 + 差异逐笔排查）→ 计划达成对比（应收回看所属合同期次与收款进度，超期标红）。余额口径 = 应收金额 − 红冲 − 已核销。" />
+    <PageInfo title="3.8.3 应收管理" description="应收台账多维查询（客户/SO/发票号/合同/超期）→ 月度对账单（未核销逐笔明细 + 差异逐笔排查）→ 计划达成对比（应收回看所属合同期次与收款进度，超期标红）。余额口径 = 应收金额 − 红冲 − 已核销。" />
 
     <el-tabs v-model="tab">
       <!-- ===== 台账 ===== -->
@@ -346,6 +344,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.5.4 订单关闭"
-              description="手动关闭必填原因并经销售经理确认；关闭时未执行余量显式处理留痕、释放未消耗预留（ATP 回升）；关闭后仅可查询，重启须新建 SO 并关联原单号（业务逻辑 6）。" />
+    <PageInfo title="3.5.4 订单关闭" description="手动关闭必填原因并经销售经理确认；关闭时未执行余量显式处理留痕、释放未消耗预留（ATP 回升）；关闭后仅可查询，重启须新建 SO 并关联原单号（业务逻辑 6）。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -122,6 +120,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getSoPageApi, getSoDetailApi, closeSoApi } from '@/api/sd/so'

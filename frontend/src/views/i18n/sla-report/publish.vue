@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="服务报告（17.7）：月度报告、归档发布"
-      description="五指标（版本数/三语覆盖率/缺口闭环率/渲染异常/灰度回退）；未归档发布 422 阻断留痕（BR-5.7-14 / C-5.7-05，复用 18.5 范式）。" />
+    <PageInfo title="服务报告（17.7）：月度报告、归档发布" description="五指标（版本数/三语覆盖率/缺口闭环率/渲染异常/灰度回退）；未归档发布 422 阻断留痕（BR-5.7-14 / C-5.7-05，复用 18.5 范式）。" style="margin-bottom:12px" />
 
     <!-- 17.7.2 归档发布 -->
     <el-form inline size="small">
@@ -33,6 +31,7 @@
  * 17.7.2 归档发布（拆分自原服务报告页）：SLA 报告归档 / 对外发布。
  * 列表共享状态见 useSlaReport.js；状态标签映射见 sla-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { archiveSlaApi, publishSlaApi } from '@/api/i18n/i18n'

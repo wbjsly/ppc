@@ -1,8 +1,7 @@
 <template>
   <div style="padding:16px">
     <!-- 13.8.1 告警联动：趋势候选 → 幂等建单 -->
-    <el-alert type="info" :closable="false" style="margin-bottom:10px"
-              title="幂等规则：告警事件 ID 为建单幂等键，重复触发返回既有工单（409 幂等语义）" />
+    <PageInfo title="幂等规则：告警事件 ID 为建单幂等键，重复触发返回既有工单（409 幂等语义）" style="margin-bottom:10px" />
     <el-table :data="candidates" size="small" v-loading="loading">
       <el-table-column prop="eventNo" label="告警事件" width="180" />
       <el-table-column prop="deviceNo" label="设备" show-overflow-tooltip />
@@ -28,6 +27,7 @@
  * 13.8.1 告警联动（拆分自原预测维护操作台）：趋势候选幂等建单（409 幂等语义）。
  * 结果条见 usePredictive.js（与维修工单页共享）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { trendCandidatesApi, predictCreateWoApi } from '@/api/iot/monitor'
 import { usePredictive } from './usePredictive'

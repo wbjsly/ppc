@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="S-4.14-08：关联交易定价须符合独立交易原则，定价文档备查，特别纳税调整风险提前评估（自评留痕不阻断业务）" />
+      <PageInfo title="S-4.14-08：关联交易定价须符合独立交易原则，定价文档备查，特别纳税调整风险提前评估（自评留痕不阻断业务）" />
 
       <el-row :gutter="12" class="mb8">
         <!-- 提醒 -->
@@ -127,6 +126,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

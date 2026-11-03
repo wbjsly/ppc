@@ -8,8 +8,7 @@
       </div>
     </div>
 
-    <el-alert type="info" :closable="false" class="mb8"
-      title="保存期限 ≥10 年（FR-4.14-5-7）；仅归集已申报（FILED/PAID）产物，未申报期无归档记录" />
+    <PageInfo title="保存期限 ≥10 年（FR-4.14-5-7）；仅归集已申报（FILED/PAID）产物，未申报期无归档记录" />
 
     <el-empty v-if="loaded && archive && archive.count === 0" :description="`所属期 ${period} 无已申报归档产物`" />
 
@@ -59,6 +58,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { taxArchive } from '@/api/fin/tax-filing'
 

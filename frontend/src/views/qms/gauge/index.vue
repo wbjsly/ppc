@@ -1,8 +1,6 @@
 <template>
   <div class="gauge-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="计量器具与校准（6.9）：台账 → 到期预警（30/7 天）→ 校准执行 → 可疑批次追溯评估"
-      description="CTQ 器具校准周期 ≤12 个月；校准 FAIL 自动停用并反向追溯自上次合格校准日起用过该器具的检验批；未评估可疑批次阻断放行（C-4.12-12），5 工作日评估时限。" />
+    <PageInfo title="计量器具与校准（6.9）：台账 → 到期预警（30/7 天）→ 校准执行 → 可疑批次追溯评估" description="CTQ 器具校准周期 ≤12 个月；校准 FAIL 自动停用并反向追溯自上次合格校准日起用过该器具的检验批；未评估可疑批次阻断放行（C-4.12-12），5 工作日评估时限。" style="margin-bottom: 12px;" />
 
     <!-- 到期预警（6.9.3） -->
     <el-row :gutter="12" style="margin-bottom:12px;" v-if="warnings.due7 || warnings.due30">
@@ -69,9 +67,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情：校准历史 + 可疑批次 -->
@@ -199,6 +201,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -212,7 +216,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const warnings = ref({})
-const filters = reactive({ status: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', keyword: '', current: 1, size: 20 })
 const canEdit = ['ROLE_ADMIN', 'ROLE_QUALITY_ENG', 'ROLE_QUALITY_MGR']
   .some(r => (userStore.userInfo && userStore.userInfo.roles || []).includes(r))
 

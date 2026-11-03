@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="11.11.2 收款计划（合同维度分期，不参与记账）"
-              description="按合同登记分期（期数/计划金额/到期日）；每期关联展示实际应收、已核销金额与达成率，超期未收标红（合同 → SO → 应收链路实时口径，D10）；手工登记实际收款走应收核销记录（不重复记账）。计划合计与合同额不符时给出待调整提示。" />
+    <PageInfo title="11.11.2 收款计划（合同维度分期，不参与记账）" description="按合同登记分期（期数/计划金额/到期日）；每期关联展示实际应收、已核销金额与达成率，超期未收标红（合同 → SO → 应收链路实时口径，D10）；手工登记实际收款走应收核销记录（不重复记账）。计划合计与合同额不符时给出待调整提示。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -265,6 +263,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

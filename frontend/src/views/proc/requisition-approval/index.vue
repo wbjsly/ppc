@@ -8,9 +8,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-        title="分级审批（FR-4.2-1-2）：判级金额 = Σ(数量×预估单价)；≤部门限额→部门经理，≤总监限额→+采购总监，超出→+分管副总裁。"
-        description="限额配置：app.proc.dept-approval-limit（默认 5 万）/ app.proc.director-approval-limit（默认 50 万）。节点 1 工作日超时提醒、3 工作日升级（懒扫描，通知 TODO 桩）。" />
+      <PageInfo title="分级审批（FR-4.2-1-2）：判级金额 = Σ(数量×预估单价)；≤部门限额→部门经理，≤总监限额→+采购总监，超出→+分管副总裁。" description="限额配置：app.proc.dept-approval-limit（默认 5 万）/ app.proc.director-approval-limit（默认 50 万）。节点 1 工作日超时提醒、3 工作日升级（懒扫描，通知 TODO 桩）。" style="margin-bottom: 12px;" />
 
       <el-table :data="todo" v-loading="loading" stripe>
         <el-table-column prop="prNo" label="PR 单号" width="170">
@@ -109,6 +107,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'

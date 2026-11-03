@@ -58,8 +58,13 @@
           <el-table-column prop="pushedAt" label="推送时间" width="155" />
           </el-table>
           <div style="color:#909399;font-size:12px;margin-top:8px">PO 协同操作（代录确认/接受改期/催办/协商/工单解锁）已收口至「订单协同 12.5.1 / 12.5.2」，本页保留只读摘要与时间线。</div>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="poTotal"
-          :page-size="poFilters.size" v-model:current-page="poFilters.current" @current-change="loadPoCoops" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="poTotal"
+          v-model:page-size="poFilters.size"
+          v-model:current-page="poFilters.current"
+          @current-change="loadPoCoops"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab2 ASN 与进度 ============ -->
@@ -116,8 +121,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="asnTotal"
-          :page-size="asnFilters.size" v-model:current-page="asnFilters.current" @current-change="loadAsns" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="asnTotal"
+          v-model:page-size="asnFilters.size"
+          v-model:current-page="asnFilters.current"
+          @current-change="loadAsns"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab3 VMI 协同 ============ -->
@@ -227,8 +237,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="reconTotal"
-          :page-size="reconFilters.size" v-model:current-page="reconFilters.current" @current-change="loadStatements" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="reconTotal"
+          v-model:page-size="reconFilters.size"
+          v-model:current-page="reconFilters.current"
+          @current-change="loadStatements"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -253,8 +268,13 @@
         <el-table-column prop="occurredAt" label="发生时间" width="160" />
         <el-table-column prop="summary" label="摘要" min-width="220" show-overflow-tooltip />
       </el-table>
-      <el-pagination style="margin-top: 8px;" layout="prev, pager, next" :total="ledgerTotal"
-        :page-size="20" v-model:current-page="ledgerCurrent" @current-change="loadLedger" />
+            <AppPagination
+        style="margin-top: 8px;"
+        :total="ledgerTotal"
+        v-model:current-page="ledgerCurrent"
+        @current-change="loadLedger"
+        v-model:page-size="ledgerSize"
+      />
     </el-dialog>
 
     <!-- ASN 明细对话框 -->
@@ -398,6 +418,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -435,6 +456,7 @@ const ledgerDlg = ref(false)
 const ledgerRows = ref([])
 const ledgerTotal = ref(0)
 const ledgerCurrent = ref(1)
+const ledgerSize = ref(20)
 const ledgerFilter = ref('')
 const ledgerKeyword = ref('')
 
@@ -468,7 +490,7 @@ async function openLedger() {
 
 async function loadLedger() {
   const { data } = await getPortalEventLedgerApi({
-    current: ledgerCurrent.value, size: 20,
+    current: ledgerCurrent.value, size: ledgerSize.value,
     eventType: ledgerFilter.value || undefined,
     keyword: ledgerKeyword.value || undefined
   })

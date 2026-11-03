@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="建档登记在 10.1.1；本页跟踪入职进度：建档状态 + 开通审批状态 + 试用期提醒" />
+      <PageInfo title="建档登记在 10.1.1；本页跟踪入职进度：建档状态 + 开通审批状态 + 试用期提醒" />
 
       <div class="warn-title">试用期 ≤15 天提醒（BR-4.7-08）</div>
       <el-table :data="remindings" size="small" border class="mb8">
@@ -47,6 +46,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { onbList, probationRemindings } from '@/api/hr/employee-archive'
 

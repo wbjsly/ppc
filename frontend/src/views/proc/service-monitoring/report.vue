@@ -65,9 +65,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="q.current" :page-size="q.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="q.current"
+        v-model:page-size="q.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 生成 -->
@@ -140,6 +144,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'

@@ -20,10 +20,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="mtQuery.current" v-model:page-size="mtQuery.size"
-      :total="mtTotal" layout="total, prev, pager, next" @change="loadMatches"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="mtQuery.current"
+      v-model:page-size="mtQuery.size"
+      :total="mtTotal"
+      @current-change="loadMatches"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-alert type="info" :closable="false" show-icon style="margin-top:8px"
       title="财务确认视角：价差超容差须确认意见后过账；跨会计期间须 ADMIN 手工过账。确认后发票转正式应付并自动冲回暂估。" />
     <el-dialog v-model="cfOpinionVisible" title="确认价差（必填意见）" width="480">
@@ -37,6 +40,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.3.1 应付确认（拆分自原应付管理多 tab 页，design D1）。
  * 本页独有逻辑，无跨页共享状态（D2：无共享未抽）。

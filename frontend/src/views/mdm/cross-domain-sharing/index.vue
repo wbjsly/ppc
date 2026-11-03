@@ -52,8 +52,12 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-          :total="evtTotal" :page-size="evtQuery.size" :current-change="loadEvents" />
+                <AppPagination
+          style="margin-top: 12px; justify-content: flex-end;"
+          :total="evtTotal"
+          v-model:page-size="evtQuery.size"
+          @current-change="loadEvents"
+        />
       </template>
 
       <!-- ============ Tab2 价格协议 ============ -->
@@ -109,8 +113,12 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-          :total="paTotal" :page-size="paQuery.size" :current-change="loadAgreements" />
+                <AppPagination
+          style="margin-top: 12px; justify-content: flex-end;"
+          :total="paTotal"
+          v-model:page-size="paQuery.size"
+          @current-change="loadAgreements"
+        />
       </template>
 
       <!-- ============ Tab3 试算 ============ -->
@@ -323,6 +331,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
@@ -377,7 +386,7 @@ const saving = ref(false)
 // ---------- 事件流 ----------
 const events = ref([])
 const evtTotal = ref(0)
-const evtQuery = ref({ eventType: '', status: '', keyword: '', current: 1, size: 10 })
+const evtQuery = ref({ eventType: '', status: '', keyword: '', current: 1, size: 20 })
 const eventVisible = ref(false)
 const eventDetail = ref(null)
 const catalogVisible = ref(false)
@@ -402,7 +411,7 @@ async function openEvent(row) {
 // ---------- 价格协议 ----------
 const agreements = ref([])
 const paTotal = ref(0)
-const paQuery = ref({ keyword: '', agreementType: '', status: '', current: 1, size: 10 })
+const paQuery = ref({ keyword: '', agreementType: '', status: '', current: 1, size: 20 })
 const paVisible = ref(false)
 const paForm = ref({})
 const groups = ref([])

@@ -1,10 +1,6 @@
 <template>
   <div class="warehouse-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="仓库档案（4.1.1）"
-      description="编码系统生成且创建后不可改；停用仓不被新发货单与新预留选用（在途单据不受影响）。存量库存已按仓库维度回填主仓 WH-MAIN。"
-    />
+    <PageInfo title="仓库档案（4.1.1）" description="编码系统生成且创建后不可改；停用仓不被新发货单与新预留选用（在途单据不受影响）。存量库存已按仓库维度回填主仓 WH-MAIN。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -93,6 +89,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'

@@ -105,15 +105,19 @@
       </el-table>
       <el-empty v-if="!renderLoading && renderRows.length === 0" description="无数据（或行级权限过滤后为空集）" />
       <div class="toolbar" style="margin-top: 8px">
-        <el-pagination layout="prev, pager, next, total" :total="renderTotal"
-                       :page-size="renderSize" v-model:current-page="renderPage"
-                       @current-change="loadRender" />
+                <AppPagination
+          :total="renderTotal"
+          v-model:page-size="renderSize"
+          v-model:current-page="renderPage"
+          @current-change="loadRender"
+        />
       </div>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 14.1.1 模板设计（拆分自原报表模板操作台）：模板检索/新建编辑（口径 diff 硬阻断）/ 渲染预览。
  * 模板列表与检索条件见 useReportTemplate.js（模板发布页、版本控制页共用），状态映射见 rt-helpers.js。
@@ -145,7 +149,7 @@ const renderRows = ref([])
 const renderCols = ref([])
 const renderTotal = ref(0)
 const renderPage = ref(1)
-const renderSize = 100
+const renderSize = ref(20)
 const renderLoading = ref(false)
 
 function blankForm() {
@@ -220,7 +224,7 @@ function openPreview(row) {
 async function loadRender() {
   renderLoading.value = true
   try {
-    const res = await renderApi(previewId.value, renderPage.value, renderSize)
+    const res = await renderApi(previewId.value, renderPage.value, renderSize.value)
     renderRows.value = res.data?.rows || []
     renderCols.value = res.data?.columns || []
     renderTotal.value = res.data?.total || 0

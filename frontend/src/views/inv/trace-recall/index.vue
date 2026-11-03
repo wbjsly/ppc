@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="召回处理（4.13.2）：受限区入库（RECALL_IN，仅退货区/残次品区，量进 QC 冻结列）→ 报废处置（qcFirst 核销）→ 结案报告（召回率）。入库与处置为仓库动作。" />
+    <PageInfo title="召回处理（4.13.2）：受限区入库（RECALL_IN，仅退货区/残次品区，量进 QC 冻结列）→ 报废处置（qcFirst 核销）→ 结案报告（召回率）。入库与处置为仓库动作。" style="margin-bottom: 8px" />
 
     <!-- 追溯单选择 -->
     <el-form inline>
@@ -130,6 +129,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

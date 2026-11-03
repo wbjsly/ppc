@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      :title="`库龄分析（4.14.3）：按入库日期分桶，呆滞阈值 ${buckets.staleThreshold ?? 180} 天（SLOW_MOVING_AGE_DAYS）。呆滞行可一键发起呆滞报废（三方会签链）。`" />
+    <PageInfo title="`库龄分析（4.14.3）：按入库日期分桶，呆滞阈值 ${buckets.staleThreshold ?? 180} 天（SLOW_MOVING_AGE_DAYS）。呆滞行可一键发起呆滞报废（三方会签链）。`" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="仓库">
@@ -84,12 +83,19 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination class="pager" layout="total, prev, pager, next" :total="total"
-      :page-size="q.size" :current-page="q.current" @current-change="loadList" />
+        <AppPagination
+      class="pager"
+      :total="total"
+      v-model:page-size="q.size"
+      :current-page="q.current"
+      @current-change="loadList"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -100,7 +106,7 @@ import {
 import { getEnabledWarehousesApi } from '@/api/inv/warehouse'
 
 const router = useRouter()
-const q = reactive({ warehouseCode: '', itemCode: '', abcClass: '', current: 1, size: 50 })
+const q = reactive({ warehouseCode: '', itemCode: '', abcClass: '', current: 1, size: 20 })
 const buckets = ref({})
 const list = ref([])
 const total = ref(0)

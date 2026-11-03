@@ -46,9 +46,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination layout="total, prev, pager, next" :total="total"
-                   :page-size="query.size" :current-page="query.current"
-                   @current-change="onPage" style="margin-top:12px" />
+        <AppPagination
+      :total="total"
+      v-model:page-size="query.size"
+      :current-page="query.current"
+      @current-change="onPage"
+      style="margin-top:12px"
+    />
 
     <!-- ============ 新建技改单 ============ -->
     <el-dialog v-model="createVisible" title="新建技改大修单" width="640px">
@@ -205,6 +209,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

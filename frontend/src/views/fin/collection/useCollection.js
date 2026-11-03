@@ -16,7 +16,7 @@ import {
 const payMethods = ['电汇', '支票', '商业汇票', '银行承兑汇票', '现金']
 
 // ---- 收款（IN）----
-const inQuery = ref({ current: 1, size: 10, keyword: '', status: '' })
+const inQuery = ref({ current: 1, size: 20, keyword: '', status: '' })
 const inRows = ref([])
 const inTotal = ref(0)
 const inDialogVisible = ref(false)
@@ -29,7 +29,7 @@ async function loadInDocs() {
 }
 
 // ---- 付款（OUT）----
-const outQuery = ref({ current: 1, size: 10, keyword: '', status: '' })
+const outQuery = ref({ current: 1, size: 20, keyword: '', status: '' })
 const outRows = ref([])
 const outTotal = ref(0)
 const outDialogVisible = ref(false)

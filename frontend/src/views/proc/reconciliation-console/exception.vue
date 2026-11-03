@@ -89,9 +89,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
 
       <!-- 我的待签节点（StatementReconcile） -->
       <div class="sub-title" style="margin-top: 16px;">我的双签待办（{{ myTasks.length }}）</div>
@@ -143,6 +147,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -156,7 +161,7 @@ const rows = ref([])
 const closedRows = ref([])
 const total = ref(0)
 const myTasks = ref([])
-const filters = reactive({ current: 1, size: 10 })
+const filters = reactive({ current: 1, size: 20 })
 
 const frozenRows = computed(() => rows.value)
 

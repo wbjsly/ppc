@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="调用审计（15.7）：审计日志、调用追踪 Trace"
-      description="复用 interface-call-console。审计写入失败 fail-closed 阻断业务调用（BR-5.5-11）；保留 ≥ AUDIT_RETENTION_DAYS。" />
+    <PageInfo title="调用审计（15.7）：审计日志、调用追踪 Trace" description="复用 interface-call-console。审计写入失败 fail-closed 阻断业务调用（BR-5.5-11）；保留 ≥ AUDIT_RETENTION_DAYS。" style="margin-bottom:12px" />
 
     <!-- 15.7.1 审计日志 -->
     <el-table :data="logs" border size="small">
@@ -23,6 +21,7 @@
  * 15.7.1 审计日志（拆分自原调用审计操作台）：审计记录列表。
  * 与调用追踪页无共享状态，未抽 composable。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { getCallLogsApi } from '@/api/proc/interface-integration'
 

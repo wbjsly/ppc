@@ -8,8 +8,7 @@
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
-      <el-alert type="info" :closable="false" style="margin-bottom:12px"
-                title="结果快照确认后不可改；薪酬核算按员工×核算期取等级系数，无结果按系数 1.0 计发并标注" />
+      <PageInfo title="结果快照确认后不可改；薪酬核算按员工×核算期取等级系数，无结果按系数 1.0 计发并标注" style="margin-bottom:12px" />
       <el-table :data="results" height="460">
         <el-table-column prop="period" label="周期" width="100" />
         <el-table-column prop="empNo" label="工号" width="110" />
@@ -24,6 +23,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { resultList } from '@/api/hr/performance'
 

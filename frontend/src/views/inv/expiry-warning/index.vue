@@ -1,8 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="效期预警（4.10.1）：每日报告留痕 + 当日实时清单（与 4.6.2 同源双视角）"
-      description="每日 00:30 扫描后自动生成报告并推送仓库（黄 ≤90 / 橙 ≤60 / 红 ≤30 天），含较前报新增/解除清单；出库作业视角的实时清单在 4.6.2 效期优先。" />
+    <PageInfo title="效期预警（4.10.1）：每日报告留痕 + 当日实时清单（与 4.6.2 同源双视角）" description="每日 00:30 扫描后自动生成报告并推送仓库（黄 ≤90 / 橙 ≤60 / 红 ≤30 天），含较前报新增/解除清单；出库作业视角的实时清单在 4.6.2 效期优先。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="view" style="width: 140px" @change="switchView">
@@ -134,6 +132,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getExpiryWarningsApi } from '@/api/inv/fifo'

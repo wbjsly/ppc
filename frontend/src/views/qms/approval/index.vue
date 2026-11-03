@@ -11,9 +11,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-        title="通用审批底座（C-4.12-01）：并行双签两节点全部通过才生效，缺一不可；任一驳回整单驳回。"
-        description="超时口径：节点激活起 72 小时提醒一次、超 7 天自动升级（默认质量总监）；提醒/升级由 schedule 扫描驱动，也可手动触发（幂等）。" />
+      <PageInfo title="通用审批底座（C-4.12-01）：并行双签两节点全部通过才生效，缺一不可；任一驳回整单驳回。" description="超时口径：节点激活起 72 小时提醒一次、超 7 天自动升级（默认质量总监）；提醒/升级由 schedule 扫描驱动，也可手动触发（幂等）。" style="margin-bottom: 12px;" />
 
       <el-table :data="todo" v-loading="loading" stripe>
         <el-table-column prop="apprNo" label="审批单号" width="170">
@@ -106,6 +104,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

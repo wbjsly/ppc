@@ -63,7 +63,7 @@
           </template>
         </el-dropdown>
       </el-header>
-      <el-main class="main-content">
+      <el-main class="main-content" v-reveal-scrollbar>
         <router-view v-slot="{ Component }">
           <keep-alive>
             <component :is="Component" />

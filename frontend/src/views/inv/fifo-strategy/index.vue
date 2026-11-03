@@ -1,8 +1,6 @@
 <template>
   <div class="fifo-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="先进先出（4.6.1）：FIFO+FEFO 批次推荐试算与改批偏离监控"
-      description="排序口径：入库日期升序（FIFO）→ 同日按有效期升序（FEFO）→ 排除冻结、效期锁定与零可用批次（BR-4.4-19）。试算为只读模拟，不生成预留、不改库存。" />
+    <PageInfo title="先进先出（4.6.1）：FIFO+FEFO 批次推荐试算与改批偏离监控" description="排序口径：入库日期升序（FIFO）→ 同日按有效期升序（FEFO）→ 排除冻结、效期锁定与零可用批次（BR-4.4-19）。试算为只读模拟，不生成预留、不改库存。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ================= Tab B：推荐试算 ================= -->
@@ -109,9 +107,13 @@
           <el-table-column prop="createDate" label="时间" width="160" />
         </el-table>
 
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="devTotal" :page-size="20"
-          :current-page="devFilters.current" @current-change="p => { devFilters.current = p; loadDeviations() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="devTotal"
+          :current-page="devFilters.current"
+          @current-change="p => { devFilters.current = p; loadDeviations() }"
+          v-model:page-size="devFilters.size"
+        />
 
         <el-alert type="info" :closable="false" style="margin-top: 10px;"
           title="首期仅留痕：非波次的行级改批记录偏离台账（原因必填），强制审批随波次管理（4.8）上线再挂接（C-4.4-08 / 偏差 D1）。" />
@@ -121,6 +123,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { simulateFifoApi, getDeviationsApi } from '@/api/inv/fifo'
@@ -161,14 +165,14 @@ const devLoading = ref(false)
 const devRows = ref([])
 const devTotal = ref(0)
 const devRange = ref(null)
-const devFilters = reactive({ current: 1, docNo: '', itemCode: '', createBy: '' })
+const devFilters = reactive({size: 20, current: 1, docNo: '', itemCode: '', createBy: '' })
 
 async function loadDeviations() {
   devLoading.value = true
   try {
     const res = await getDeviationsApi({
       current: devFilters.current,
-      size: 20,
+      size: devFilters.size,
       docNo: devFilters.docNo || undefined,
       itemCode: devFilters.itemCode || undefined,
       createBy: devFilters.createBy || undefined,

@@ -1,8 +1,6 @@
 <template>
   <div class="ac-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="应付暂估（2.7.1）：入库过账自动生成「借 存货 / 贷 应付暂估」（BR-4.2-30）"
-      description="台账只读 + 手工冲回（仅 ADMIN，须填关联发票号与原因）；三方匹配通过时由 2.7.2 自动冲回并转正式应付。FREE 无单价收货不生成暂估；合并迁移批次须经财务确认后才参与匹配与冲减。" />
+    <PageInfo title="应付暂估（2.7.1）：入库过账自动生成「借 存货 / 贷 应付暂估」（BR-4.2-30）" description="台账只读 + 手工冲回（仅 ADMIN，须填关联发票号与原因）；三方匹配通过时由 2.7.2 自动冲回并转正式应付。FREE 无单价收货不生成暂估；合并迁移批次须经财务确认后才参与匹配与冲减。" style="margin-bottom: 12px;" />
 
     <!-- 汇总卡 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">
@@ -116,9 +114,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 手工冲回对话框（仅 ADMIN） -->
@@ -146,6 +148,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -168,7 +172,7 @@ const total = ref(0)
 const suppliers = ref([])
 const dateRange = ref([])
 const summary = reactive({ balance: 0, monthGenerated: 0, monthReversed: 0, openCount: 0, reversedCount: 0 })
-const filters = reactive({ supplierId: '', poNo: '', status: '', current: 1, size: 10 })
+const filters = reactive({ supplierId: '', poNo: '', status: '', current: 1, size: 20 })
 
 const reverseVisible = ref(false)
 const current = ref(null)

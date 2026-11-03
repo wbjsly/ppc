@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="租赁管理（7.4.3）：合同 → 分类确认 → 使用权确认（PV+摊余计划+ROU 建卡）→ 月度处理（幂等）→ 重计量 / 临期 / 到期终止"
-      description="短期低值豁免（BR-25）不建卡不出计划，直线进损益留痕；重新计量经财务资产会计单签。" />
+    <PageInfo title="租赁管理（7.4.3）：合同 → 分类确认 → 使用权确认（PV+摊余计划+ROU 建卡）→ 月度处理（幂等）→ 重计量 / 临期 / 到期终止" description="短期低值豁免（BR-25）不建卡不出计划，直线进损益留痕；重新计量经财务资产会计单签。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -146,6 +144,7 @@
  * 合同录入、分类与使用权确认、月度处理/冲回、摊余计划、临期与到期终止。
  * 共享状态见 useTransferLease.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import {
   loading, saving, leaseRows, leaseDlg, leaseForm, periodTag,

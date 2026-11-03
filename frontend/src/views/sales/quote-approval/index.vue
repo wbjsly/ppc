@@ -1,10 +1,6 @@
 <template>
   <div class="quote-approval-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="报价审批（11.2.2，spec sales-quote 报价审批台）"
-      description="待办按当前用户角色聚合（普通/大额=销售经理→销售总监，负毛利=销售主管+财务并行会签，小额高毛利自动发布无节点）；驳回意见 ≥2 字且整单驳回；签署语义完全沿用审批底座。"
-    />
+    <PageInfo title="报价审批（11.2.2，spec sales-quote 报价审批台）" description="待办按当前用户角色聚合（普通/大额=销售经理→销售总监，负毛利=销售主管+财务并行会签，小额高毛利自动发布无节点）；驳回意见 ≥2 字且整单驳回；签署语义完全沿用审批底座。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== 待办 ==================== -->
@@ -107,6 +103,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { approvalTodoApi, approvalPassApi, approvalRejectApi, approvalHistoryApi } from '@/api/sd/quote-approval'

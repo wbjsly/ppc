@@ -1,8 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="差异审批（4.11.3）：CountDiff 待签 + 盘点差异台账 + 重点监控仓位"
-      description="超容差差异（>0.5%）挂单节点仓库主管审批；通过后同事务自动执行库存调整（按正负拆 ADJUST_IN/OUT）并生成凭证，驳回回待复盘。与拣货差异（4.7.4）视图隔离。" />
+    <PageInfo title="差异审批（4.11.3）：CountDiff 待签 + 盘点差异台账 + 重点监控仓位" description="超容差差异（>0.5%）挂单节点仓库主管审批；通过后同事务自动执行库存调整（按正负拆 ADJUST_IN/OUT）并生成凭证，驳回回待复盘。与拣货差异（4.7.4）视图隔离。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab" @tab-change="onTab">
       <el-tab-pane label="待我审批" name="todo">
@@ -61,10 +59,13 @@
             <template #default="{ row }">{{ row.resolveNote || '-' }}</template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="diffTotal" :page-size="diffFilters.size"
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="diffTotal"
+          v-model:page-size="diffFilters.size"
           :current-page="diffFilters.current"
-          @current-change="p => { diffFilters.current = p; loadDiffs() }" />
+          @current-change="p => { diffFilters.current = p; loadDiffs() }"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="重点监控仓位" name="watch">
@@ -98,6 +99,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.10.3 退款换货执行"
-              description="审批通过后分流：退款 → 红字发票 + 应收红冲 + 红冲凭证（借 6001 / 贷 1122），支持部分退款支付登记；换货 → 生成关联退货单的新发货单并重走 ATP 批次锁定（库存不足阻断）；实物入库按批次回补 AVAILABLE_QTY（待检入 QC_QTY 不计 ATP）并生成入库凭证（借 1405 / 贷 6401）（spec 12.5~12.7）。" />
+    <PageInfo title="3.10.3 退款换货执行" description="审批通过后分流：退款 → 红字发票 + 应收红冲 + 红冲凭证（借 6001 / 贷 1122），支持部分退款支付登记；换货 → 生成关联退货单的新发货单并重走 ATP 批次锁定（库存不足阻断）；实物入库按批次回补 AVAILABLE_QTY（待检入 QC_QTY 不计 ATP）并生成入库凭证（借 1405 / 贷 6401）（spec 12.5~12.7）。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="6" v-for="k in kpis" :key="k.label">
@@ -227,6 +225,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

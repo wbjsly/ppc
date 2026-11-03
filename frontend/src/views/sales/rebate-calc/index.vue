@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.9.1 返利计算（含三配置 Tab）"
-              description="达成率 = 季度开票确认额 − 退货退款额 ÷ 季度目标；返利按「超额累进」分段计算（各阶梯仅对落入该阶梯的超额部分计返利，非全额累进）；返利超季度预算余额自动升级销售总监并要求超预算说明与年度平衡方案（C-4.3-05）。数据不完整（存在未完成退货）延期不出结果（FR-4.3-8-1~3）。" />
+    <PageInfo title="3.9.1 返利计算（含三配置 Tab）" description="达成率 = 季度开票确认额 − 退货退款额 ÷ 季度目标；返利按「超额累进」分段计算（各阶梯仅对落入该阶梯的超额部分计返利，非全额累进）；返利超季度预算余额自动升级销售总监并要求超预算说明与年度平衡方案（C-4.3-05）。数据不完整（存在未完成退货）延期不出结果（FR-4.3-8-1~3）。" />
 
     <el-tabs v-model="mainTab" class="mb12">
       <!-- ============ 返利计算 ============ -->
@@ -319,6 +317,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

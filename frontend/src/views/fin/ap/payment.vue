@@ -39,10 +39,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="plQuery.current" v-model:page-size="plQuery.size"
-      :total="plTotal" layout="total, prev, pager, next" @change="loadPlans"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="plQuery.current"
+      v-model:page-size="plQuery.size"
+      :total="plTotal"
+      @current-change="loadPlans"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-dialog v-model="plCreateVisible" title="新建付款计划" width="520">
       <el-form label-width="90px">
         <el-form-item label="期间"><el-input v-model="plForm.period" placeholder="yyyyMM" maxlength="6" /></el-form-item>
@@ -65,6 +68,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.3.3 付款管理（拆分自原应付管理多 tab 页，design D1）。
  * 本页独有逻辑，无跨页共享状态（D2：无共享未抽）。

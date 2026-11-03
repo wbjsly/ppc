@@ -1,10 +1,6 @@
 <template>
   <div class="attr-config-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="属性配置（4.1.3）"
-      description="仓库域五类字典：仓库类型 / 仓位类型 / 温湿度 / 危化品 / 洁净等级。编码创建后不可改；停用条目退出新数据可选范围，既有引用不受影响。"
-    />
+    <PageInfo title="属性配置（4.1.3）" description="仓库域五类字典：仓库类型 / 仓位类型 / 温湿度 / 危化品 / 洁净等级。编码创建后不可改；停用条目退出新数据可选范围，既有引用不受影响。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -63,6 +59,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

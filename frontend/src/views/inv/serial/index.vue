@@ -1,10 +1,6 @@
 <template>
   <div class="serial-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="序列管理（4.2.2）"
-      description="序列号手工录入、全局唯一（含历史，重复即串码）；状态机：在库 → 已出库/冻结/报废，冻结可解冻，已出库与报废为终态不可回退。流转全程留痕。"
-    />
+    <PageInfo title="序列管理（4.2.2）" description="序列号手工录入、全局唯一（含历史，重复即串码）；状态机：在库 → 已出库/冻结/报废，冻结可解冻，已出库与报废为终态不可回退。流转全程留痕。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -108,6 +104,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

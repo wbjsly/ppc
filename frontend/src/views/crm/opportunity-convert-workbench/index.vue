@@ -1,10 +1,6 @@
 <template>
   <div class="convert-bench">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="商机转化（11.1.4）"
-      description="CRM 全链路工作台：上区线索→商机转化（A/B 级未转化线索，FR-4.8-1-5 门槛与要素全由服务端校验）；下区可转化商机→报价闸口（BR-4.3-07，校验通过跳 3.2.1，不通过回写原因）。与 3.1.2 同功能不同入口。"
-    />
+    <PageInfo title="商机转化（11.1.4）" description="CRM 全链路工作台：上区线索→商机转化（A/B 级未转化线索，FR-4.8-1-5 门槛与要素全由服务端校验）；下区可转化商机→报价闸口（BR-4.3-07，校验通过跳 3.2.1，不通过回写原因）。与 3.1.2 同功能不同入口。" style="margin-bottom: 12px;" />
 
     <!-- ============ 上区：线索 → 商机转化 ============ -->
     <el-card style="margin-bottom: 14px;">
@@ -148,6 +144,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

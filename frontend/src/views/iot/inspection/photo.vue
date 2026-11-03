@@ -2,8 +2,7 @@
   <div>
     <PdaShell :title="'设备巡检 · ' + tabTitle" scan @scan="onScan" @sync="doSync">
       <!-- 13.3.4 拍照留证（选中任务上传） -->
-      <el-alert type="info" :closable="false" style="margin-bottom:8px"
-                title="异常点检项须拍照留证后方可提交（缺图 422 补拍提示）" />
+      <PageInfo title="异常点检项须拍照留证后方可提交（缺图 422 补拍提示）" style="margin-bottom:8px" />
       <el-input v-model="photoUrl" placeholder="照片 URL（演示：直接填写）" />
       <el-button size="small" type="primary" style="margin-top:8px"
                  :disabled="!current" @click="submitWithPhoto">带图提交当前任务</el-button>
@@ -19,6 +18,7 @@
  * 13.3.4 拍照留证（拆分自原设备巡检操作台）：对已选中任务补图提交。
  * 当前任务/照片/点检项、加载态、结果条与扫码签到见 useInspection.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

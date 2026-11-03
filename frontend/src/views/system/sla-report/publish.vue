@@ -25,13 +25,19 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:8px;text-align:right" background layout="total, prev, pager, next"
-      :total="pubReports.total" :page-size="pubReports.size" :current-page="pubReports.page"
-      @current-change="loadPubReports" />
+        <AppPagination
+      style="margin-top:8px;text-align:right"
+      background
+      :total="pubReports.total"
+      v-model:page-size="pubReports.size"
+      :current-page="pubReports.page"
+      @current-change="loadPubReports"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.9.2 归档发布（拆分自原 SLA 报告操作台）：归档（版本锁定）/ 对外发布 / 下载 CSV。
  * 归档发布后同步刷新共享月度报告列表，见 useSlaReport.js。
@@ -45,7 +51,7 @@ import { statusType, statusText } from './sla-helpers'
 const { reports, loadReports } = useSlaReport()
 
 // ---------- 归档发布 ----------
-const pubReports = reactive({ rows: [], total: 0, page: 1, size: 50, loading: false })
+const pubReports = reactive({ rows: [], total: 0, page: 1, size: 20, loading: false })
 const loadPubReports = async (page) => {
   if (page) pubReports.page = page
   pubReports.loading = true

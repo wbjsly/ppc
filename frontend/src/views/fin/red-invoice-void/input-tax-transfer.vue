@@ -8,8 +8,7 @@
       </div>
     </div>
 
-    <el-alert type="info" :closable="false" class="mb8"
-      title="仅已认证（CERTIFIED）发票可转出；单票累计转出不超过已抵扣税额；凭证为草稿态，审核过账见总账凭证页" />
+    <PageInfo title="仅已认证（CERTIFIED）发票可转出；单票累计转出不超过已抵扣税额；凭证为草稿态，审核过账见总账凭证页" />
 
     <el-table :data="rows" size="small" border>
       <el-table-column prop="invoiceNo" label="发票号" width="150" />
@@ -121,6 +120,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

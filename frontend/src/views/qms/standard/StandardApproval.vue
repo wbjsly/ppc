@@ -11,9 +11,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-                title="版本维度跨标准平铺（spec inspection-standard 标准审批独立待办页）"
-                description="本页只读展示审批中版本与双签状态；签署动作在「全局审批待办」完成，点击条目进入标准详情查看特性与发布进度。" />
+      <PageInfo title="版本维度跨标准平铺（spec inspection-standard 标准审批独立待办页）" description="本页只读展示审批中版本与双签状态；签署动作在「全局审批待办」完成，点击条目进入标准详情查看特性与发布进度。" style="margin-bottom: 12px;" />
 
       <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column prop="standardCode" label="标准编码" width="170">
@@ -54,6 +52,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { getPendingVersionsApi } from '@/api/qms/standard'
 

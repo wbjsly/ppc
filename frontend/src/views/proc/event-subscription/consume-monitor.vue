@@ -59,8 +59,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="total"
-                     :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        :total="total"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
     </el-card>
 
     <!-- 死信工单 -->
@@ -92,6 +97,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDeliveriesApi, getDeliveryStatsApi, scanDeliveriesApi, replayDeliveryApi,

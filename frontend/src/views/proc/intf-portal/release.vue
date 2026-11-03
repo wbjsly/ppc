@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="沙箱联调（15.6）：沙箱配置、联调测试、生产放行"
-      description="复用 interface-onboarding。沙箱通过率须达 100% 方可申请生产放行（BR-5.5-02）；放行双人会签（C-0-03）。" />
+    <PageInfo title="沙箱联调（15.6）：沙箱配置、联调测试、生产放行" description="复用 interface-onboarding。沙箱通过率须达 100% 方可申请生产放行（BR-5.5-02）；放行双人会签（C-0-03）。" style="margin-bottom:12px" />
 
     <!-- 15.6.3 生产放行 -->
     <div class="tab-bar">
@@ -63,6 +61,7 @@
  * 15.6.3 生产放行（拆分自原沙箱联调操作台）：放行申请 / 会签 / 观察 / 归档。
  * 共享契约列表见 useSandbox.js；放行单状态为本页独有，留页内。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { requestReleaseApi, getReleasesApi, reviewReleaseApi,

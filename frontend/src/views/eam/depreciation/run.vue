@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="月度计提（7.2.1）：手动执行本月折旧，同事务出凭证+回写台账"
-      description="PERIOD_TAG 幂等卡控（同月已提 422，先冲回）；三方法 SL/DDB/SYD；成本中心→科目分摊；BR-4.13-13 勾稽。" />
+    <PageInfo title="月度计提（7.2.1）：手动执行本月折旧，同事务出凭证+回写台账" description="PERIOD_TAG 幂等卡控（同月已提 422，先冲回）；三方法 SL/DDB/SYD；成本中心→科目分摊；BR-4.13-13 勾稽。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -118,6 +116,7 @@
  * 7.2.1 月度计提（拆分自原折旧管理操作台）：应提预览 / 执行计提 / 计提单与明细 / 整单冲回。
  * 共享角色与格式化见 useDepRoles.js、dep-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { runDepreciationApi, getPreviewApi, getRunPageApi, getRunDetailApi, reverseRunApi } from '@/api/eam/depreciation'

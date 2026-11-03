@@ -58,8 +58,12 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-            :total="total" :page-size="listQuery.size" :current-change="loadList" />
+                    <AppPagination
+            style="margin-top: 12px; justify-content: flex-end;"
+            :total="total"
+            v-model:page-size="listQuery.size"
+            @current-change="loadList"
+          />
         </el-tab-pane>
 
         <!-- ================= Tab2 我的评标 ================= -->
@@ -471,6 +475,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -507,7 +512,7 @@ function statusTag(s) {
 }
 
 // ================= 列表 =================
-const listQuery = ref({ status: '', keyword: '', current: 1, size: 10 })
+const listQuery = ref({ status: '', keyword: '', current: 1, size: 20 })
 const rows = ref([])
 const total = ref(0)
 const supplierOptions = ref([])

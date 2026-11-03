@@ -11,8 +11,7 @@
           </div>
         </div>
       </template>
-      <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-                title="引用锁（spec inspection-standard）：被审批中/已发布版本引用的方案禁止修改，请「复制为新方案」后调整规则。" />
+      <PageInfo title="引用锁（spec inspection-standard）：被审批中/已发布版本引用的方案禁止修改，请「复制为新方案」后调整规则。" style="margin-bottom: 10px;" />
       <el-table :data="plans" v-loading="loading" stripe>
         <el-table-column prop="planCode" label="方案编码" width="150">
           <template #default="{ row }"><b>{{ row.planCode }}</b></template>
@@ -104,8 +103,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="total"
-                     :page-size="size" :current-page="page" @current-change="p => { page = p; load() }" />
+            <AppPagination
+        style="margin-top: 10px;"
+        :total="total"
+        v-model:page-size="size"
+        :current-page="page"
+        @current-change="p => { page = p; load() }"
+      />
     </el-card>
 
     <!-- 新建标准 -->
@@ -186,6 +190,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -216,7 +222,7 @@ const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(10)
+const size = ref(20)
 const keyword = ref('')
 const statusFilter = ref('')
 const plans = ref([])

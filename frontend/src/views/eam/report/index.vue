@@ -56,9 +56,13 @@
           </el-table-column>
           <el-table-column prop="REMARK" label="说明" min-width="180" show-overflow-tooltip />
         </el-table>
-        <el-pagination layout="total, prev, pager, next" :total="changeTotal"
-                       :page-size="changeQuery.size" :current-page="changeQuery.current"
-                       @current-change="onchangePage" style="margin-top:10px" />
+                <AppPagination
+          :total="changeTotal"
+          v-model:page-size="changeQuery.size"
+          :current-page="changeQuery.current"
+          @current-change="onchangePage"
+          style="margin-top:10px"
+        />
       </el-tab-pane>
 
       <!-- ================= 7.8.2 折旧明细 ================= -->
@@ -174,9 +178,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" :total="reportTotal"
-                       :page-size="reportQuery.size" :current-page="reportQuery.current"
-                       @current-change="onreportPage" style="margin-top:10px" />
+                <AppPagination
+          :total="reportTotal"
+          v-model:page-size="reportQuery.size"
+          :current-page="reportQuery.current"
+          @current-change="onreportPage"
+          style="margin-top:10px"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -231,6 +239,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

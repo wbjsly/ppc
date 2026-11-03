@@ -81,8 +81,15 @@
       <el-empty v-if="!loading && rows.length === 0"
         :description="emptyDesc" />
 
-      <el-pagination v-if="total > 0" class="pager" background layout="total, prev, pager, next"
-        :total="total" :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        v-if="total > 0"
+        class="pager"
+        background
+        :total="total"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
 
     <!-- 详情抽屉：单据信息 + 该单流水 -->
     <el-drawer v-model="detailVisible" :title="`详情：${current.docNo || ''}`" size="620px">
@@ -123,6 +130,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

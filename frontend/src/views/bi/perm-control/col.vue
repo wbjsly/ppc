@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.4.2 列级权限 ==================== -->
-    <el-alert type="info" show-icon :closable="false" style="margin-bottom: 8px"
-              title="敏感字段登记位（COL_SENSITIVE）：登记后未命中掩码规则的字段默认掩码（C-4.10-02）；变更走数据治理审批链" />
+    <PageInfo title="敏感字段登记位（COL_SENSITIVE）：登记后未命中掩码规则的字段默认掩码（C-4.10-02）；变更走数据治理审批链" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-button size="small" type="success" @click="sensVisible = true">新增登记位</el-button>
@@ -69,6 +68,7 @@
  * 14.4.2 列级权限（拆分自原权限控制操作台）：敏感字段登记位 CRUD / 审批 / 变更历史 / 校验审计日志。
  * 三页逻辑互不共享，全部留在页内（design D2：单 tab 独有逻辑不强抽）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

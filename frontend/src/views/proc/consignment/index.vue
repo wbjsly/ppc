@@ -1,8 +1,6 @@
 <template>
   <div class="vmi-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="寄售采购 VMI（2.8.1）：物权属供应商，领用时点转移并生成应付暂估（FR-4.2-8-1~4）"
-      description="协议维护/结算确认/处置确认限 ADMIN+PM，寄售领用过账限 ADMIN+WAREHOUSE；超最高水位收货阻断，采购员确认放行；账龄超 180 天未领用自动生成处置建议（BR-4.2-39）。" />
+    <PageInfo title="寄售采购 VMI（2.8.1）：物权属供应商，领用时点转移并生成应付暂估（FR-4.2-8-1~4）" description="协议维护/结算确认/处置确认限 ADMIN+PM，寄售领用过账限 ADMIN+WAREHOUSE；超最高水位收货阻断，采购员确认放行；账龄超 180 天未领用自动生成处置建议（BR-4.2-39）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ============ Tab1 协议 ============ -->
@@ -67,9 +65,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="agTotal" :page-size="10"
-          :current-page="agFilters.current" @current-change="p => { agFilters.current = p; loadAgreements() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="agTotal"
+          :current-page="agFilters.current"
+          @current-change="p => { agFilters.current = p; loadAgreements() }"
+          v-model:page-size="agFilters.size"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab2 寄售库存 ============ -->
@@ -95,9 +97,13 @@
           <el-table-column prop="ageDays" label="库龄(天)" width="85" />
           <el-table-column prop="agreeNo" label="关联协议" width="140" />
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="stTotal" :page-size="10"
-          :current-page="stFilters.current" @current-change="p => { stFilters.current = p; loadStocks() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="stTotal"
+          :current-page="stFilters.current"
+          @current-change="p => { stFilters.current = p; loadStocks() }"
+          v-model:page-size="stFilters.size"
+        />
 
         <el-divider content-position="left">账龄处置建议（BR-4.2-39，不阻断结算）</el-divider>
         <el-table :data="dpRows" size="small" border>
@@ -174,9 +180,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="isTotal" :page-size="10"
-          :current-page="isFilters.current" @current-change="p => { isFilters.current = p; loadIssues() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="isTotal"
+          :current-page="isFilters.current"
+          @current-change="p => { isFilters.current = p; loadIssues() }"
+          v-model:page-size="isFilters.size"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab4 VMI 结算 ============ -->
@@ -242,9 +252,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="seTotal" :page-size="10"
-          :current-page="seFilters.current" @current-change="p => { seFilters.current = p; loadSettlements() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="seTotal"
+          :current-page="seFilters.current"
+          @current-change="p => { seFilters.current = p; loadSettlements() }"
+          v-model:page-size="seFilters.size"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab5 告警记录 ============ -->
@@ -292,9 +306,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="alTotal" :page-size="10"
-          :current-page="alFilters.current" @current-change="p => { alFilters.current = p; loadAlerts() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="alTotal"
+          :current-page="alFilters.current"
+          @current-change="p => { alFilters.current = p; loadAlerts() }"
+          v-model:page-size="alFilters.size"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -507,6 +525,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -536,7 +556,7 @@ const suppliers = ref([])
 // ---------------- Tab1 协议 ----------------
 const agRows = ref([])
 const agTotal = ref(0)
-const agFilters = reactive({ current: 1, supplierId: '', status: '' })
+const agFilters = reactive({size: 20, current: 1, supplierId: '', status: '' })
 const agDialog = ref(false)
 const agForm = reactive({ id: null, supplierId: '', settleCycle: 'MONTH', dates: [], remark: '', lines: [] })
 
@@ -544,7 +564,7 @@ async function loadAgreements() {
   loading.value = true
   try {
     const res = await getAgreementPageApi({
-      current: agFilters.current, size: 10,
+      current: agFilters.current, size: agFilters.size,
       supplierId: agFilters.supplierId || undefined, status: agFilters.status || undefined
     })
     agRows.value = res.data.records || []
@@ -627,7 +647,7 @@ function agStatusText(s) {
 // ---------------- Tab2 寄售库存 + 处置 ----------------
 const stRows = ref([])
 const stTotal = ref(0)
-const stFilters = reactive({ current: 1, supplierId: '', itemCode: '' })
+const stFilters = reactive({size: 20, current: 1, supplierId: '', itemCode: '' })
 const dpRows = ref([])
 const resolveDialog = ref(false)
 const resolveRow = ref(null)
@@ -637,7 +657,7 @@ async function loadStocks() {
   loading.value = true
   try {
     const res = await getVmiStockApi({
-      current: stFilters.current, size: 10,
+      current: stFilters.current, size: stFilters.size,
       supplierId: stFilters.supplierId || undefined, itemCode: stFilters.itemCode || undefined
     })
     stRows.value = res.data.records || []
@@ -682,7 +702,7 @@ function dpStatusText(s) {
 // ---------------- Tab3 寄售领用 ----------------
 const isRows = ref([])
 const isTotal = ref(0)
-const isFilters = reactive({ current: 1, workOrderNo: '' })
+const isFilters = reactive({size: 20, current: 1, workOrderNo: '' })
 const issueDialog = ref(false)
 const issueForm = reactive({ supplierId: '', workOrderNo: '', dept: '', purpose: '', itemCode: '', qty: 100 })
 const previewRows = ref([])
@@ -692,7 +712,7 @@ async function loadIssues() {
   loading.value = true
   try {
     const res = await getIssuePageApi({
-      current: isFilters.current, size: 10, issueType: 'VMI',
+      current: isFilters.current, size: isFilters.size, issueType: 'VMI',
       workOrderNo: isFilters.workOrderNo || undefined
     })
     isRows.value = res.data.records || []
@@ -762,7 +782,7 @@ async function cancelIssue(row) {
 // ---------------- Tab4 结算 ----------------
 const seRows = ref([])
 const seTotal = ref(0)
-const seFilters = reactive({ current: 1, supplierId: '', status: '' })
+const seFilters = reactive({size: 20, current: 1, supplierId: '', status: '' })
 const supSignDialog = ref(false)
 const supSignRow = ref(null)
 const supSignForm = reactive({ by: '', way: '邮件回签' })
@@ -771,7 +791,7 @@ async function loadSettlements() {
   loading.value = true
   try {
     const res = await getSettlementPageApi({
-      current: seFilters.current, size: 10,
+      current: seFilters.current, size: seFilters.size,
       supplierId: seFilters.supplierId || undefined, status: seFilters.status || undefined
     })
     seRows.value = res.data.records || []
@@ -836,7 +856,7 @@ function seTag(s) {
 // ---------------- Tab5 告警 ----------------
 const alRows = ref([])
 const alTotal = ref(0)
-const alFilters = reactive({ current: 1, alertType: '', status: '' })
+const alFilters = reactive({size: 20, current: 1, alertType: '', status: '' })
 const alertDialog = ref(false)
 const alertRow = ref(null)
 const alertOpinion = ref('')
@@ -845,7 +865,7 @@ async function loadAlerts() {
   loading.value = true
   try {
     const res = await getAlertPageApi({
-      current: alFilters.current, size: 10,
+      current: alFilters.current, size: alFilters.size,
       alertType: alFilters.alertType || undefined, status: alFilters.status || undefined
     })
     alRows.value = res.data.records || []

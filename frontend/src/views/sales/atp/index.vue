@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.4.1 可承诺量试算（ATP）"
-              description="Available = OnHand + InProcess + Incoming − Reserved − SafetyStock（SKU+仓库维度）。在制恒 0 并固定标注；到货晚于期望交期的在途剔除；不足仅 L4 提示可承诺量与最早可承诺日期，不自动削量（BR-4.3-19~22 / C-4.3-02）。" />
+    <PageInfo title="3.4.1 可承诺量试算（ATP）" description="Available = OnHand + InProcess + Incoming − Reserved − SafetyStock（SKU+仓库维度）。在制恒 0 并固定标注；到货晚于期望交期的在途剔除；不足仅 L4 提示可承诺量与最早可承诺日期，不自动削量（BR-4.3-19~22 / C-4.3-02）。" />
 
     <!-- 试算输入 -->
     <el-card shadow="never" class="mb12">
@@ -138,6 +136,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { trialAtpApi, saveTrialApi, getTrialsApi } from '@/api/sd/atp'

@@ -58,8 +58,12 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-        :total="total" :page-size="10" :current-change="loadList" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        :total="total"
+        @current-change="loadList"
+        v-model:page-size="listQuery.size"
+      />
     </el-card>
 
     <!-- 详情 -->
@@ -240,6 +244,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -337,7 +342,7 @@ async function submitCreate() {
   }
 }
 
-const listQuery = ref({ status: '', keyword: '' })
+const listQuery = ref({size: 20, status: '', keyword: '' })
 const rows = ref([])
 const total = ref(0)
 
@@ -345,6 +350,8 @@ async function loadList(page) {
   loading.value = true
   try {
     const res = await getAgreementsApi({
+      current: page || 1,
+      size: listQuery.value.size,
       keyword: listQuery.value.keyword || undefined,
       status: listQuery.value.status || undefined
     })

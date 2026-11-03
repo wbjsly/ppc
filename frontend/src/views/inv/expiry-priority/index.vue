@@ -1,8 +1,6 @@
 <template>
   <div class="exp-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="效期优先（4.6.2）：FEFO 排序第二键 + 效期两级标记 + 黄橙红预警"
-      description="推荐排序：同日入库按有效期升序（FEFO）。两级标记——效期警告（剩余 < MIN_REMAINING_SHELF_DAYS，放行但出库单加注）；效期锁定（剩余 < 有效期×EXPIRY_LOCK_RATIO，剔出推荐池并禁止出库过账，BR-4.4-20 / C-4.4-03）。锁定后的质量评估处置归 4.10 效期管理。" />
+    <PageInfo title="效期优先（4.6.2）：FEFO 排序第二键 + 效期两级标记 + 黄橙红预警" description="推荐排序：同日入库按有效期升序（FEFO）。两级标记——效期警告（剩余 < MIN_REMAINING_SHELF_DAYS，放行但出库单加注）；效期锁定（剩余 < 有效期×EXPIRY_LOCK_RATIO，剔出推荐池并禁止出库过账，BR-4.4-20 / C-4.4-03）。锁定后的质量评估处置归 4.10 效期管理。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-input v-model="filters.itemCode" placeholder="物料" clearable style="width: 160px;"
@@ -61,13 +59,19 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-      layout="total, prev, pager, next" :total="total" :page-size="20"
-      :current-page="filters.current" @current-change="p => { filters.current = p; load() }" />
+        <AppPagination
+      style="margin-top: 10px; justify-content: flex-end;"
+      :total="total"
+      :current-page="filters.current"
+      @current-change="p => { filters.current = p; load() }"
+      v-model:page-size="filters.size"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { getExpiryWarningsApi } from '@/api/inv/fifo'
 
@@ -76,7 +80,7 @@ const rows = ref([])
 const total = ref(0)
 const thresholds = ref(null)
 const lockRatio = ref('')
-const filters = reactive({ current: 1, itemCode: '', warehouseCode: '', level: '', locked: null })
+const filters = reactive({size: 20, current: 1, itemCode: '', warehouseCode: '', level: '', locked: null })
 
 function levelText(l) {
   return l === 'RED' ? '红色' : l === 'ORANGE' ? '橙色' : '黄色'
@@ -90,7 +94,7 @@ async function load() {
   try {
     const res = await getExpiryWarningsApi({
       current: filters.current,
-      size: 20,
+      size: filters.size,
       itemCode: filters.itemCode || undefined,
       warehouseCode: filters.warehouseCode || undefined,
       level: filters.level || undefined,

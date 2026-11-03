@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="周转分析（4.14.2）：M-WMS-001 周转率 = 销售成本 / 平均库存余额（日结快照均值）。分子可切换全部出库口径（非指标字典口径）。" />
+    <PageInfo title="周转分析（4.14.2）：M-WMS-001 周转率 = 销售成本 / 平均库存余额（日结快照均值）。分子可切换全部出库口径（非指标字典口径）。" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="期间">
@@ -110,6 +109,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts/core'

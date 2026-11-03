@@ -1,12 +1,10 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      :title="tab === 'workbench'
+    <PageInfo title="tab === 'workbench'
         ? '年度盘点（7.5.1）：计划 → 清单下发（基准日快照冻结 BR-29）→ 实盘录入/导入 → 覆盖率 → 结案卡控（BR-26 L1）→ 报告归档'
-        : '差异处理（7.5.2）：自动比对四类差异 → 调查留痕 → 逐单分级审批 → 盘盈建卡（BR-27）/盘亏责任认定与核销（BR-28）→ 标签异常冻结（BR-30）'"
-      :description="tab === 'workbench'
+        : '差异处理（7.5.2）：自动比对四类差异 → 调查留痕 → 逐单分级审批 → 盘盈建卡（BR-27）/盘亏责任认定与核销（BR-28）→ 标签异常冻结（BR-30）'" description="tab === 'workbench'
         ? '抽样按分类风险等级比例（高 50%/中 30%/低 10%），抽样范围覆盖全部资产类别；基准日后变动单独列示不计覆盖率。'
-        : '盘亏审批通过即挂待处理财产损溢，责任认定完成后方可核销；标签异常冻结调拨与处置直至补标解冻。'" />
+        : '盘亏审批通过即挂待处理财产损溢，责任认定完成后方可核销；标签异常冻结调拨与处置直至补标解冻。'" style="margin-bottom:12px;" />
 
     <!-- ================= 7.5.1 盘点工作台 ================= -->
     <template v-if="tab === 'workbench'">
@@ -292,6 +290,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

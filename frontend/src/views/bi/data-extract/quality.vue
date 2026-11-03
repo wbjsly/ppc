@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.2.3 质量校验 ==================== -->
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px"
-              title="NOT_NULL 非空率（默认≥99.9%）/ RECONCILE 跨表勾稽+容差 / RANGE 数值范围；SEVERE 失败阻断批次就绪并告警，WARN 告警放行（BR-4.10-14）" />
+    <PageInfo title="NOT_NULL 非空率（默认≥99.9%）/ RECONCILE 跨表勾稽+容差 / RANGE 数值范围；SEVERE 失败阻断批次就绪并告警，WARN 告警放行（BR-4.10-14）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-button size="small" type="success" @click="openRuleEdit(null)">新建规则</el-button>
       <el-button size="small" @click="loadQualityRules">刷新</el-button>
@@ -155,6 +154,7 @@
  * 14.2.3 质量校验（拆分自原数据抽取操作台）：质量规则 / 立即校验 / 校验报告与阻断批次复验。
  * 数据源列表见 useDataExtract.js（规则表单「所属数据源」下拉）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

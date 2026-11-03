@@ -49,10 +49,14 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" style="justify-content:flex-end"
-                     :current-page="query.current" :page-size="query.size"
-                     :total="total" layout="total, prev, pager, next"
-                     @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        style="justify-content:flex-end"
+        :current-page="query.current"
+        v-model:page-size="query.size"
+        :total="total"
+        @current-change="onPage"
+      />
     </el-card>
 
     <!-- 新建/编辑申请（仅 DRAFT） -->
@@ -182,6 +186,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api/scm/partner-onboarding'
@@ -189,7 +194,7 @@ import * as api from '@/api/scm/partner-onboarding'
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = reactive({ current: 1, size: 10, status: '', keyword: '' })
+const query = reactive({ current: 1, size: 20, status: '', keyword: '' })
 
 const formVisible = ref(false)
 const form = reactive({

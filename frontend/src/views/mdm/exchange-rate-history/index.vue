@@ -11,9 +11,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-        title="历史保留（FR-4.1-3-4 / BR-4.1-18）：本页只读，已发生业务按当时生效汇率核算，历史不可篡改。"
-        description="区间历史链按 币对×类型 展示完整 append-only 区间；版本时间线为跨记录快照流水，支持任意两版本对比与按历史值预填维护。" />
+      <PageInfo title="历史保留（FR-4.1-3-4 / BR-4.1-18）：本页只读，已发生业务按当时生效汇率核算，历史不可篡改。" description="区间历史链按 币对×类型 展示完整 append-only 区间；版本时间线为跨记录快照流水，支持任意两版本对比与按历史值预填维护。" style="margin-bottom: 12px;" />
 
       <!-- ========== Tab1 区间历史链 ========== -->
       <template v-if="tab === 'sequence'">
@@ -134,8 +132,12 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-          :total="tlTotal" :page-size="tlQuery.size" :current-change="loadHistory" />
+                <AppPagination
+          style="margin-top: 12px; justify-content: flex-end;"
+          :total="tlTotal"
+          v-model:page-size="tlQuery.size"
+          @current-change="loadHistory"
+        />
       </template>
     </el-card>
 
@@ -186,6 +188,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -247,7 +251,7 @@ async function loadSequence() {
 }
 
 // ---------- 版本时间线 ----------
-const tlQuery = ref({ rateType: '', opType: '', keyword: '', current: 1, size: 10 })
+const tlQuery = ref({ rateType: '', opType: '', keyword: '', current: 1, size: 20 })
 const tlRows = ref([])
 const tlTotal = ref(0)
 const tlLoaded = ref(false)

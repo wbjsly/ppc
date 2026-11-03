@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.5.1 订单创建"
-              description="单价由价格协议自动带出（客户专属 > 量价阶梯 > 时间促销），无协议阻断建单；付款条件与客户协议不一致须销售主管确认；计划发货晚于客户期望交期自动标记「交期待确认」。" />
+    <PageInfo title="3.5.1 订单创建" description="单价由价格协议自动带出（客户专属 > 量价阶梯 > 时间促销），无协议阻断建单；付款条件与客户协议不一致须销售主管确认；计划发货晚于客户期望交期自动标记「交期待确认」。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -179,6 +177,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

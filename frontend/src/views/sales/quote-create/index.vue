@@ -1,10 +1,6 @@
 <template>
   <div class="qc-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="报价创建（3.2.1）"
-      description="由商机入口创建（引用商机编号）；三类协议取价「专属 > 阶梯 > 时间」，无协议 L1 阻断；MOQ 行级拒绝（样品单豁免）；试算出毛利后再提交审批（小额高毛利自动发布）。"
-    />
+    <PageInfo title="报价创建（3.2.1）" description="由商机入口创建（引用商机编号）；三类协议取价「专属 > 阶梯 > 时间」，无协议 L1 阻断；MOQ 行级拒绝（样品单豁免）；试算出毛利后再提交审批（小额高毛利自动发布）。" style="margin-bottom: 12px;" />
 
     <el-row :gutter="12">
       <!-- ============ 左：草稿列表 ============ -->
@@ -40,9 +36,14 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination small style="margin-top: 10px; justify-content: flex-end;"
-            v-model:current-page="query.current" :page-size="10" :total="total"
-            layout="prev, pager, next" @current-change="loadList" />
+                    <AppPagination
+            small
+            style="margin-top: 10px; justify-content: flex-end;"
+            v-model:current-page="query.current"
+            :total="total"
+            @current-change="loadList"
+            v-model:page-size="query.size"
+          />
         </el-card>
       </el-col>
 
@@ -198,6 +199,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -213,7 +216,7 @@ const route = useRoute()
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = reactive({ current: 1, keyword: '' })
+const query = reactive({size: 20, current: 1, keyword: '' })
 
 const form = reactive({
   id: '', oppId: '', customerId: '', customerCode: '', customerName: '',
@@ -249,7 +252,7 @@ async function loadList(page) {
   if (page) query.current = page
   loading.value = true
   try {
-    const res = await getQuotesApi({ current: query.current, size: 10, keyword: query.keyword })
+    const res = await getQuotesApi({ current: query.current, size: query.size, keyword: query.keyword })
     rows.value = res.data.records
     total.value = res.data.total
   } finally {

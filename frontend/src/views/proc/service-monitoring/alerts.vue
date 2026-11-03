@@ -12,8 +12,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 10px;"
-        title="升级链：同一指标连续 3 次 Critical → 自动升级接口运维主管 + 30 分钟响应计时（ESCALATION_RESPONSE_MIN）→ 超时未响应逐级升级供应链协同管理员并留痕（BR-4.9-28）" />
+      <PageInfo title="升级链：同一指标连续 3 次 Critical → 自动升级接口运维主管 + 30 分钟响应计时（ESCALATION_RESPONSE_MIN）→ 超时未响应逐级升级供应链协同管理员并留痕（BR-4.9-28）" style="margin-bottom: 10px;" />
       <div class="hint" style="margin-bottom: 10px;">
         告警确认/响应回执已收口至「事件订阅 12.2.4 告警处理」，本页为升级链只读视图。
       </div>
@@ -69,14 +68,20 @@
           <template #default="{ row }">{{ row.respondedBy || '—' }}</template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="q.current" :page-size="q.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="q.current"
+        v-model:page-size="q.size"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { getAlertsApi } from '@/api/proc/service-monitoring'
 

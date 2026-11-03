@@ -56,8 +56,12 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-          :total="logTotal" :page-size="logQuery.size" :current-change="loadLogs" />
+                <AppPagination
+          style="margin-top: 12px; justify-content: flex-end;"
+          :total="logTotal"
+          v-model:page-size="logQuery.size"
+          @current-change="loadLogs"
+        />
       </template>
 
       <!-- ============ Tab2 发起合并 ============ -->
@@ -163,6 +167,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -177,7 +182,7 @@ const saving = ref(false)
 // ---------- 合并日志 ----------
 const logs = ref([])
 const logTotal = ref(0)
-const logQuery = ref({ keyword: '', current: 1, size: 10 })
+const logQuery = ref({ keyword: '', current: 1, size: 20 })
 
 async function loadLogs(page) {
   if (page) logQuery.value.current = page

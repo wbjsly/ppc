@@ -136,8 +136,12 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total" :page-size="20" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:page-size="ordSize"
+        @current-change="loadOrders"
+      />
     </el-card>
 
     <!-- 派单对话框 -->
@@ -218,6 +222,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as api from '@/api/pm/service-order'
@@ -272,7 +277,11 @@ async function loadCustomers() {
 }
 
 async function loadOrders() {
+const ordCurrent = ref(1)
+const ordSize = ref(20)
   const { data } = await api.orderPage({
+    current: ordCurrent.value,
+    size: ordSize.value,
     status: filters.value.status || '', level: filters.value.level ?? '',
     keyword: filters.value.keyword || ''
   })

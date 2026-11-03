@@ -2,8 +2,7 @@
   <div>
     <PdaShell :title="'移动审批 · ' + tabTitle" :scan="false" @sync="doSync">
       <!-- 签审双因子提示（BR-4.11-45：密码二次确认 + 终端注册态） -->
-      <el-alert type="info" :closable="false" style="margin-bottom:8px"
-                :title="`签审双因子：密码二次确认${webAuthn ? ' + WebAuthn 生物识别可用' : '（WebAuthn 不可用，密码必选）'}`" />
+      <PageInfo title="`签审双因子：密码二次确认${webAuthn ? ' + WebAuthn 生物识别可用' : '（WebAuthn 不可用，密码必选）'}`" style="margin-bottom:8px" />
 
       <el-table :data="filtered" size="small" v-loading="loading">
         <el-table-column prop="title" label="待办" show-overflow-tooltip />
@@ -44,6 +43,7 @@
  * 13.7.2 异常审批（拆分自原移动审批操作台）：异常待办聚合 + 双因子签审。
  * 待办/签审弹窗态/结果条见 useApproval.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import PdaShell from '../_pda/PdaShell.vue'

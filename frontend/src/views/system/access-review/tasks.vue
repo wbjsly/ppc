@@ -6,8 +6,7 @@
       <el-button type="danger" plain :loading="generating" @click="doGenerate">手动生成季度任务</el-button>
       <el-button type="warning" plain @click="doSweep">逾期升级扫描（BR-5.6-10）</el-button>
     </div>
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px"
-      title="风险分层：特权/敏感账号 100% 人工复核；普通账号仅基线偏离进清单；基线内自动通过。完成时限 10 个工作日。" />
+    <PageInfo title="风险分层：特权/敏感账号 100% 人工复核；普通账号仅基线偏离进清单；基线内自动通过。完成时限 10 个工作日。" style="margin-bottom: 10px" />
     <el-table :data="tasks" v-loading="taskLoading" border stripe>
       <el-table-column prop="cycleTag" label="周期" width="110" />
       <el-table-column label="截止时间" width="170" :formatter="(_, r) => fmtTime(r.dueAt)" />
@@ -46,6 +45,7 @@
  * 「快照/判定」入口设置共享任务并加载快照明细（原为切到快照 tab，tab 栏移除后
  * 由用户进入快照比对页查看，选中任务与明细为共享单例状态）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api/system/access-review'

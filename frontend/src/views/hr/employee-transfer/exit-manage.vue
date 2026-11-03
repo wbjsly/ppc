@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="openApply">发起离职</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="四类交接（资产归还联动 EAM 卡片回写 / 权限移交联动账号禁用 / 知识文档 / 在办工作）全齐才放行离场凭证；未满通知期 L4 提示不阻断" />
+      <PageInfo title="四类交接（资产归还联动 EAM 卡片回写 / 权限移交联动账号禁用 / 知识文档 / 在办工作）全齐才放行离场凭证；未满通知期 L4 提示不阻断" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="exitNo" label="离职单号" width="120" />
@@ -129,6 +128,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { exitApply, exitStartApproval, exitChecklist, exitAssetsReturn, exitAccountHandover,

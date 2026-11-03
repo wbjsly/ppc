@@ -71,8 +71,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="total"
-                     :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        :total="total"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
       <div class="hint mt12">
         告警计算（5 分钟聚合去重、连续 3 次 Critical 升级链）与响应计时由 interface-sla-monitoring 承接，
         本页为聚合展示 + 确认收口；确认后 5 分钟聚合窗口内不再重复推送。
@@ -83,6 +88,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getAlertsApi, respondAlertApi, collectSlaApi, getDeliveryStatsApi } from '@/api/proc/event-subscription'

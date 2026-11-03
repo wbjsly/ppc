@@ -1,10 +1,6 @@
 <template>
   <div class="cc-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="信用检查（3.3.1）"
-      description="可用额度 = 信用额度（含有效临时额度）− 应收余额 − 未清 SO 预占 − 本次订单 − 寄售占用（BR-4.3-13）；附账龄超比（>20% 需审批）与近 12 个月付款及时率判定。"
-    />
+    <PageInfo title="信用检查（3.3.1）" description="可用额度 = 信用额度（含有效临时额度）− 应收余额 − 未清 SO 预占 − 本次订单 − 寄售占用（BR-4.3-13）；附账龄超比（>20% 需审批）与近 12 个月付款及时率判定。" style="margin-bottom: 12px;" />
 
     <!-- 检查执行 -->
     <el-card style="margin-bottom: 12px;">
@@ -98,14 +94,21 @@
         </el-table-column>
         <el-table-column prop="reason" label="原因" min-width="200" show-overflow-tooltip />
       </el-table>
-      <el-pagination small style="margin-top: 10px; justify-content: flex-end;"
-        v-model:current-page="checkPage" :page-size="10" :total="checkTotal"
-        layout="total, prev, pager, next" @current-change="loadChecks" />
+            <AppPagination
+        small
+        style="margin-top: 10px; justify-content: flex-end;"
+        v-model:current-page="checkPage"
+        :total="checkTotal"
+        @current-change="loadChecks"
+        v-model:page-size="pageSize"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { checkCreditApi, getChecksApi } from '@/api/sd/credit'
@@ -123,6 +126,7 @@ const checks = ref([])
 const checksLoading = ref(false)
 const checkTotal = ref(0)
 const checkPage = ref(1)
+const pageSize = ref(20)
 const filterResult = ref('')
 
 onMounted(() => {
@@ -159,7 +163,7 @@ async function loadChecks(page) {
   if (page) checkPage.value = page
   checksLoading.value = true
   try {
-    const res = await getChecksApi({ current: checkPage.value, size: 10, result: filterResult.value || '' })
+    const res = await getChecksApi({ current: checkPage.value, size: pageSize.value, result: filterResult.value || '' })
     checks.value = res.data.records || []
     checkTotal.value = res.data.total
   } finally {

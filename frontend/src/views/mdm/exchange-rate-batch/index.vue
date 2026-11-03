@@ -9,8 +9,7 @@
       </template>
 
       <!-- ① 模板区 -->
-      <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-        title="载体说明：支持 CSV 文件上传或直接粘贴表格文本（Excel 单元格复制）；单批 ≤ 500 行；逐行校验按行发布（BR-4.1-19）。" />
+      <PageInfo title="载体说明：支持 CSV 文件上传或直接粘贴表格文本（Excel 单元格复制）；单批 ≤ 500 行；逐行校验按行发布（BR-4.1-19）。" style="margin-bottom: 12px;" />
       <div class="toolbar">
         <el-button @click="downloadTemplate">下载模板 CSV</el-button>
         <el-upload :auto-upload="false" :show-file-list="false" accept=".csv,text/csv"
@@ -92,6 +91,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

@@ -30,8 +30,12 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top: 10px" layout="total, prev, pager, next"
-                   :total="evtTotal" :page-size="20" @current-change="loadEvents" />
+        <AppPagination
+      style="margin-top: 10px"
+      :total="evtTotal"
+      @current-change="loadEvents"
+      v-model:page-size="evtSize"
+    />
 
     <el-drawer v-model="payloadVisible" title="事件载荷" size="50%">
       <pre class="payload-pre">{{ payloadJson }}</pre>
@@ -40,6 +44,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 1.8.1 变更事件台账（拆分自原事件同步操作台）：outbox MDM 视图查询与载荷查看。
  */
@@ -61,9 +66,10 @@ const payloadVisible = ref(false)
 const payloadJson = ref('')
 
 async function loadEvents(page) {
+const evtSize = ref(20)
   evtLoading.value = true
   try {
-    const r = await getEventsApi({ type: evtType.value || undefined, entityId: evtEntity.value || undefined, page, size: 20 })
+    const r = await getEventsApi({ type: evtType.value || undefined, entityId: evtEntity.value || undefined, page, size: evtSize.value })
     events.value = r.data.rows || []
     evtTotal.value = r.data.total || 0
   } finally {

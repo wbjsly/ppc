@@ -59,13 +59,18 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-      layout="total, prev, pager, next" :total="total" :page-size="20"
-      :current-page="filters.current" @current-change="p => { filters.current = p; load() }" />
+        <AppPagination
+      style="margin-top: 10px; justify-content: flex-end;"
+      :total="total"
+      :current-page="filters.current"
+      @current-change="p => { filters.current = p; load() }"
+      v-model:page-size="filters.size"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPickDiffsApi, closePickDiffApi } from '@/api/inv/pick'
@@ -78,7 +83,7 @@ const canWh = roles.includes('ROLE_ADMIN') || roles.includes('ROLE_WAREHOUSE')
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const filters = reactive({ current: 1, status: 'PENDING', kind: '', docNo: '', itemCode: '' })
+const filters = reactive({size: 20, current: 1, status: 'PENDING', kind: '', docNo: '', itemCode: '' })
 const pendingCnt = computed(() =>
   rows.value.filter(r => r.status === 'PENDING').length)
 
@@ -92,7 +97,7 @@ async function load() {
   loading.value = true
   try {
     const res = await getPickDiffsApi({
-      current: filters.current, size: 20,
+      current: filters.current, size: filters.size,
       status: filters.status || undefined,
       kind: filters.kind || undefined,
       docNo: filters.docNo || undefined,

@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.3.2 口径变更 ==================== -->
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px"
-              title="变更两段式治理：申请 → 数据治理单签 → 灰度（旧版仍生效）→ 切换确认（数据治理+业务负责人双审 C-4.10-08，超 0.5% 容差须治理复核备注）" />
+    <PageInfo title="变更两段式治理：申请 → 数据治理单签 → 灰度（旧版仍生效）→ 切换确认（数据治理+业务负责人双审 C-4.10-08，超 0.5% 容差须治理复核备注）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-select v-model="changeMetricKey" filterable placeholder="选择已发布指标" style="width: 260px"
                  @change="loadChangeView">
@@ -126,6 +125,7 @@
  * 14.3.2 口径变更（拆分自原口径字典操作台）：两段式变更申请 / 灰度切换双审 / 血缘影响报告。
  * 已发布指标下拉的数据见 useMetricDict.js（口径定义页登记/发布后同一份列表）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

@@ -49,8 +49,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="total"
-                     :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        :total="total"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
       <div class="hint mt12">
         推送由 PO 审批通过自动触发（事务性发件箱 <code>PROC.PO_PUSHED</code>，幂等键 PO编号#PUSH:v版本，
         发布失败回滚 PO 状态）；确认侧动作（催办/确认/协商/工单）→ 12.5.2。
@@ -83,14 +88,19 @@
           <template #default="{ row }">{{ summarize(row.payload) }}</template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="ledgerTotal"
-                     :page-size="ledgerQuery.size" :current-page="ledgerQuery.current"
-                     @current-change="onLedgerPage" />
+            <AppPagination
+        class="mt12"
+        :total="ledgerTotal"
+        v-model:page-size="ledgerQuery.size"
+        :current-page="ledgerQuery.current"
+        @current-change="onLedgerPage"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { getPoCoopPageApi, getPushLedgerApi } from '@/api/proc/po-collaboration-console'
 

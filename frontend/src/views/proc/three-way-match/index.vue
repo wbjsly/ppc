@@ -1,8 +1,6 @@
 <template>
   <div class="tm-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="三方匹配（2.7.2）：PO - 收货单 - 发票逐行比对（容差 TOLERANCE_DEFAULT = 0.5%）"
-      description="容差内自动冲回暂估并生成正式应付凭证（借 应付暂估 + 采购价差 / 贷 应付账款）；超容差冻结生成异常对账单，采购员确认后过账价差；跨期（发票月份早于当前月）确认后仍须 ADMIN 手工过账。未关联 PO 的发票仅登记留存，不入匹配。" />
+    <PageInfo title="三方匹配（2.7.2）：PO - 收货单 - 发票逐行比对（容差 TOLERANCE_DEFAULT = 0.5%）" description="容差内自动冲回暂估并生成正式应付凭证（借 应付暂估 + 采购价差 / 贷 应付账款）；超容差冻结生成异常对账单，采购员确认后过账价差；跨期（发票月份早于当前月）确认后仍须 ADMIN 手工过账。未关联 PO 的发票仅登记留存，不入匹配。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -113,9 +111,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 发票登记对话框 -->
@@ -203,6 +205,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -227,7 +231,7 @@ const suppliers = ref([])
 const poCandidates = ref([])
 const poLines = ref([])
 const dateRange = ref([])
-const filters = reactive({ status: '', supplierId: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', supplierId: '', keyword: '', current: 1, size: 20 })
 
 const createVisible = ref(false)
 const form = reactive({ invoiceNo: '', supplierId: '', invoiceDate: '', poId: '', poNo: '', remark: '', lines: [] })

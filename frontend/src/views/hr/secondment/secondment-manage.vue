@@ -10,8 +10,7 @@
           </div>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        :title="type === 'DISPATCH'
+      <PageInfo title="type === 'DISPATCH'
           ? '外派=主体永久转移：生效写回法人主体/合同/缴纳地 + 社保减员增员双单；补贴按属地×职级标准带出（可改，差异审批可见）'
           : '借调=劳动关系不变：主档零改动，单据落用工主体/成本中心/分摊比例（双方确认后锁定）；协议编号必填，到期前 15 天提醒，逾期未返岗 L1 阻断分摊'" />
 
@@ -202,6 +201,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

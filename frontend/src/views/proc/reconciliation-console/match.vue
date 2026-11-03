@@ -75,9 +75,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 登记对账单 -->
@@ -166,6 +170,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -187,7 +192,7 @@ const submitting = ref(false)
 const rows = ref([])
 const total = ref(0)
 const suppliers = ref([])
-const filters = reactive({ supplierId: '', status: '', current: 1, size: 10 })
+const filters = reactive({ supplierId: '', status: '', current: 1, size: 20 })
 
 const ST_TEXT = { ACCEPTED: '容差内', EXCEPTION: '差异冻结', CLOSED: '双签关闭' }
 const ST_TAG = { ACCEPTED: 'success', EXCEPTION: 'danger', CLOSED: 'info' }

@@ -1,8 +1,6 @@
 <template>
   <div class="acc-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="账号管理（16.1）— 账号生命周期"
-      description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" />
+    <PageInfo title="账号管理（16.1）— 账号生命周期" description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" style="margin-bottom: 12px;" />
     <el-alert type="warning" :closable="false" style="margin-bottom: 10px;"
       title="HR 建档审批通过后自动建号（首次登录强制改密）；下方为未建号员工的人工兜底入口" />
     <el-form inline size="mini">
@@ -38,6 +36,7 @@
  * 16.1.1 入职开通（拆分自原账号管理操作台）：人工建号（幂等）+ 待改密员工列表。
  * 共享账号列表与加载见 useAccounts.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as acct from '@/api/system/account'

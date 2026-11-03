@@ -47,8 +47,13 @@
         <el-table-column prop="errCode" label="错误码" min-width="180" show-overflow-tooltip />
         <el-table-column prop="reqId" label="X-Request-Id" width="240" show-overflow-tooltip />
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="detailTotal"
-                     :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        :total="detailTotal"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
       <div class="hint mt12">
         数据源为调用审计台账（<code>erp_intf_call_log</code>），无独立日志。
         Key/Secret 错误与凭证吊销/过期在审计同码（UNAUTHENTICATED）合并为「凭证认证失败」；
@@ -100,6 +105,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { getAuthRejectionsApi, getCredentialsApi } from '@/api/proc/interface-call-console'
 

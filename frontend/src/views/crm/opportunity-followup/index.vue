@@ -1,10 +1,6 @@
 <template>
   <div class="opp-fu-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="商机跟进（3.1.3）"
-      description="5 阶段推进每次须审批（销售经理节点，通过前停在原阶段）；阶段概率/下一步行动/日期必填；同阶段停留超 30 天标超期；跟进记录仅追加；丢失归档须原因分类+说明。"
-    />
+    <PageInfo title="商机跟进（3.1.3）" description="5 阶段推进每次须审批（销售经理节点，通过前停在原阶段）；阶段概率/下一步行动/日期必填；同阶段停留超 30 天标超期；跟进记录仅追加；丢失归档须原因分类+说明。" style="margin-bottom: 12px;" />
 
     <el-row :gutter="12">
       <!-- ============ 左：商机列表 ============ -->
@@ -32,9 +28,14 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination small style="margin-top: 10px; justify-content: flex-end;"
-            v-model:current-page="pageNo" :page-size="10" :total="total"
-            layout="prev, pager, next" @current-change="loadList" />
+                    <AppPagination
+            small
+            style="margin-top: 10px; justify-content: flex-end;"
+            v-model:current-page="pageNo"
+            :total="total"
+            @current-change="loadList"
+            v-model:page-size="pageSize"
+          />
         </el-card>
       </el-col>
 
@@ -198,6 +199,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -223,6 +226,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const pageNo = ref(1)
+const pageSize = ref(20)
 const keyword = ref('')
 const current = ref(null)
 const logs = ref([])
@@ -242,7 +246,7 @@ async function loadList(page) {
   if (page) pageNo.value = page
   loading.value = true
   try {
-    const res = await getOpportunitiesApi({ current: pageNo.value, size: 10, keyword: keyword.value })
+    const res = await getOpportunitiesApi({ current: pageNo.value, size: pageSize.value, keyword: keyword.value })
     rows.value = res.data.records
     total.value = res.data.total
     // 保持选中态

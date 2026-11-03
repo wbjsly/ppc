@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="凭证管理（15.3）：签发、轮换提醒、紧急吊销、泄露追溯"
-      description="复用 api-credential-management。Secret 仅签发时一次性展示；紧急吊销 3 秒生效（BR-5.5-15），限 ADMIN。" />
+    <PageInfo title="凭证管理（15.3）：签发、轮换提醒、紧急吊销、泄露追溯" description="复用 api-credential-management。Secret 仅签发时一次性展示；紧急吊销 3 秒生效（BR-5.5-15），限 ADMIN。" style="margin-bottom:12px" />
 
     <!-- 15.3.3 紧急吊销 -->
     <el-table :data="creds" border size="small">
@@ -32,6 +30,7 @@
  * 15.3.3 紧急吊销（拆分自原凭证管理操作台）：凭证吊销。
  * 共享状态见 useCredentials.js，状态标签映射见 credential-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { revokeCredentialApi } from '@/api/proc/interface-integration'

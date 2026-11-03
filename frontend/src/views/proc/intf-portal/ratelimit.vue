@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="限流熔断（15.5）：令牌桶限流、熔断降级、配额档位、灰度切流量"
-      description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" />
+    <PageInfo title="限流熔断（15.5）：令牌桶限流、熔断降级、配额档位、灰度切流量" description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" style="margin-bottom:12px" />
 
     <!-- 15.5.1 令牌限流 -->
     <el-table :data="channels" border size="small">
@@ -32,6 +30,7 @@
  * 15.5.1 令牌限流（拆分自原限流熔断操作台）：限流档位调整。
  * 共享状态与调档动作见 useChannels.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useChannels } from './useChannels'
 

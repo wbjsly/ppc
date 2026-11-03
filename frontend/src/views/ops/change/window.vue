@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px"
-              title="启动校验：窗口内且剩余时间 ≥ (预计+回滚)×1.5 分钟方可启动（BR-5.8-06）" />
+    <PageInfo title="启动校验：窗口内且剩余时间 ≥ (预计+回滚)×1.5 分钟方可启动（BR-5.8-06）" style="margin-bottom: 10px" />
     <el-table :data="approvable" border size="small">
       <el-table-column prop="ticketNo" label="单号" width="180" />
       <el-table-column prop="title" label="标题" />
@@ -22,6 +21,7 @@
  * 18.1.3 窗口发布（拆分自原变更管理操作台）：待审批/可启动变更的审批与启动。
  * 列表数据来自 useChange.js，操作后刷新共享列表。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { approveChangeApi, startChangeApi } from '@/api/ops/ops-sla'

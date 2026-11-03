@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="界面渲染（17.6）：动态切换、缺失回退"
-      description="BR-5.7-04 切换 500ms 内无需重启；BR-5.7-05 缺失键回退 zh-CN+视觉标记+批量埋点；BR-5.7-06 加载异常整体回退。" />
+    <PageInfo title="界面渲染（17.6）：动态切换、缺失回退" description="BR-5.7-04 切换 500ms 内无需重启；BR-5.7-05 缺失键回退 zh-CN+视觉标记+批量埋点；BR-5.7-06 加载异常整体回退。" style="margin-bottom:12px" />
 
     <!-- 17.6.1 动态切换 -->
     <el-form inline size="small">
@@ -40,6 +38,7 @@
  * 17.6.1 动态切换（拆分自原界面渲染页）：语种切换耗时 / 实时文案预览。
  * 当前语种、键值数据与源语映射共享状态见 useRender.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { LOCALES, setLocale } from '@/i18n'

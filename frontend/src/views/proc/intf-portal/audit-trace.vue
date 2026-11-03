@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="调用审计（15.7）：审计日志、调用追踪 Trace"
-      description="复用 interface-call-console。审计写入失败 fail-closed 阻断业务调用（BR-5.5-11）；保留 ≥ AUDIT_RETENTION_DAYS。" />
+    <PageInfo title="调用审计（15.7）：审计日志、调用追踪 Trace" description="复用 interface-call-console。审计写入失败 fail-closed 阻断业务调用（BR-5.5-11）；保留 ≥ AUDIT_RETENTION_DAYS。" style="margin-bottom:12px" />
 
     <!-- 15.7.2 调用追踪 -->
     <el-form inline size="small" @submit.prevent>
@@ -37,6 +35,7 @@
  * 注：文件名取 audit-trace.vue 而非 manifest 的 trace.vue——与 CredentialPage
  * 15.3.4 的 trace.vue 在同目录重名，须回写 split-manifest.md。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getTraceApi } from '@/api/proc/interface-call-console'

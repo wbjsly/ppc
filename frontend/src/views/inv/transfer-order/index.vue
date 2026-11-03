@@ -58,8 +58,15 @@
           </el-table-column>
         </el-table>
         <el-empty v-if="!loading && rows.length === 0" description="暂无调拨单" />
-        <el-pagination v-if="total > 0" class="pager" background layout="total, prev, pager, next"
-          :total="total" :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+                <AppPagination
+          v-if="total > 0"
+          class="pager"
+          background
+          :total="total"
+          v-model:page-size="query.size"
+          :current-page="query.current"
+          @current-change="onPage"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab 2：内部往来（F2） ============ -->
@@ -253,6 +260,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

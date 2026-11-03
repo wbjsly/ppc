@@ -28,10 +28,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="outQuery.current" v-model:page-size="outQuery.size"
-      :total="outTotal" layout="total, prev, pager, next" @change="loadOutDocs"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="outQuery.current"
+      v-model:page-size="outQuery.size"
+      :total="outTotal"
+      @current-change="loadOutDocs"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-alert type="info" :closable="false" show-icon style="margin-top:8px"
       title="付款过账：借 应付账款 / 贷 银行存款（余额不足 L1 阻断 C-4.6-10）；超审批金额阻断 C-4.6-09；预付单（PREPAY）凭证借 1123。" />
 
@@ -73,6 +76,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.4.2 付款执行（拆分自原收付管理多 tab 页，design D1）。
  * 共享状态见 useCollection.js；详情抽屉见 _parts/CashDocDetailDrawer.vue。

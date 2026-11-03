@@ -9,8 +9,7 @@
       </div>
     </div>
 
-    <el-alert type="info" :closable="false" class="mb8"
-      title="税基 = 当年累计利润总额（总账 6xxx 取数）+ 手工纳税调整项汇总；应补退 = 累计应纳 − 已预缴（负值归零不退）。不做纳税调整明细（偏差记录）" />
+    <PageInfo title="税基 = 当年累计利润总额（总账 6xxx 取数）+ 手工纳税调整项汇总；应补退 = 累计应纳 − 已预缴（负值归零不退）。不做纳税调整明细（偏差记录）" />
 
     <el-table :data="rows" size="small" border>
       <el-table-column prop="returnNo" label="申报单号" width="180" />
@@ -72,6 +71,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taxGenerateCit, taxSubmit, taxRegister, taxPage } from '@/api/fin/tax-filing'

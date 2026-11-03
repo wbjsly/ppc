@@ -50,9 +50,14 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:8px;text-align:right" background layout="total, prev, pager, next"
-      :total="reports.total" :page-size="reports.size" :current-page="reports.page"
-      @current-change="loadReports" />
+        <AppPagination
+      style="margin-top:8px;text-align:right"
+      background
+      :total="reports.total"
+      v-model:page-size="reports.size"
+      :current-page="reports.page"
+      @current-change="loadReports"
+    />
 
     <!-- 指标详情抽屉 -->
     <el-drawer v-model="detailDrawer" :title="`SLA 指标详情（${current.period || ''}）`" size="640px">
@@ -83,6 +88,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.9.1 月度报告（拆分自原 SLA 报告操作台）：报告台账 / 按月生成 / 上月补缺 / 指标详情。
  * 共享月度报告列表见 useSlaReport.js（归档发布页操作后亦刷新该列表）。

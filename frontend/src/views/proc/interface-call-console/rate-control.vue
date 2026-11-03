@@ -95,8 +95,13 @@
         <el-table-column prop="operator" label="操作者" width="130" />
         <el-table-column prop="triggerReason" label="触发原因" min-width="240" show-overflow-tooltip />
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="historyTotal"
-                     :page-size="historySize" :current-page="historyPage" @current-change="onHistoryPage" />
+            <AppPagination
+        class="mt12"
+        :total="historyTotal"
+        v-model:page-size="historySize"
+        :current-page="historyPage"
+        @current-change="onHistoryPage"
+      />
     </el-card>
 
     <!-- 限流参数只读 -->
@@ -120,6 +125,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { getRateOverviewApi, getRateTrendApi, getTierChangesApi } from '@/api/proc/interface-call-console'
 import * as echarts from 'echarts/core'
@@ -137,7 +143,7 @@ const trendTotal = ref(0)
 const history = ref([])
 const historyTotal = ref(0)
 const historyPage = ref(1)
-const historySize = 20
+const historySize = ref(20)
 const historyCaller = ref('')
 const chartEl = ref(null)
 let chart = null
@@ -171,7 +177,7 @@ async function loadTrend() {
 }
 
 async function loadHistory() {
-  const params = { current: historyPage.value, size: historySize }
+  const params = { current: historyPage.value, size: historySize.value }
   if (historyCaller.value) params.caller = historyCaller.value
   const res = await getTierChangesApi(params)
   history.value = res.data?.records || []

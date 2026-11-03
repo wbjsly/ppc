@@ -39,10 +39,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="rcQuery.current" v-model:page-size="rcQuery.size"
-      :total="rcTotal" layout="total, prev, pager, next" @change="loadReceipts"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="rcQuery.current"
+      v-model:page-size="rcQuery.size"
+      :total="rcTotal"
+      @current-change="loadReceipts"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-alert type="info" :closable="false" show-icon style="margin-top:8px"
       title="逐笔对账：账户+方向+金额相等±3 天自动匹配；已对账单据禁冲销（须先解除匹配）。流水数据源为 M8-7 银行对账预留。" />
 
@@ -99,6 +102,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.4.3 回单对账（/m/8.4.3、/m/8.7.1 流水导入、/m/8.7.2 自动比对 同指本页）。
  * 拆分自原收付管理多 tab 页（design D1）；收付列表刷新复用 useCollection.js 单例。
@@ -113,7 +117,7 @@ import { useCollection } from './useCollection'
 
 const { loadInDocs, loadOutDocs } = useCollection()
 
-const rcQuery = ref({ current: 1, size: 10, keyword: '', matchStatus: '' })
+const rcQuery = ref({ current: 1, size: 20, keyword: '', matchStatus: '' })
 const rcRows = ref([])
 const rcTotal = ref(0)
 const rcDialogVisible = ref(false)

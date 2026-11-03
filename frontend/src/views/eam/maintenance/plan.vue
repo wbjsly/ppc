@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="点检保养（7.3.1）：维护计划 → 批量生成计划工单（幂等/停机顺延）→ 执行 → 关闭成本归集"
-      description="关键设备计划须设备主管审批；人工成本 = 工时 × SysParam 岗位费率（缺参标待调整，不阻断关闭）。" />
+    <PageInfo title="点检保养（7.3.1）：维护计划 → 批量生成计划工单（幂等/停机顺延）→ 执行 → 关闭成本归集" description="关键设备计划须设备主管审批；人工成本 = 工时 × SysParam 岗位费率（缺参标待调整，不阻断关闭）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -129,6 +127,7 @@
  * 7.3.1 点检保养（拆分自原运维管理操作台）：维护计划 CRUD/审批、计划工单生成与执行闭环。
  * 共享状态与工单动作见 useMaintenance.js；执行记录对话框为两页共用 _parts/ExecDialog.vue。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import {
   loading, saving, generating, planRows, planWoRows, planVisible, planForm, genResult,

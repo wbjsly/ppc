@@ -1,8 +1,6 @@
 <template>
   <div class="spc-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="SPC 过程控制（6.10）：采样组录入 → 控制限（≥25 组 X̄±3σ / 不足按规格折算标「预控制」）→ 三规则告警"
-      description="R1 超控制限 / R2 连续 7 点同侧 / R3 连续 7 点单调；同特性同规则只开一条 OPEN 告警；告警处置闭环。" />
+    <PageInfo title="SPC 过程控制（6.10）：采样组录入 → 控制限（≥25 组 X̄±3σ / 不足按规格折算标「预控制」）→ 三规则告警" description="R1 超控制限 / R2 连续 7 点同侧 / R3 连续 7 点单调；同特性同规则只开一条 OPEN 告警；告警处置闭环。" style="margin-bottom: 12px;" />
 
     <el-row :gutter="12">
       <!-- 左：采样录入 + 趋势 -->
@@ -181,6 +179,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { recordSampleApi, samplesApi, alertsApi, handleAlertApi, trendsApi } from '@/api/qms/spc'

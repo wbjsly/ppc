@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.9.3 返利兑现（执行方式与凭证）"
-              description="审批通过的结算单支持两种执行方式：应付冲抵（FIFO 自动关联客户未清应收，余额不足阻断）与现金兑现登记；客户确认的兑现方式留痕；执行完成生成结算凭证（借 6601 销售费用 / 贷 1122 应收账款或 1002 银行存款）并更新客户应收余额（FR-4.3-8-5/6）。" />
+    <PageInfo title="3.9.3 返利兑现（执行方式与凭证）" description="审批通过的结算单支持两种执行方式：应付冲抵（FIFO 自动关联客户未清应收，余额不足阻断）与现金兑现登记；客户确认的兑现方式留痕；执行完成生成结算凭证（借 6601 销售费用 / 贷 1122 应收账款或 1002 银行存款）并更新客户应收余额（FR-4.3-8-5/6）。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="6" v-for="k in kpis" :key="k.label">
@@ -172,6 +170,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSettlementsApi, getSettlementDetailApi, executeSettlementApi } from '@/api/sd/rebate'

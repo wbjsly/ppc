@@ -1,10 +1,6 @@
 <template>
   <div class="qm-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="毛利测算（3.2.2）"
-      description="毛利率 =（报价金额 − 标准成本 × 数量）/ 报价金额；0 ≤ 毛利率 < MIN_MARGIN_RATE 须二次确认（留痕确认人与时间，不构成价格授权）；负毛利锁定待审批，销售主管与财务会签，释放前禁止转化 SO。"
-    />
+    <PageInfo title="毛利测算（3.2.2）" description="毛利率 =（报价金额 − 标准成本 × 数量）/ 报价金额；0 ≤ 毛利率 < MIN_MARGIN_RATE 须二次确认（留痕确认人与时间，不构成价格授权）；负毛利锁定待审批，销售主管与财务会签，释放前禁止转化 SO。" style="margin-bottom: 12px;" />
 
     <!-- 阈值卡 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">
@@ -104,9 +100,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="query.current" :page-size="10" :total="total"
-        layout="total, prev, pager, next" @current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="query.current"
+        :total="total"
+        @current-change="loadData"
+        v-model:page-size="query.size"
+      />
     </el-card>
 
     <!-- 毛利明细对话框 -->
@@ -167,6 +167,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
@@ -178,7 +180,7 @@ import request from '@/utils/request'
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = reactive({ current: 1, keyword: '' })
+const query = reactive({size: 20, current: 1, keyword: '' })
 const filter = ref('')
 const minMargin = ref(0.05)
 
@@ -204,7 +206,7 @@ async function loadData(page) {
   if (page) query.current = page
   loading.value = true
   try {
-    const res = await getQuotesApi({ current: query.current, size: 10, keyword: query.keyword })
+    const res = await getQuotesApi({ current: query.current, size: query.size, keyword: query.keyword })
     rows.value = res.data.records
     total.value = res.data.total
   } finally {

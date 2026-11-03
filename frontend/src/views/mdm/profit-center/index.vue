@@ -48,12 +48,11 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
+            <AppPagination
         style="margin-top: 14px; justify-content: flex-end;"
-        layout="total, prev, pager, next"
         :total="total"
-        :page-size="query.size"
-        :current-change="loadData"
+        v-model:page-size="query.size"
+        @current-change="loadData"
       />
     </el-card>
 
@@ -144,6 +143,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
@@ -160,7 +160,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ current: 1, size: 10, keyword: '', legalEntityId: '', status: '' })
+const query = ref({ current: 1, size: 20, keyword: '', legalEntityId: '', status: '' })
 const legalEntities = ref([])
 
 const formVisible = ref(false)

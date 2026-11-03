@@ -104,13 +104,19 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="detailTotal"
-                     :page-size="detail.size" :current-page="detail.current" @current-change="onDetailPage" />
+            <AppPagination
+        class="mt12"
+        :total="detailTotal"
+        v-model:page-size="detail.size"
+        :current-page="detail.current"
+        @current-change="onDetailPage"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getTraceApi, getAuditAggregatesApi, getCallLogsApi } from '@/api/proc/interface-call-console'

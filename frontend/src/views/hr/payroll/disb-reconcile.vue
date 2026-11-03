@@ -8,8 +8,7 @@
           <el-button type="primary" @click="loadAll">查询</el-button>
         </div>
       </div>
-      <el-alert type="info" :closable="false" style="margin-bottom:12px"
-                title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" />
+      <PageInfo title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" style="margin-bottom:12px" />
 
       <el-descriptions v-if="board" :column="4" border style="margin-bottom:12px">
         <el-descriptions-item label="批次状态">{{ board.runStatus }}</el-descriptions-item>
@@ -86,6 +85,7 @@
  * 10.6.3 回单对账（拆分自原薪酬发放操作台）：登记回单 / 逐笔对账 / 差异处理与 L2 审批 / 归档锁定。
  * 共享状态见 useDisbursement.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { disbRegisterReceipt, disbReconcile, disbResolveDiff, disbApproveDiff, disbArchive } from '@/api/hr/payroll'

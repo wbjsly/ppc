@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="接口对接（2.8.3）：开放入口真实生效的签名 / 时间戳 / 限流 / 熔断 / 审计，事件投递与 EDI 四级校验、接入治理与 SLA 月报"
-      description="凭证紧急吊销、生产放行会签、SLA 报告归档与发布、限流降档与解除熔断四类高危动作仅管理员可执行（C-0-03 发起人≠复核人）；接口运维角色可读可处置但无高危按钮。" />
+    <PageInfo title="接口对接（2.8.3）：开放入口真实生效的签名 / 时间戳 / 限流 / 熔断 / 审计，事件投递与 EDI 四级校验、接入治理与 SLA 月报" description="凭证紧急吊销、生产放行会签、SLA 报告归档与发布、限流降档与解除熔断四类高危动作仅管理员可执行（C-0-03 发起人≠复核人）；接口运维角色可读可处置但无高危按钮。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== Tab1 运行总览 ==================== -->
@@ -425,6 +423,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'

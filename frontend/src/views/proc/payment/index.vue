@@ -1,8 +1,6 @@
 <template>
   <div class="pay-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-      title="付款管理（2.7.3）：对账冻结 → 申请 → 分级审批 → 排期 → 执行 → 付款凭证 → FIFO 核销"
-      description="C-4.2-15 对账差异超 0.5% 冻结付款须采购员+财务双签；付款按金额三级审批（≤5万 PM / ≤50万 +财务主管 / >50万 +总经理）；执行付款与排期仅 ADMIN；预付款受 C-4.2-13 双 L1 约束，发票过账后自动按最早未核销顺序冲抵应付。" />
+    <PageInfo title="付款管理（2.7.3）：对账冻结 → 申请 → 分级审批 → 排期 → 执行 → 付款凭证 → FIFO 核销" description="C-4.2-15 对账差异超 0.5% 冻结付款须采购员+财务双签；付款按金额三级审批（≤5万 PM / ≤50万 +财务主管 / >50万 +总经理）；执行付款与排期仅 ADMIN；预付款受 C-4.2-13 双 L1 约束，发票过账后自动按最早未核销顺序冲抵应付。" style="margin-bottom: 10px;" />
 
     <el-tabs v-model="tab" @tab-change="onTab">
 
@@ -60,10 +58,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="stmtTotal"
-          v-model:current-page="stmtFilters.current" :page-size="stmtFilters.size"
-          @current-change="loadStatements" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="stmtTotal"
+          v-model:current-page="stmtFilters.current"
+          v-model:page-size="stmtFilters.size"
+          @current-change="loadStatements"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab2 付款申请 ============ -->
@@ -140,10 +141,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="reqTotal"
-          v-model:current-page="reqFilters.current" :page-size="reqFilters.size"
-          @current-change="loadRequests" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="reqTotal"
+          v-model:current-page="reqFilters.current"
+          v-model:page-size="reqFilters.size"
+          @current-change="loadRequests"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab3 排期与执行 ============ -->
@@ -217,10 +221,13 @@
           <el-table-column prop="paymentId" label="付款单 ID" min-width="170" show-overflow-tooltip />
           <el-table-column prop="createDate" label="记录时间" width="165" />
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="woTotal"
-          v-model:current-page="woFilters.current" :page-size="woFilters.size"
-          @current-change="loadWriteoffs" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="woTotal"
+          v-model:current-page="woFilters.current"
+          v-model:page-size="woFilters.size"
+          @current-change="loadWriteoffs"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab5 预付款 ============ -->
@@ -279,10 +286,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="ppTotal"
-          v-model:current-page="ppFilters.current" :page-size="ppFilters.size"
-          @current-change="loadPrepayments" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="ppTotal"
+          v-model:current-page="ppFilters.current"
+          v-model:page-size="ppFilters.size"
+          @current-change="loadPrepayments"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -481,6 +491,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -543,7 +555,7 @@ function onTab(name) {
 // ---------------- Tab1 对账单（登记/双签已收口至 12.6.1/12.6.2，本页只读） ----------------
 const stmtRows = ref([])
 const stmtTotal = ref(0)
-const stmtFilters = reactive({ supplierId: '', status: '', current: 1, size: 10 })
+const stmtFilters = reactive({ supplierId: '', status: '', current: 1, size: 20 })
 
 async function loadStatements() {
   loading.value = true
@@ -561,7 +573,7 @@ async function loadStatements() {
 // ---------------- Tab2 付款申请 ----------------
 const reqRows = ref([])
 const reqTotal = ref(0)
-const reqFilters = reactive({ supplierId: '', status: '', keyword: '', current: 1, size: 10 })
+const reqFilters = reactive({ supplierId: '', status: '', keyword: '', current: 1, size: 20 })
 const reqVisible = ref(false)
 const reqForm = reactive({ supplierId: '', supplierName: '', applyAmount: 0, invoiceIds: [], remark: '' })
 const reqInvoices = ref([])
@@ -751,7 +763,7 @@ async function submitExecute() {
 // ---------------- Tab4 核销记录 ----------------
 const woRows = ref([])
 const woTotal = ref(0)
-const woFilters = reactive({ kind: 'PAYMENT', invoiceNo: '', current: 1, size: 10 })
+const woFilters = reactive({ kind: 'PAYMENT', invoiceNo: '', current: 1, size: 20 })
 
 async function loadWriteoffs() {
   loading.value = true
@@ -769,7 +781,7 @@ async function loadWriteoffs() {
 // ---------------- Tab5 预付款 ----------------
 const ppRows = ref([])
 const ppTotal = ref(0)
-const ppFilters = reactive({ current: 1, size: 10 })
+const ppFilters = reactive({ current: 1, size: 20 })
 const cleanupTodos = ref([])
 const settlePoNo = ref('')
 const ppVisible = ref(false)

@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="变动处理（7.2.2）：政策变更下期生效不追溯 / 减值次月重算（BR-4.13-14/15）"
-      description="政策变更/减值均单签 ROLE_FIN_ASSET；冲回为整单全冲（红冲凭证+台账回滚+放行重提）。" />
+    <PageInfo title="变动处理（7.2.2）：政策变更下期生效不追溯 / 减值次月重算（BR-4.13-14/15）" description="政策变更/减值均单签 ROLE_FIN_ASSET；冲回为整单全冲（红冲凭证+台账回滚+放行重提）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -116,6 +114,7 @@
  * 7.2.2 变动处理（拆分自原折旧管理操作台）：政策变更 / 减值 / 变动单审批。
  * 共享角色与格式化见 useDepRoles.js、dep-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getChangePageApi, changePolicyApi, impairmentApi, approveChangeApi, rejectChangeApi } from '@/api/eam/depreciation'

@@ -8,8 +8,7 @@
           <el-button type="primary" @click="loadAll">查询</el-button>
         </div>
       </div>
-      <el-alert type="info" :closable="false" style="margin-bottom:12px"
-                title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" />
+      <PageInfo title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" style="margin-bottom:12px" />
 
       <el-descriptions v-if="board" :column="4" border style="margin-bottom:12px">
         <el-descriptions-item label="批次状态">{{ board.runStatus }}</el-descriptions-item>
@@ -42,6 +41,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 /**
  * 10.6.1 代发文件（拆分自原薪酬发放操作台）：生成代发文件 / 下载（网银上传）/ 作废。
  * 共享状态见 useDisbursement.js。

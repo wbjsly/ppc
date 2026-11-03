@@ -15,7 +15,7 @@ import {
  */
 
 // ---------- 科目（8.1.1 列表 / 8.1.2 录入页下拉）----------
-const accQuery = reactive({ current: 1, size: 50, keyword: '', status: '' })
+const accQuery = reactive({ current: 1, size: 20, keyword: '', status: '' })
 const accRows = ref([])
 const accTotal = ref(0)
 const accOptions = ref([])

@@ -1,8 +1,6 @@
 <template>
   <div class="rv-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="红字凭证（2.6.3）：已出库退货的红字入库凭证台账（只读）——凭证号 RV + 退货单 + 供应商 + 物料明细 + 出库追溯"
-      description="数据来源：2.6.1 质量退货与 2.6.2 其他退货出库动作自动生成（BR-4.2-34）；本台账仅归集查询，不提供编辑或作废。应付冲减为 4.6 财务域桩（D4）。" />
+    <PageInfo title="红字凭证（2.6.3）：已出库退货的红字入库凭证台账（只读）——凭证号 RV + 退货单 + 供应商 + 物料明细 + 出库追溯" description="数据来源：2.6.1 质量退货与 2.6.2 其他退货出库动作自动生成（BR-4.2-34）；本台账仅归集查询，不提供编辑或作废。应付冲减为 4.6 财务域桩（D4）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -63,14 +61,20 @@
         <el-table-column prop="outDate" label="出库时间" width="165" />
         <el-table-column prop="outBy" label="出库人" width="110" />
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getRedVoucherPageApi } from '@/api/proc/red-voucher'
@@ -80,7 +84,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const dateRange = ref([])
-const filters = reactive({ redDocNo: '', returnNo: '', sourceType: '', current: 1, size: 10 })
+const filters = reactive({ redDocNo: '', returnNo: '', sourceType: '', current: 1, size: 20 })
 
 async function load() {
   loading.value = true

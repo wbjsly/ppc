@@ -44,10 +44,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="pvPageQuery.current" v-model:page-size="pvPageQuery.size"
-      :total="pvTotal" layout="total, prev, pager, next" @change="loadProvisions"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="pvPageQuery.current"
+      v-model:page-size="pvPageQuery.size"
+      :total="pvTotal"
+      @current-change="loadProvisions"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-dialog v-model="pvDetailVisible" title="计提台账明细（六段快照）" width="640">
       <el-table :data="pvDetailSegs" border size="small">
         <el-table-column prop="bucket" label="账龄段" width="140" />
@@ -60,6 +63,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.2.3 坏账计提（拆分自原应收管理多 tab 页，design D1）。
  * 本页独有逻辑，无跨页共享状态（D2：无共享未抽）。

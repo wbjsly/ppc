@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="openSubmit">发起转正</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="超期未评价：每日扫描自动按期转正（留痕「系统默认转正」）；延期须法定上限内（L1）；终止衔接离职流程" />
+      <PageInfo title="超期未评价：每日扫描自动按期转正（留痕「系统默认转正」）；延期须法定上限内（L1）；终止衔接离职流程" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="trfNo" label="单号" width="120" />
@@ -76,6 +75,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { trfList, probationSubmit, probationHrReview, empList } from '@/api/hr/employee-archive'

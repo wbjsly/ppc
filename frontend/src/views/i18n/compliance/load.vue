@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="本地合规（17.5）：字段扩展、格式校验、字段加载"
-      description="引擎+复用既有列（决策5）：包定义/正则规则集中配置禁硬编码（BR-5.7-13）；字段挂 TAXPAYER_NO 等既有列；注册地→包映射（17.5.3）。" />
+    <PageInfo title="本地合规（17.5）：字段扩展、格式校验、字段加载" description="引擎+复用既有列（决策5）：包定义/正则规则集中配置禁硬编码（BR-5.7-13）；字段挂 TAXPAYER_NO 等既有列；注册地→包映射（17.5.3）。" style="margin-bottom:12px" />
 
     <!-- 17.5.3 字段加载 -->
     <el-form inline size="small">
@@ -33,6 +31,7 @@
  * 17.5.3 字段加载（拆分自原本地合规页）：按注册地加载字段清单。
  * 与字段扩展、格式校验页无共享状态（design D2：单页逻辑留页内）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref } from 'vue'
 import { loadComplianceApi } from '@/api/i18n/i18n'
 

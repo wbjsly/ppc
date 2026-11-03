@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.5.2 订单审批"
-              description="金额三档：<10 万自动确认免审；中额销售经理单节点；>200 万销售经理→销售总监。链尾两类加签：低毛利持特批单→财务复核；改价行→价格变更复核。审批通过自动确认并生成批次预留（锁不足整体回滚）。" />
+    <PageInfo title="3.5.2 订单审批" description="金额三档：<10 万自动确认免审；中额销售经理单节点；>200 万销售经理→销售总监。链尾两类加签：低毛利持特批单→财务复核；改价行→价格变更复核。审批通过自动确认并生成批次预留（锁不足整体回滚）。" />
 
     <!-- 档位参数 -->
     <el-row :gutter="12" class="mb12">
@@ -151,6 +149,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

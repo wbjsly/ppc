@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="备件领用（7.3.3）：关联工单领料，超清单须说明（BR-17）；走库存 MAINT 领料单扣减"
-      description="关闭前置（BR-20）：未过账领料/未回填工时/未闭子工单/外协未传验收单 → 阻断并列清单。" />
+    <PageInfo title="备件领用（7.3.3）：关联工单领料，超清单须说明（BR-17）；走库存 MAINT 领料单扣减" description="关闭前置（BR-20）：未过账领料/未回填工时/未闭子工单/外协未传验收单 → 阻断并列清单。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -59,6 +57,7 @@
  * 7.3.3 备件领用（拆分自原运维管理操作台）：按工单查询领料行、发起 MAINT 领料。
  * 共享状态见 useMaintenance.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import {
   saving, spareWoNo, issueRows, spareVisible, spareLines, spareOverReason,

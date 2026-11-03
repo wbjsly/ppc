@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="11.11.1 合同签订"
-              description="从商机生成合同草稿（自动带出名称、客户与预期金额，CT_NO 生成后锁定）；合同金额与商机预期差异 >10% 走 L2 审批（销售经理→销售总监）后进法务审核；法务审核占位：审核人与意见必填，驳回退回修改并注明原因（FR-4.8-1-7）。" />
+    <PageInfo title="11.11.1 合同签订" description="从商机生成合同草稿（自动带出名称、客户与预期金额，CT_NO 生成后锁定）；合同金额与商机预期差异 >10% 走 L2 审批（销售经理→销售总监）后进法务审核；法务审核占位：审核人与意见必填，驳回退回修改并注明原因（FR-4.8-1-7）。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="6" v-for="k in kpis" :key="k.label">
@@ -267,6 +265,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

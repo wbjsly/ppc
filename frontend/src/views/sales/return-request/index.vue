@@ -1,8 +1,8 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.10.1 退货申请"
-              description="按 SO 行发起退货：退货数量不得超过该行已发可退余量（已发 − 已退）；按开票状态自动分流——未开票走「未开票退货」、已开票走「已开票退货」（判定通过后要求红字发票）；客户拒收自动带入原发货单（FR-4.3-68 关联原 SO，BR-4.3-68）。" />
+    <PageInfo
+      title="3.10.1 退货申请"
+      description="按 SO 行发起退货：退货数量不得超过该行已发可退余量（已发 − 已退）；按开票状态自动分流——未开票走「未开票退货」、已开票走「已开票退货」（判定通过后要求红字发票）；客户拒收自动带入原发货单（FR-4.3-68 关联原 SO，BR-4.3-68）。" />
 
     <el-row :gutter="12" class="mb12">
       <!-- 发起申请 -->
@@ -227,6 +227,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ElMessage } from 'element-plus'
 import {
   getReturnablesApi, createReturnApi, getReturnsApi, getReturnDetailApi, cancelReturnApi

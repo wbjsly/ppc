@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.11.1 框架订单（销售框架协议）"
-              description="协议编号系统生成且创建后不可改；行级三量跟踪：剩余可下达 = 总量 − 已下达、剩余可发 = 已下达 − 已发；下达超总量 / 发货超已下达以 L1 硬阻断（C-4.3-10）；总量调整、单价重谈与提前终止须经销售总监 L2 审批（S-4.3-11），调减不得低于已发量、终止冻结后续发货。协议与销售合同（11.11）为两个独立对象（D11）。" />
+    <PageInfo title="3.11.1 框架订单（销售框架协议）" description="协议编号系统生成且创建后不可改；行级三量跟踪：剩余可下达 = 总量 − 已下达、剩余可发 = 已下达 − 已发；下达超总量 / 发货超已下达以 L1 硬阻断（C-4.3-10）；总量调整、单价重谈与提前终止须经销售总监 L2 审批（S-4.3-11），调减不得低于已发量、终止冻结后续发货。协议与销售合同（11.11）为两个独立对象（D11）。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="6" v-for="k in kpis" :key="k.label">
@@ -287,6 +285,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

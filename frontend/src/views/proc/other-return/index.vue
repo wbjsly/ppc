@@ -1,8 +1,6 @@
 <template>
   <div class="rt-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="其他退货（2.6.2）：非质量退货——供应商发错货 / 多发货 / 到货后发现质量问题，采购员按 PO 发起（自动带出原入库凭证与单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪"
-      description="BR-4.2-32：已入库退货必须关联原 PO 与原入库单，金额由系统按原入库单价自动计算（单价只读）；BR-4.2-34：非质量退货不打绩效扣分（PERF=0）。" />
+    <PageInfo title="其他退货（2.6.2）：非质量退货——供应商发错货 / 多发货 / 到货后发现质量问题，采购员按 PO 发起（自动带出原入库凭证与单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="BR-4.2-32：已入库退货必须关联原 PO 与原入库单，金额由系统按原入库单价自动计算（单价只读）；BR-4.2-34：非质量退货不打绩效扣分（PERF=0）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -78,9 +76,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情 -->
@@ -213,6 +215,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -245,7 +249,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 // 来源固定 MANUAL（spec other-return：本页仅非质量退货）
-const filters = reactive({ status: '', reasonType: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', reasonType: '', keyword: '', current: 1, size: 20 })
 
 async function load() {
   loading.value = true

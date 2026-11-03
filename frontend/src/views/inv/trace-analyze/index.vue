@@ -1,8 +1,7 @@
 <template>
   <div class="page">
     <!-- 发起表单（三索引，FR-4.4-8-1） -->
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="批次追溯（4.13.1）：批次号/序列号/供应商批次号三索引发起 → 五类流向自动物化 → 批量冻结 / 在途拦截 / 召回登记。发起与登记为质量动作，冻结执行复用 4.9 质量冻结链。" />
+    <PageInfo title="批次追溯（4.13.1）：批次号/序列号/供应商批次号三索引发起 → 五类流向自动物化 → 批量冻结 / 在途拦截 / 召回登记。发起与登记为质量动作，冻结执行复用 4.9 质量冻结链。" style="margin-bottom: 8px" />
     <el-form inline @submit.prevent>
       <el-form-item label="索引类型">
         <el-select v-model="form.indexType" style="width: 150px">
@@ -45,8 +44,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination class="pager" layout="total, prev, pager, next" :total="total"
-      :page-size="size" :current-page="current" @current-change="loadPage" />
+        <AppPagination
+      class="pager"
+      :total="total"
+      v-model:page-size="size"
+      :current-page="current"
+      @current-change="loadPage"
+    />
 
     <!-- 详情抽屉：五类流向 + 动作 + 审计 -->
     <el-drawer v-model="drawer" :title="`${current2?.traceNo || ''} 追溯详情`" size="72%">
@@ -156,6 +160,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -171,7 +177,7 @@ const form = ref({ indexType: 'BATCH', indexValue: '', defectReason: '' })
 const rows = ref([])
 const total = ref(0)
 const current = ref(1)
-const size = 20
+const size = ref(20)
 const loading = ref(false)
 const analyzing = ref(false)
 const acting = ref(false)
@@ -192,7 +198,7 @@ async function loadPage(p = 1) {
   current.value = p
   loading.value = true
   try {
-    const res = await getTracesApi({ current: p, size })
+    const res = await getTracesApi({ current: p, size: size.value })
     rows.value = res.data.records || []
     total.value = Number(res.data.total || 0)
   } finally {

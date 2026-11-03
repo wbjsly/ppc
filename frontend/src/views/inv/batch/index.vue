@@ -1,10 +1,6 @@
 <template>
   <div class="batch-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="批号管理（4.2.1）"
-      description="批次号系统生成（B+年月日+-+4位流水）或手工录入，同物料唯一且创建后不可改；批次管理物料有效期至必填。有效期至为 FIFO/效期预警的数据源。"
-    />
+    <PageInfo title="批号管理（4.2.1）" description="批次号系统生成（B+年月日+-+4位流水）或手工录入，同物料唯一且创建后不可改；批次管理物料有效期至必填。有效期至为 FIFO/效期预警的数据源。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -95,6 +91,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'

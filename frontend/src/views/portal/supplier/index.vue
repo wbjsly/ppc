@@ -53,8 +53,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="poTotal"
-          :page-size="poFilters.size" v-model:current-page="poFilters.current" @current-change="loadPos" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="poTotal"
+          v-model:page-size="poFilters.size"
+          v-model:current-page="poFilters.current"
+          @current-change="loadPos"
+        />
       </el-tab-pane>
 
       <!-- ============ 我的 ASN ============ -->
@@ -87,8 +92,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="asnTotal"
-          :page-size="20" v-model:current-page="asnPage" @current-change="loadAsns" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="asnTotal"
+          v-model:current-page="asnPage"
+          @current-change="loadAsns"
+          v-model:page-size="asnSize"
+        />
       </el-tab-pane>
 
       <!-- ============ 我的 VMI ============ -->
@@ -552,6 +562,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -655,6 +666,7 @@ async function submitChange() {
 const asnRows = ref([])
 const asnTotal = ref(0)
 const asnPage = ref(1)
+const asnSize = ref(20)
 const asnDlg = ref(false)
 const asnCreateDlg = ref(false)
 const currentAsn = ref({})
@@ -665,7 +677,7 @@ const asnForm = reactive({ poId: '', expectArrival: '', logisticsNo: '', lines: 
 async function loadAsns() {
   loading.value = true
   try {
-    const { data } = await getMyAsnsApi({ current: asnPage.value, size: 20 })
+    const { data } = await getMyAsnsApi({ current: asnPage.value, size: asnSize.value })
     asnRows.value = data.records || []
     asnTotal.value = Number(data.total) || 0
   } finally {

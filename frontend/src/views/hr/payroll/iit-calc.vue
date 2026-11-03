@@ -10,8 +10,7 @@
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
-      <el-alert type="info" :closable="false" style="margin-bottom:12px"
-                title="累计预扣法：本期税 = 累计应纳税所得额×预扣率 - 速算扣除数 - 累计已预扣；专项附加扣除由员工自助端维护+HR 代维护；税务系统实时同步为留桩（本期手工录入）" />
+      <PageInfo title="累计预扣法：本期税 = 累计应纳税所得额×预扣率 - 速算扣除数 - 累计已预扣；专项附加扣除由员工自助端维护+HR 代维护；税务系统实时同步为留桩（本期手工录入）" style="margin-bottom:12px" />
       <el-tabs v-model="tab">
         <el-tab-pane label="税率表" name="rate">
           <el-table :data="taxTable" height="320">
@@ -75,6 +74,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { iitTaxTable, iitSpecialList, saveSpecialDeduction, bonusTaxCalc } from '@/api/hr/payroll'

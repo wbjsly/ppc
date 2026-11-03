@@ -54,8 +54,12 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-        :total="total" :page-size="query.size" :current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        :total="total"
+        v-model:page-size="query.size"
+        @current-change="loadData"
+      />
     </el-card>
 
     <!-- 创建/编辑弹窗 -->
@@ -166,6 +170,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -182,7 +187,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ status: '', keyword: '', current: 1, size: 10 })
+const query = ref({ status: '', keyword: '', current: 1, size: 20 })
 
 const statusNames = {
   PENDING_BUDGET: '待预算确认', PENDING_APPROVAL: '待审批', PENDING_MODIFY: '已驳回',

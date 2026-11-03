@@ -1,10 +1,6 @@
 <template>
   <div class="opp-cvt-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="商机转化（3.1.2）"
-      description="本页只提供可转化商机列表、卡控校验与跳转，不承载报价表单（BR-4.3-07）。点击「创建报价」时校验商机状态与客户状态：不通过 L1 阻断并把不可引用原因回写追踪记录；通过则带出商机与客户跳转 3.2.1。"
-    />
+    <PageInfo title="商机转化（3.1.2）" description="本页只提供可转化商机列表、卡控校验与跳转，不承载报价表单（BR-4.3-07）。点击「创建报价」时校验商机状态与客户状态：不通过 L1 阻断并把不可引用原因回写追踪记录；通过则带出商机与客户跳转 3.2.1。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -58,10 +54,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="query.current" v-model:page-size="query.size"
-        :total="total" :page-sizes="[10, 20, 50]"
-        layout="total, prev, pager, next" @current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="query.current"
+        v-model:page-size="query.size"
+        :total="total"
+        @current-change="loadData"
+      />
     </el-card>
 
     <!-- 校验结果（失败时展示阻断原因） -->
@@ -76,6 +75,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -96,7 +97,7 @@ const STAGE_ORDER = { REQUIREMENT: 0, DEMO: 1, NEGOTIATION: 2, QUOTE: 3, CONTRAC
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ current: 1, size: 10, keyword: '', stage: '' })
+const query = ref({ current: 1, size: 20, keyword: '', stage: '' })
 const blockVisible = ref(false)
 const blockReason = ref('')
 

@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="故障维修（7.3.2）：全员报修 → 工程师确认派工（BR-16 挂锁阻断）→ 双验收 → BR-19 大修评估"
-      description="安全停机挂锁解除限设备主管；同故障 12 月 ≥3 次触发大修/更换评估并冻结同类工单（BR-19）。" />
+    <PageInfo title="故障维修（7.3.2）：全员报修 → 工程师确认派工（BR-16 挂锁阻断）→ 双验收 → BR-19 大修评估" description="安全停机挂锁解除限设备主管；同故障 12 月 ≥3 次触发大修/更换评估并冻结同类工单（BR-19）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -220,6 +218,7 @@
  * 7.3.2 故障维修（拆分自原运维管理操作台）：全员报修、确认派工、维修工单执行闭环、
  * 安全停机挂锁与设备履历。共享状态与工单动作见 useMaintenance.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import {

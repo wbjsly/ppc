@@ -34,9 +34,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination layout="total, prev, pager, next" :total="accTotal"
-                   :page-size="accQuery.size" :current-page="accQuery.current"
-                   @current-change="onAccPage" style="margin-top:10px" />
+        <AppPagination
+      :total="accTotal"
+      v-model:page-size="accQuery.size"
+      :current-page="accQuery.current"
+      @current-change="onAccPage"
+      style="margin-top:10px"
+    />
 
     <!-- ============ 新增科目弹窗 ============ -->
     <el-dialog v-model="accCreateVisible" title="新增科目" width="480px">
@@ -73,6 +77,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.1.1 科目管理（拆分自原总账多 tab 页，design D1）。
  * 科目分页/ACTIVE 下拉为共享状态，见 useGl.js（凭证录入页辅助维度选择复用 accOptions）。

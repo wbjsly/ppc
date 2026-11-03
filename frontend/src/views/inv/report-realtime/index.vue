@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="实时查询（4.14.1）：库存位行明细视角（含库龄列）。四列口径计算与预留/冻结下钻见 4.3.1 可用库存查询。" />
+    <PageInfo title="实时查询（4.14.1）：库存位行明细视角（含库龄列）。四列口径计算与预留/冻结下钻见 4.3.1 可用库存查询。" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="仓库">
@@ -76,18 +75,25 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination class="pager" layout="total, prev, pager, next" :total="total"
-      :page-size="q.size" :current-page="q.current" @current-change="load" />
+        <AppPagination
+      class="pager"
+      :total="total"
+      v-model:page-size="q.size"
+      :current-page="q.current"
+      @current-change="load"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getRealtimeApi, downloadReportApi, submitBgExportApi } from '@/api/inv/report'
 import { getEnabledWarehousesApi } from '@/api/inv/warehouse'
 
-const q = reactive({ warehouseCode: '', itemCode: '', batchNo: '', keyword: '', abcClass: '', current: 1, size: 50 })
+const q = reactive({ warehouseCode: '', itemCode: '', batchNo: '', keyword: '', abcClass: '', current: 1, size: 20 })
 const rows = ref([])
 const total = ref(0)
 const totals = ref(null)

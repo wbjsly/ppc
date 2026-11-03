@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="服务报告（15.8）：接口 SLA 月度生成、归档发布"
-      description="复用 interface-sla-monitoring。四指标（可用率/P95/错误率/同步延迟）月度采集；未归档不得对外发布（BR-5.5-16 / C-5.5-04）。" />
+    <PageInfo title="服务报告（15.8）：接口 SLA 月度生成、归档发布" description="复用 interface-sla-monitoring。四指标（可用率/P95/错误率/同步延迟）月度采集；未归档不得对外发布（BR-5.5-16 / C-5.5-04）。" style="margin-bottom:12px" />
 
     <!-- 15.8.2 归档发布 -->
     <el-table :data="reports" border size="small">
@@ -34,6 +32,7 @@
  * 15.8.2 归档发布（拆分自原服务报告操作台）：归档 / 对外发布。
  * 共享状态见 useSla.js，状态标签映射见 sla-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { archiveReportApi, publishReportApi } from '@/api/proc/interface-integration'

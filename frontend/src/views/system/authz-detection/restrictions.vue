@@ -36,13 +36,19 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:8px;text-align:right" background layout="total, prev, pager, next"
-      :total="restrictions.total" :page-size="restrictions.size" :current-page="restrictions.page"
-      @current-change="loadRestrictions" />
+        <AppPagination
+      style="margin-top:8px;text-align:right"
+      background
+      :total="restrictions.total"
+      v-model:page-size="restrictions.size"
+      :current-page="restrictions.page"
+      @current-change="loadRestrictions"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.8.2 临时降权（拆分自原越权检测操作台）：降权名单 / 提前恢复 / 到期恢复扫描。
  * 提前恢复后同步刷新共享告警列表，见 useAuthzDetection.js。
@@ -57,7 +63,7 @@ const { alerts, loadAlerts } = useAuthzDetection()
 
 // ---------- 降权名单 ----------
 const restrictQuery = reactive({ status: 'ACTIVE' })
-const restrictions = reactive({ rows: [], total: 0, page: 1, size: 50, loading: false })
+const restrictions = reactive({ rows: [], total: 0, page: 1, size: 20, loading: false })
 const loadRestrictions = async (page) => {
   if (page) restrictions.page = page
   restrictions.loading = true

@@ -27,9 +27,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top: 12px" layout="total, prev, pager, next"
-      :total="roleTotal" :page-size="roleQuery.size" v-model:current-page="roleQuery.current"
-      @current-change="loadRoles" />
+        <AppPagination
+      style="margin-top: 12px"
+      :total="roleTotal"
+      v-model:page-size="roleQuery.size"
+      v-model:current-page="roleQuery.current"
+      @current-change="loadRoles"
+    />
 
     <!-- 新建 / 改名 角色对话框 -->
     <el-dialog v-model="roleDlg" :title="roleForm.id ? '改名 / 调整' : '新建角色'" width="460px">
@@ -53,6 +57,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.2.1 角色管理（拆分自原权限管理操作台）：角色台账 / 新建 / 改名 / 启停 / 删除。
  * 共享角色全量列表见 usePermission.js。

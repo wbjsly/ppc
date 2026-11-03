@@ -33,10 +33,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="inQuery.current" v-model:page-size="inQuery.size"
-      :total="inTotal" layout="total, prev, pager, next" @change="loadInDocs"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="inQuery.current"
+      v-model:page-size="inQuery.size"
+      :total="inTotal"
+      @current-change="loadInDocs"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-alert type="info" :closable="false" show-icon style="margin-top:8px"
       title="收款过账：借 银行存款 / 贷 应收账款（FIFO 核销合计）/ 贷 预收账款 2205（差额）；跨期核销自动挂财务主管审批（C-4.6-02）。" />
 
@@ -78,6 +81,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.4.1 收款执行（拆分自原收付管理多 tab 页，design D1）。
  * 共享状态见 useCollection.js；详情抽屉见 _parts/CashDocDetailDrawer.vue。

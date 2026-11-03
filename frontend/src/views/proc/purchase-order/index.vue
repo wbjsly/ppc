@@ -1,8 +1,6 @@
 <template>
   <div class="app-container">
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="采购订单（2.3.1~2.3.4，FR-4.2-3-1/2 / FR-4.2-9）"
-      description="三入口：从协议（带出锁定价、余量校验 S-4.2-03）/ RFQ 中选 / 手工。状态机 DRAFT→APPROVING→APPROVED(已下达)→CLOSED；三档分级审批（FR-4.2-3-2）；变更走版本快照与分级审批（BR-4.2-03/04/42）。绩效与库存水位模块未上线处显示占位（偏差 D3）。" />
+    <PageInfo title="采购订单（2.3.1~2.3.4，FR-4.2-3-1/2 / FR-4.2-9）" description="三入口：从协议（带出锁定价、余量校验 S-4.2-03）/ RFQ 中选 / 手工。状态机 DRAFT→APPROVING→APPROVED(已下达)→CLOSED；三档分级审批（FR-4.2-3-2）；变更走版本快照与分级审批（BR-4.2-03/04/42）。绩效与库存水位模块未上线处显示占位（偏差 D3）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ================= 2.3.1 订单创建 ================= -->
@@ -56,8 +54,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination background layout="total, prev, pager, next" :total="total"
-          v-model:current-page="filters.current" :page-size="filters.size" @current-change="loadOrders" />
+                <AppPagination
+          background
+          :total="total"
+          v-model:current-page="filters.current"
+          v-model:page-size="filters.size"
+          @current-change="loadOrders"
+        />
       </el-tab-pane>
 
       <!-- ================= 2.3.2 订单审批 ================= -->
@@ -351,6 +354,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -376,7 +381,7 @@ const loading = ref(false)
 const saving = ref(false)
 const orders = ref([])
 const total = ref(0)
-const filters = reactive({ current: 1, size: 10, status: '', source: '', keyword: '' })
+const filters = reactive({ current: 1, size: 20, status: '', source: '', keyword: '' })
 
 async function loadOrders() {
   loading.value = true

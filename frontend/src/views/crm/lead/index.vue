@@ -1,10 +1,6 @@
 <template>
   <div class="lead-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="线索录入（11.1.1）"
-      description="来源渠道为预设枚举；提交前按「公司名称 + 联系人」查重（重复仅提示可关联）；分配后 3 个工作日未跟进自动提醒，30 天未跟进自动回收线索池。"
-    />
+    <PageInfo title="线索录入（11.1.1）" description="来源渠道为预设枚举；提交前按「公司名称 + 联系人」查重（重复仅提示可关联）；分配后 3 个工作日未跟进自动提醒，30 天未跟进自动回收线索池。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== 线索列表 ==================== -->
@@ -82,9 +78,12 @@
             </el-table-column>
           </el-table>
 
-          <el-pagination style="margin-top: 14px; justify-content: flex-end;"
-                         layout="total, prev, pager, next" :total="total"
-                         :page-size="query.size" :current-change="loadData" />
+                    <AppPagination
+            style="margin-top: 14px; justify-content: flex-end;"
+            :total="total"
+            v-model:page-size="query.size"
+            @current-change="loadData"
+          />
         </el-card>
       </el-tab-pane>
 
@@ -237,6 +236,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Refresh } from '@element-plus/icons-vue'
@@ -265,7 +266,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ current: 1, size: 10, keyword: '', status: '', grade: '' })
+const query = ref({ current: 1, size: 20, keyword: '', status: '', grade: '' })
 
 const poolLoading = ref(false)
 const poolRows = ref([])

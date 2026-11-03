@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="报文网关（15.4）：四级校验、幂等判定、结果回执、死信处理"
-      description="复用 edi-message-processing。校验分传输/语法/映射/业务四级短路；重试 ≤3 次后转死信（BR-5.5-09）。" />
+    <PageInfo title="报文网关（15.4）：四级校验、幂等判定、结果回执、死信处理" description="复用 edi-message-processing。校验分传输/语法/映射/业务四级短路；重试 ≤3 次后转死信（BR-5.5-09）。" style="margin-bottom:12px" />
 
     <!-- 15.4.1 逐级校验 -->
     <el-table :data="msgs" border size="small">
@@ -32,6 +30,7 @@
  * 15.4.1 逐级校验（拆分自原报文网关操作台）：传输/语法/映射/业务四级校验结果。
  * 共享状态见 useMessages.js；校验结果标签为本页独有，留页内。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useMessages } from './useMessages'
 

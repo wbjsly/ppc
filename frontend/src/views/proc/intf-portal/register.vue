@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="接口目录（15.1）：契约登记、评审队列、语义化版本台账"
-      description="复用接入治理数据（interface-onboarding）。契约未登记/未发布不得签发生产凭证（BR-5.5-01）。" />
+    <PageInfo title="接口目录（15.1）：契约登记、评审队列、语义化版本台账" description="复用接入治理数据（interface-onboarding）。契约未登记/未发布不得签发生产凭证（BR-5.5-01）。" style="margin-bottom:12px" />
 
     <!-- 15.1.1 目录登记 -->
     <div class="tab-bar">
@@ -41,6 +39,7 @@
  * 15.1.1 目录登记（拆分自原接口目录操作台）：新建契约 / 契约台账。
  * 共享状态见 useDirectory.js，状态标签映射见 contract-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createContractApi } from '@/api/proc/interface-integration'

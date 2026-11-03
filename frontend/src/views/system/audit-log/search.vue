@@ -35,9 +35,14 @@
       <el-table-column prop="reason" label="说明" show-overflow-tooltip />
       <el-table-column prop="sourceIp" label="来源 IP" width="120" />
     </el-table>
-    <el-pagination style="margin-top:8px;text-align:right" background layout="total, prev, pager, next"
-      :total="logs.total" :page-size="logs.size" :current-page="logs.page"
-      @current-change="loadLogs" />
+        <AppPagination
+      style="margin-top:8px;text-align:right"
+      background
+      :total="logs.total"
+      v-model:page-size="logs.size"
+      :current-page="logs.page"
+      @current-change="loadLogs"
+    />
 
     <el-divider content-position="left">防篡改尝试记录（BR-5.6-13）</el-divider>
     <el-button size="small" @click="loadTamper">刷新尝试记录</el-button>
@@ -60,6 +65,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 16.7.1 日志检索（拆分自原审计日志操作台）：多条件日志查询 + 防篡改尝试记录。
  * 本页逻辑为单页独有，无跨页共享状态。
@@ -70,7 +76,7 @@ import { searchLogs, tamperList, tamperSweep } from '@/api/system/audit-log'
 
 // ---------- 日志检索 ----------
 const q = reactive({ changeBy: '', fieldName: '', empId: '', keyword: '', range: null })
-const logs = reactive({ rows: [], total: 0, page: 1, size: 50, loading: false })
+const logs = reactive({ rows: [], total: 0, page: 1, size: 20, loading: false })
 
 const loadLogs = async (page) => {
   if (page) logs.page = page

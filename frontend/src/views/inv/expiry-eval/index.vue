@@ -1,8 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="质量评估（4.10.3）：锁定批次处置——报废 / 让步放行 / 转质量冻结"
-      description="质量管理员对锁定批次手工发起；判定三分支：报废（生成报废单，质量经理签）→ 走 4.5.4；让步放行（必填放行有效期，质量经理签）→ 写豁免放行；转质量冻结（调 4.9 冻结链，即刻关闭）。解除锁定唯一入口=本页放行。" />
+    <PageInfo title="质量评估（4.10.3）：锁定批次处置——报废 / 让步放行 / 转质量冻结" description="质量管理员对锁定批次手工发起；判定三分支：报废（生成报废单，质量经理签）→ 走 4.5.4；让步放行（必填放行有效期，质量经理签）→ 写豁免放行；转质量冻结（调 4.9 冻结链，即刻关闭）。解除锁定唯一入口=本页放行。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- 评估单列表 -->
@@ -59,9 +57,13 @@
           </el-table-column>
         </el-table>
 
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="total" :page-size="filters.size"
-          :current-page="filters.current" @current-change="p => { filters.current = p; loadPage() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="total"
+          v-model:page-size="filters.size"
+          :current-page="filters.current"
+          @current-change="p => { filters.current = p; loadPage() }"
+        />
       </el-tab-pane>
 
       <!-- 待签（页内签署复用底座） -->
@@ -199,6 +201,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

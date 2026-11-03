@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.9.2 返利审批"
-              description="正常额度由销售主管单节点审批；超季度预算自动升级销售总监（L2，C-4.3-05），审批人须关注达成率真实性与返利金额合理性，审批意见必填；驳回 → 单据退回发起人调整返利方案后重新提交（FR-4.3-8-4）。" />
+    <PageInfo title="3.9.2 返利审批" description="正常额度由销售主管单节点审批；超季度预算自动升级销售总监（L2，C-4.3-05），审批人须关注达成率真实性与返利金额合理性，审批意见必填；驳回 → 单据退回发起人调整返利方案后重新提交（FR-4.3-8-4）。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="4" v-for="k in kpis" :key="k.label">
@@ -160,6 +158,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSettlementsApi, getSettlementDetailApi } from '@/api/sd/rebate'

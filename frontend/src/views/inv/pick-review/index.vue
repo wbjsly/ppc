@@ -1,8 +1,6 @@
 <template>
   <div class="pr-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="出库复核（4.7.3）：行级三分支——通过 / 数量品种差异 / 外观异常"
-      description="差异 → 任务挂 DIFF_PENDING 并锁过账（BR-4.4-29，闭环前 4.7.4 才能解锁）；外观异常 → 系统自动发起质量冻结申请（质量主管审批不省）+ 释放该批次预留（BR-4.4-30）。" />
+    <PageInfo title="出库复核（4.7.3）：行级三分支——通过 / 数量品种差异 / 外观异常" description="差异 → 任务挂 DIFF_PENDING 并锁过账（BR-4.4-29，闭环前 4.7.4 才能解锁）；外观异常 → 系统自动发起质量冻结申请（质量主管审批不省）+ 释放该批次预留（BR-4.4-30）。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="taskId" placeholder="选择任务（拣货完成/差异待处理）" filterable
@@ -57,6 +55,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

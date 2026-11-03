@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.1 导出申请 ==================== -->
-    <el-alert type="info" show-icon :closable="false" style="margin-bottom: 8px"
-              title="任一已发布模板可导出；>1 万行自动拦截并按行数分级审批（≤5万部门经理 / >5万部门总监），用途说明 ≥10 字；文件 AES-256 加密，下载链接 7 天有效" />
+    <PageInfo title="任一已发布模板可导出；>1 万行自动拦截并按行数分级审批（≤5万部门经理 / >5万部门总监），用途说明 ≥10 字；文件 AES-256 加密，下载链接 7 天有效" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="form.source" size="small" style="width: 130px">
@@ -74,6 +73,7 @@
  * 14.5.1 导出申请（拆分自原数据导出操作台）：导出提交 / 我的任务 / 加密下载。
  * 任务与超量审批单见 useExportConsole.js（水印标记页、超量审批页共用）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

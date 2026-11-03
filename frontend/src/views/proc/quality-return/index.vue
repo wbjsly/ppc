@@ -1,8 +1,6 @@
 <template>
   <div class="rt-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="质量退货（2.6.1）：NCR 评审选退货自动带出（PO/收货单/数量/PO 单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪"
-      description="本页仅管理 NCR 源质量退货；非质量退货（发错货/多发货等）已迁移至 2.6.2「其他退货」独立入口。未入库质检退货仅关联 PO 与收货单（BR-4.2-32 例外口），质量退货打绩效扣分标记（D4）。" />
+    <PageInfo title="质量退货（2.6.1）：NCR 评审选退货自动带出（PO/收货单/数量/PO 单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="本页仅管理 NCR 源质量退货；非质量退货（发错货/多发货等）已迁移至 2.6.2「其他退货」独立入口。未入库质检退货仅关联 PO 与收货单（BR-4.2-32 例外口），质量退货打绩效扣分标记（D4）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -71,9 +69,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情 -->
@@ -157,6 +159,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -182,7 +186,7 @@ const STATUS_TEXT = {
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const filters = reactive({ status: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', keyword: '', current: 1, size: 20 })
 
 async function load() {
   loading.value = true

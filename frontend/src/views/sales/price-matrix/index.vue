@@ -1,10 +1,6 @@
 <template>
   <div class="pm-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="价格矩阵（3.6.1）"
-      description="按客户 × SKU 展示最终取价结果：协议基准价 → 渠道/阶梯/促销三层折扣 → 叠加规则 → 最终生效价与命中来源。只读视图，数据来自协议试算与折扣引擎。"
-    />
+    <PageInfo title="价格矩阵（3.6.1）" description="按客户 × SKU 展示最终取价结果：协议基准价 → 渠道/阶梯/促销三层折扣 → 叠加规则 → 最终生效价与命中来源。只读视图，数据来自协议试算与折扣引擎。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -86,6 +82,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getMatrixApi } from '@/api/sd/pricing'

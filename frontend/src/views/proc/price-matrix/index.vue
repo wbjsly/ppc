@@ -5,9 +5,7 @@
       <span class="tip">2.2.4 · FR-4.2-2-2 四维矩阵 · BR-4.2-12 异常 · BR-4.2-14 双轨归档</span>
     </div>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="比价矩阵工作台（菜单 2.2.4，独立界面要素）"
-      description="单据矩阵：四维结构（价格/交付实算，质量维待 2.4/2.5 接入故锁定 0），权重可调、±20% 异常确认/剔除、谈判双轨、定标与快照归档集中本页；品类/供应商双透视为跨 RFQ 聚合视图。询价流程（创建/发送/报价录入）仍在 2.2.1。" />
+    <PageInfo title="比价矩阵工作台（菜单 2.2.4，独立界面要素）" description="单据矩阵：四维结构（价格/交付实算，质量维待 2.4/2.5 接入故锁定 0），权重可调、±20% 异常确认/剔除、谈判双轨、定标与快照归档集中本页；品类/供应商双透视为跨 RFQ 聚合视图。询价流程（创建/发送/报价录入）仍在 2.2.1。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="activeTab">
       <!-- ============ Tab1 单据矩阵 ============ -->
@@ -319,6 +317,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'

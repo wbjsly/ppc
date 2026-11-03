@@ -7,7 +7,7 @@ import { listReports } from '@/api/system/sla-report'
  * 等价原「同一组件被两条路由复用」的行为。
  */
 const query = reactive({ period: '', status: '' })
-const reports = reactive({ rows: [], total: 0, page: 1, size: 50, loading: false })
+const reports = reactive({ rows: [], total: 0, page: 1, size: 20, loading: false })
 
 const loadReports = async (page) => {
   if (page) reports.page = page

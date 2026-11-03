@@ -10,8 +10,7 @@
       <el-tabs v-model="tab">
         <!-- ============ 风险看板 ============ -->
         <el-tab-pane label="风险看板" name="dashboard">
-          <el-alert v-if="dash" :closable="false" type="info" show-icon class="mb8"
-            :title="`共 ${dash.count} 条信号（8 类信号聚合：本叶 3 类 + 跨叶只读 5 类，单源失败降级）`" />
+          <PageInfo title="`共 ${dash.count} 条信号（8 类信号聚合：本叶 3 类 + 跨叶只读 5 类，单源失败降级）`" v-if="dash" />
           <el-table :data="signals" size="small" border>
             <el-table-column prop="level" label="等级" width="70">
               <template #default="{ row }">
@@ -144,6 +143,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

@@ -1,8 +1,6 @@
 <template>
   <div class="mi-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="领料出库（4.5.2）：领料单 DRAFT → POSTED，FIFO 配批，可用量不足 422（spec material-issue）"
-      description="自有领料扣减可用库存；寄售（VMI）领用执行物权转移——生成《寄售转自有凭证》并按领用时点协议价生成应付暂估。创建/过账限 ADMIN 与仓库。" />
+    <PageInfo title="领料出库（4.5.2）：领料单 DRAFT → POSTED，FIFO 配批，可用量不足 422（spec material-issue）" description="自有领料扣减可用库存；寄售（VMI）领用执行物权转移——生成《寄售转自有凭证》并按领用时点协议价生成应付暂估。创建/过账限 ADMIN 与仓库。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="filters.issueType" placeholder="类型" clearable style="width: 130px;"
@@ -73,9 +71,13 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-      layout="total, prev, pager, next" :total="total" :page-size="10"
-      :current-page="filters.current" @current-change="p => { filters.current = p; load() }" />
+        <AppPagination
+      style="margin-top: 10px; justify-content: flex-end;"
+      :total="total"
+      :current-page="filters.current"
+      @current-change="p => { filters.current = p; load() }"
+      v-model:page-size="filters.size"
+    />
 
     <!-- 创建对话框 -->
     <el-dialog v-model="dialog" title="创建领料单（FIFO 配批）" width="760px" :close-on-click-modal="false">
@@ -161,6 +163,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -179,7 +183,7 @@ const submitting = ref(false)
 const rows = ref([])
 const total = ref(0)
 const suppliers = ref([])
-const filters = reactive({ current: 1, issueType: '', status: '', keyword: '' })
+const filters = reactive({size: 20, current: 1, issueType: '', status: '', keyword: '' })
 
 const dialog = ref(false)
 const form = reactive({ issueType: 'OWN', supplierId: '', workOrderNo: '', dept: '', purpose: '', itemCode: '', qty: 100 })
@@ -190,7 +194,7 @@ async function load() {
   loading.value = true
   try {
     const res = await getIssuePageApi({
-      current: filters.current, size: 10,
+      current: filters.current, size: filters.size,
       issueType: filters.issueType || undefined,
       status: filters.status || undefined,
       keyword: filters.keyword || undefined

@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="BR-4.14-05：申报数据须落在备案范围内，越界申报生成将被 422 阻断；BR-4.14-06：到期前 90 天预警续期，政策废止自动终止并评估补税风险" />
+      <PageInfo title="BR-4.14-05：申报数据须落在备案范围内，越界申报生成将被 422 阻断；BR-4.14-06：到期前 90 天预警续期，政策废止自动终止并评估补税风险" />
 
       <!-- 到期预警 / 冻结终止 -->
       <el-row :gutter="12" class="mb8">
@@ -100,6 +99,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { prefList, prefRegister, prefWarnings, prefRenew, prefFreeze, prefRevoke } from '@/api/fin/tax-risk-control'

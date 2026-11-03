@@ -1,10 +1,6 @@
 <template>
   <div class="opp-board">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="商机推进（11.1.3）"
-      description="CRM 管理视角看板：页顶漏斗/转化率/赢率自动统计（BR-4.8-09），待推进清单含超期与停留 30 天预警；推进/跟进/丢失等操作跳 3.1.3 商机跟进页执行，本页不重复承载操作表单。"
-    />
+    <PageInfo title="商机推进（11.1.3）" description="CRM 管理视角看板：页顶漏斗/转化率/赢率自动统计（BR-4.8-09），待推进清单含超期与停留 30 天预警；推进/跟进/丢失等操作跳 3.1.3 商机跟进页执行，本页不重复承载操作表单。" style="margin-bottom: 12px;" />
 
     <!-- ============ 页顶漏斗统计 ============ -->
     <el-row :gutter="12" style="margin-bottom: 12px;">
@@ -95,10 +91,10 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
+            <AppPagination
         style="margin-top: 12px; justify-content: flex-end;"
-        layout="total, prev, pager, next"
-        :total="total" :page-size="query.size"
+        :total="total"
+        v-model:page-size="query.size"
         @current-change="(p) => loadData(p)"
       />
     </el-card>
@@ -106,6 +102,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'

@@ -1,10 +1,6 @@
 <template>
   <div class="lead-score-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="线索评分（11.1.2）"
-      description="五维加权：需求 30% / 预算 25% / 决策链 20% / 紧迫 15% / 竞争 10%；每维 1-5 分，缺项按 0 分计并提示。等级 A≥80、B 60-79、C 40-59、D<40，D 级自动入线索池。"
-    />
+    <PageInfo title="线索评分（11.1.2）" description="五维加权：需求 30% / 预算 25% / 决策链 20% / 紧迫 15% / 竞争 10%；每维 1-5 分，缺项按 0 分计并提示。等级 A≥80、B 60-79、C 40-59、D<40，D 级自动入线索池。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== 评分与等级看板 ==================== -->
@@ -72,9 +68,12 @@
             </el-table-column>
           </el-table>
 
-          <el-pagination style="margin-top: 14px; justify-content: flex-end;"
-                         layout="total, prev, pager, next" :total="total"
-                         :page-size="query.size" :current-change="loadData" />
+                    <AppPagination
+            style="margin-top: 14px; justify-content: flex-end;"
+            :total="total"
+            v-model:page-size="query.size"
+            @current-change="loadData"
+          />
         </el-card>
       </el-tab-pane>
 
@@ -278,6 +277,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -301,7 +302,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ current: 1, size: 10, grade: '' })
+const query = ref({ current: 1, size: 20, grade: '' })
 
 const cards = ref([
   { grade: 'A', label: 'A 级（≥80）', count: 0, type: 'success' },

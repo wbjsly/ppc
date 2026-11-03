@@ -55,14 +55,19 @@
         </el-table-column>
         <el-table-column prop="errorMsg" label="错误" min-width="140" show-overflow-tooltip />
       </el-table>
-      <el-pagination style="margin-top:10px;text-align:right" layout="total, prev, pager, next"
-                     :total="logTotal" :page-size="logQuery.size" :current-page="logQuery.page"
-                     @current-change="p => loadLogs(p)" />
+            <AppPagination
+        style="margin-top:10px;text-align:right"
+        :total="logTotal"
+        v-model:page-size="logQuery.size"
+        :current-page="logQuery.page"
+        @current-change="p => loadLogs(p)"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 14.8.2 自动推送（拆分自原日报订阅操作台）：当月触达统计 / 推送日志查询。
  * 统计与日志状态见 useDailyReport.js（订阅配置页「试推」后亦刷新该数据）。

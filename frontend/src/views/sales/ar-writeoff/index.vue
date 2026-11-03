@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.8.2 自动核销"
-              description="客户回款经统一收付款中心（M8-4-1）过账：借 银行存款 / 贷 应收账款（FIFO 核销合计）/ 贷 预收账款 2205（差额）；核销仅记录匹配关系不再单独产凭证（add-payment-collection MODIFIED FR-4.3-7-5）。收付款执行与回单对账请前往 财务管理→收付管理。" />
+    <PageInfo title="3.8.2 自动核销" description="客户回款经统一收付款中心（M8-4-1）过账：借 银行存款 / 贷 应收账款（FIFO 核销合计）/ 贷 预收账款 2205（差额）；核销仅记录匹配关系不再单独产凭证（add-payment-collection MODIFIED FR-4.3-7-5）。收付款执行与回单对账请前往 财务管理→收付管理。" />
 
     <el-row :gutter="12" class="mb12">
       <el-col :span="8">
@@ -190,6 +188,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

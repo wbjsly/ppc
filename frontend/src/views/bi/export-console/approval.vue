@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.3 超量审批 ==================== -->
-    <el-alert type="info" show-icon :closable="false" style="margin-bottom: 8px"
-              title="超量导出走 ApprovalEngine 分级单签：≤50000 行部门经理、>50000 行部门总监；签署在审批台完成；月度同一用户超量 ≥5 次自动告警信息安全专员（C-4.10-03）" />
+    <PageInfo title="超量导出走 ApprovalEngine 分级单签：≤50000 行部门经理、>50000 行部门总监；签署在审批台完成；月度同一用户超量 ≥5 次自动告警信息安全专员（C-4.10-03）" style="margin-bottom: 8px" />
     <el-table :data="approvals" border stripe size="small" max-height="320">
       <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
       <el-table-column prop="applyBy" label="申请人" width="110" />
@@ -33,6 +32,7 @@
  * 14.5.3 超量审批（拆分自原数据导出操作台）：超量导出审批单列表（签署在审批台完成）。
  * 审批单见 useExportConsole.js（导出申请页提交超量导出后刷新同一份数据）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useExportConsole } from './useExportConsole'
 

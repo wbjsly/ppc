@@ -13,9 +13,7 @@
 
       <!-- ① 模拟净算 -->
       <template v-if="tab === 'mrp'">
-        <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-          title="模拟 MRP 净算（FR-4.5-2-3）：NetReq = 需求 − 现有库存 − 在制 − 在途；真实需求/供给源（4.5/WMS）未落地，输入为模拟值。"
-          description="列序：物料编码,需求日期,需求量,现有库存,在制,在途,来源类型,来源单号,建议供应商编码（前 6 列必需，来源类型缺省 SIMULATED）" />
+        <PageInfo title="模拟 MRP 净算（FR-4.5-2-3）：NetReq = 需求 − 现有库存 − 在制 − 在途；真实需求/供给源（4.5/WMS）未落地，输入为模拟值。" description="列序：物料编码,需求日期,需求量,现有库存,在制,在途,来源类型,来源单号,建议供应商编码（前 6 列必需，来源类型缺省 SIMULATED）" style="margin-bottom: 12px;" />
         <div class="toolbar">
           <el-button @click="downloadMrpTemplate">下载模板 CSV</el-button>
           <el-upload :auto-upload="false" :show-file-list="false" accept=".csv,text/csv" :on-change="onFileChange">
@@ -115,8 +113,12 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-          :total="listTotal" :page-size="listQuery.size" :current-change="loadList" />
+                <AppPagination
+          style="margin-top: 12px; justify-content: flex-end;"
+          :total="listTotal"
+          v-model:page-size="listQuery.size"
+          @current-change="loadList"
+        />
       </template>
     </el-card>
 
@@ -248,6 +250,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -383,7 +387,7 @@ async function doGenerate() {
 }
 
 // ---------- PR 列表与详情 ----------
-const listQuery = ref({ status: '', sourceType: '', keyword: '', current: 1, size: 10 })
+const listQuery = ref({ status: '', sourceType: '', keyword: '', current: 1, size: 20 })
 const listRows = ref([])
 const listTotal = ref(0)
 const dtVisible = ref(false)

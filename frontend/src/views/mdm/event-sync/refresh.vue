@@ -73,13 +73,18 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px" layout="total, prev, pager, next"
-                     :total="dlvTotal" :page-size="20" @current-change="loadDeliveries" />
+            <AppPagination
+        style="margin-top: 10px"
+        :total="dlvTotal"
+        @current-change="loadDeliveries"
+        v-model:page-size="dlvSize"
+      />
     </template>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 1.8.2 下游刷新（拆分自原事件同步操作台）：内部监听执行 + 外部投递状态
  * （页内 radio 子视图保留）。共享 formatTime 见 es-helpers.js。
@@ -121,9 +126,10 @@ async function loadListeners() {
 }
 
 async function loadDeliveries(page) {
+const dlvSize = ref(20)
   dlvLoading.value = true
   try {
-    const r = await getDeliveriesApi({ status: dlvStatus.value || undefined, page, size: 20 })
+    const r = await getDeliveriesApi({ status: dlvStatus.value || undefined, page, size: dlvSize.value })
     deliveries.value = r.data.rows || []
     dlvTotal.value = r.data.total || 0
   } finally {

@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="语言管理（17.1）：键值维护、缺口报告、版本发布"
-      description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" />
+    <PageInfo title="语言管理（17.1）：键值维护、缺口报告、版本发布" description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" style="margin-bottom:12px" />
 
     <!-- 17.1.3 版本发布（SOP-5.7-B 六步） -->
     <el-alert type="warning" :closable="false" style="margin-bottom:10px"
@@ -51,6 +49,7 @@
 /**
  * 17.1.3 版本发布（拆分自原语言管理页）：构建版本 / 预检 / 审批 / 灰度 / 归档。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildPackApi, precheckApi, approvePackApi, startCanaryApi, checkCanaryApi,

@@ -7,7 +7,7 @@ import { listIncidents } from '@/api/system/authz-detection'
  * 等价原「同一组件被两条路由复用」的行为。
  */
 const alertQuery = reactive({ status: '' })
-const alerts = reactive({ rows: [], total: 0, page: 1, size: 50, loading: false })
+const alerts = reactive({ rows: [], total: 0, page: 1, size: 20, loading: false })
 
 const loadAlerts = async (page) => {
   if (page) alerts.page = page

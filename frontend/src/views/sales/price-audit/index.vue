@@ -1,10 +1,6 @@
 <template>
   <div class="pa-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="取价记录（3.6.4）"
-      description="价格审计明细（C-4.3-04 / BR-4.3-35/36）：原始基准价、每层折扣率、叠加规则、最终生效价、冲突裁决、操作人与时间戳，只增不改，保留期按 AUDIT_RETENTION_DAYS 参数。"
-    />
+    <PageInfo title="取价记录（3.6.4）" description="价格审计明细（C-4.3-04 / BR-4.3-35/36）：原始基准价、每层折扣率、叠加规则、最终生效价、冲突裁决、操作人与时间戳，只增不改，保留期按 AUDIT_RETENTION_DAYS 参数。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -81,9 +77,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="query.current" :page-size="query.size" :total="total"
-        layout="total, prev, pager, next" @current-change="load" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="query.current"
+        v-model:page-size="query.size"
+        :total="total"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情 -->
@@ -117,6 +117,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getAuditApi } from '@/api/sd/pricing'

@@ -8,9 +8,7 @@
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-                title="检验记录（6.3.2）：全状态历史查询——已放行/冻结/免检/在途批次均可查。"
-                description="行点击下钻批次详情工作台；行内「打印报告」出七段版式检验报告（含抽样记录段）。" />
+      <PageInfo title="检验记录（6.3.2）：全状态历史查询——已放行/冻结/免检/在途批次均可查。" description="行点击下钻批次详情工作台；行内「打印报告」出七段版式检验报告（含抽样记录段）。" style="margin-bottom: 10px;" />
 
       <div class="filters">
         <el-select v-model="filters.lotType" placeholder="类型" clearable style="width: 120px;" @change="load">
@@ -75,8 +73,13 @@
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && !rows.length" description="无匹配的历史检验记录" :image-size="80" />
-      <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="total"
-                     :page-size="size" :current-page="page" @current-change="p => { page = p; load() }" />
+            <AppPagination
+        style="margin-top: 10px;"
+        :total="total"
+        v-model:page-size="size"
+        :current-page="page"
+        @current-change="p => { page = p; load() }"
+      />
     </el-card>
 
     <ReportDialog v-model="reportVisible" :lot-id="reportLotId" />
@@ -84,6 +87,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getLotHistoryApi } from '@/api/qms/inspection'
@@ -97,7 +102,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(50)
+const size = ref(20)
 const dateRange = ref(null)
 const filters = reactive({ lotType: '', result: '', status: '', itemCode: '', counterparty: '', keyword: '' })
 const reportVisible = ref(false)

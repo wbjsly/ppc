@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="认证鉴权（15.2）：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）"
-      description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" />
+    <PageInfo title="认证鉴权（15.2）：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）" description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" style="margin-bottom:12px" />
 
     <!-- 15.2.3 单点登录 -->
     <el-card shadow="never" style="margin-bottom:12px">
@@ -59,6 +57,7 @@
  * 15.2.3 单点登录（拆分自原认证鉴权操作台）：IdP 注册 / 签发断言 / 启停。
  * 本页独有逻辑，未抽 composable。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSsoAppsApi, registerSsoAppApi, changeSsoAppStatusApi, issueAssertionApi } from '@/api/proc/intf-portal'

@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.8.1 开票触发"
-              description="发货确认后自动生成开票申请（金额 = 该次发货额，与发货单一一对应）并同步生成应收。链路：调整金额 → 提交（税务资质 C-4.3-06 L1 + 容差校验）→ 财务审核 → 开具（外部开票系统桩，回写应收与 SO）→ 客户确认 / 异议 → 红字发票。" />
+    <PageInfo title="3.8.1 开票触发" description="发货确认后自动生成开票申请（金额 = 该次发货额，与发货单一一对应）并同步生成应收。链路：调整金额 → 提交（税务资质 C-4.3-06 L1 + 容差校验）→ 财务审核 → 开具（外部开票系统桩，回写应收与 SO）→ 客户确认 / 异议 → 红字发票。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -215,6 +213,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

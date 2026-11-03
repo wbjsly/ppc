@@ -44,9 +44,13 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-      layout="total, prev, pager, next" :total="total" :page-size="filters.size"
-      :current-page="filters.current" @current-change="p => { filters.current = p; load() }" />
+        <AppPagination
+      style="margin-top: 10px; justify-content: flex-end;"
+      :total="total"
+      v-model:page-size="filters.size"
+      :current-page="filters.current"
+      @current-change="p => { filters.current = p; load() }"
+    />
 
     <!-- 任务详情抽屉：行列表 + 录入 + 报告 -->
     <el-drawer v-model="detailVisible" :title="`盘点任务 ${current?.taskNo || ''}`" size="760px">
@@ -175,6 +179,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

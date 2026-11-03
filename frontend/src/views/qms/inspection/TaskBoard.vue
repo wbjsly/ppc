@@ -11,9 +11,7 @@
         </div>
       </template>
 
-      <el-alert v-if="!samplingMode" type="info" :closable="false" style="margin-bottom: 10px;"
-                title="检验前置于入库过账（C-4.12-06）；超时批次由调度器自动标记并改派（5min）；紧急批次优先展示。"
-                description="无标准批次标红 BLOCKED（发布标准后一键激活）；免检批次 SKIPPED 可过账；OQC 完工批放行即联动入库并发合格证。" />
+      <PageInfo title="检验前置于入库过账（C-4.12-06）；超时批次由调度器自动标记并改派（5min）；紧急批次优先展示。" description="无标准批次标红 BLOCKED（发布标准后一键激活）；免检批次 SKIPPED 可过账；OQC 完工批放行即联动入库并发合格证。" style="margin-bottom: 10px;" v-if="!samplingMode" />
       <el-alert v-else-if="releaseMode" type="warning" :closable="false" style="margin-bottom: 10px;"
                 title="合格放行（6.4.1）：判定合格待确认批次，逐条校验通过后放行。"
                 description="放行不可撤回（撤销走召回）；校验失败将逐条展示未通过项，批次状态不变。放行后自动通知仓库/跟单。" />
@@ -106,8 +104,13 @@
                 :description="releaseMode ? (releaseHistory ? '暂无已放行记录' : '没有待放行的批次（可勾选「已放行历史」查看）')
                              : samplingMode && onlyUnsampled ? '没有待抽样的在途批（可取消「仅未抽样」查看全部）' : '暂无在途检验批'"
                 :image-size="80" />
-      <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next" :total="total"
-                     :page-size="size" :current-page="page" @current-change="p => { page = p; load() }" />
+            <AppPagination
+        style="margin-top: 10px;"
+        :total="total"
+        v-model:page-size="size"
+        :current-page="page"
+        @current-change="p => { page = p; load() }"
+      />
     </el-card>
 
     <!-- 手工建批 -->
@@ -144,6 +147,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -183,7 +188,7 @@ const busy = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(50)
+const size = ref(20)
 const statusFilter = ref('')
 const manualVisible = ref(false)
 const manualForm = reactive({ lotType: 'IPQC', itemCode: '', itemName: '', qty: 1, batchNo: '', processId: '', customerId: '', priority: 'NORMAL' })

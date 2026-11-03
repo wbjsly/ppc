@@ -1,5 +1,5 @@
 <template>
-  <div class="sidebar-menu" :class="{ collapsed: props.collapsed }">
+  <div class="sidebar-menu" :class="{ collapsed: props.collapsed }" v-reveal-scrollbar>
     <div class="sidebar-header">
       <div class="sidebar-logo" :class="{ collapsed: props.collapsed }">
         <span v-show="!props.collapsed">ERP 管理系统</span>

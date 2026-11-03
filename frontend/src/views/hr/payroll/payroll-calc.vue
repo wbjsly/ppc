@@ -10,8 +10,7 @@
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
-      <el-alert type="info" :closable="false" style="margin-bottom:12px"
-                title="应发=基本工资+绩效+补贴+加班工资（取固化金额）；实发=应发-社保个人-公积金个人-个税-其他扣款；负数 L1 阻断，环比>20% L4 待确认；考勤挂起员工暂停核算（C-4.7-01）" />
+      <PageInfo title="应发=基本工资+绩效+补贴+加班工资（取固化金额）；实发=应发-社保个人-公积金个人-个税-其他扣款；负数 L1 阻断，环比>20% L4 待确认；考勤挂起员工暂停核算（C-4.7-01）" style="margin-bottom:12px" />
 
       <el-descriptions v-if="prep" :column="4" border style="margin-bottom:12px">
         <el-descriptions-item label="核算期">{{ prep.period }}</el-descriptions-item>
@@ -113,6 +112,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { payPreview, payGenerate, paySubmit, payVoid, payRunList, payRunItems, payAdjustmentList, savePayAdjustment } from '@/api/hr/payroll'

@@ -10,8 +10,7 @@
       </div>
     </div>
 
-    <el-alert type="info" :closable="false" class="mb8"
-      title="数据为手工登记代理口径（电子口岸/收汇系统不直连）；CIF/CFR 自动扣运保费佣金折算 FOB（BR-41）；单证缺一阻断（L2 豁免留痕）" />
+    <PageInfo title="数据为手工登记代理口径（电子口岸/收汇系统不直连）；CIF/CFR 自动扣运保费佣金折算 FOB（BR-41）；单证缺一阻断（L2 豁免留痕）" />
 
     <el-tabs v-model="tab">
       <el-tab-pane label="一票一档" name="deals">
@@ -226,6 +225,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {

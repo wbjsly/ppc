@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="时区期间（17.4）：时区换算、期间归属"
-      description="UTC 存储+三口径呈现（SOP-5.7-C 步4）；期间按法人主体+本地时间判定（C-5.7-10，校验展示区不改过账链）。" />
+    <PageInfo title="时区期间（17.4）：时区换算、期间归属" description="UTC 存储+三口径呈现（SOP-5.7-C 步4）；期间按法人主体+本地时间判定（C-5.7-10，校验展示区不改过账链）。" style="margin-bottom:12px" />
 
     <!-- 17.4.1 时区换算 -->
     <el-form inline size="small">
@@ -34,6 +32,7 @@
  * 17.4.1 时区换算（拆分自原时区期间页）：UTC 时间三口径换算。
  * 与期间归属页无共享状态（design D2：单页逻辑留页内）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 

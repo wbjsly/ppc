@@ -53,9 +53,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情抽屉 -->
@@ -176,6 +180,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -195,7 +200,7 @@ const ROLE_TEXT = { ROLE_QUALITY_MGR: '质量经理', ROLE_TECH_OWNER: '技术�
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const filters = reactive({ status: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', keyword: '', current: 1, size: 20 })
 
 const myRoles = computed(() => (userStore.userInfo && userStore.userInfo.roles) || [])
 const hasRole = (...want) => myRoles.value.some(r => r === 'ROLE_ADMIN' || want.includes(r))

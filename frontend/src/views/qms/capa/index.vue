@@ -87,9 +87,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情抽屉 -->
@@ -360,6 +364,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -400,7 +405,7 @@ const rows = ref([])
 const total = ref(0)
 const tab = route.meta.tab || 'report'
 const tabAlert = TAB_ALERT[tab] || TAB_ALERT.report
-const filters = reactive({ status: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', keyword: '', current: 1, size: 20 })
 // 三叶默认视图（后端 view 参数，rework-capa-evidence 4.1）
 const viewParam = tab === 'actions' ? 'actions' : tab === 'verify' ? 'verify' : undefined
 

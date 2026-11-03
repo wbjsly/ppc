@@ -58,8 +58,12 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-        :total="total" :page-size="query.size" :current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        :total="total"
+        v-model:page-size="query.size"
+        @current-change="loadData"
+      />
 
       <el-divider content-position="left">汇率试算查询（FR-4.6-1-5 预铺）</el-divider>
       <el-form inline>
@@ -167,6 +171,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -182,7 +187,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ keyword: '', rateType: '', lifecycle: '', current: 1, size: 10 })
+const query = ref({ keyword: '', rateType: '', lifecycle: '', current: 1, size: 20 })
 
 function typeName(t) {
   return { MIDDLE: '中间价', BUY: '买入价', SELL: '卖出价' }[t] || t

@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.7.2 合并发货"
-              description="同一客户、同一仓库的多张已确认 SO 合并为一张发货单，行级保留来源 SO 引用（过账与确认时各自回写）。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
+    <PageInfo title="3.7.2 合并发货" description="同一客户、同一仓库的多张已确认 SO 合并为一张发货单，行级保留来源 SO 引用（过账与确认时各自回写）。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -128,6 +126,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

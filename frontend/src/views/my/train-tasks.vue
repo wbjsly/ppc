@@ -7,8 +7,7 @@
           <el-button size="small" @click="load">刷新</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="确认参加/已完成后，最终结果以 HR 登记的考试成绩为准（成绩≥合格线才计完成）" />
+      <PageInfo title="确认参加/已完成后，最终结果以 HR 登记的考试成绩为准（成绩≥合格线才计完成）" />
       <el-table :data="rows" size="small" border>
         <el-table-column label="课程" min-width="180">
           <template #default="{ row }">{{ row.plan?.courseName }}</template>
@@ -37,6 +36,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { myTrainTasks, myTrainConfirm } from '@/api/hr/training'

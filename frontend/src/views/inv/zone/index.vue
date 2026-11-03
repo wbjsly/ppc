@@ -1,10 +1,6 @@
 <template>
   <div class="zone-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="仓位规划（4.1.2）"
-      description="三层模型 仓库 → 区域 → 仓位；区域挂默认属性（B2），新建仓位继承可覆盖；编号 = 区域码-排2位-列2位-层2位，系统生成不可改，字典序即拣货路径序。"
-    />
+    <PageInfo title="仓位规划（4.1.2）" description="三层模型 仓库 → 区域 → 仓位；区域挂默认属性（B2），新建仓位继承可覆盖；编号 = 区域码-排2位-列2位-层2位，系统生成不可改，字典序即拣货路径序。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -265,6 +261,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Grid } from '@element-plus/icons-vue'

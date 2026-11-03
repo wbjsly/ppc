@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.5.3 订单变更"
-              description="支持数量调整、交期变更与行取消；变更重跑信用检查与 ATP 试算（超限重新冻结）；已发货/已开票行以 L1 阻断，变更仅作用于未执行部分（FR-4.3-4-7 / BR-4.3-30 / C-4.3-08）。" />
+    <PageInfo title="3.5.3 订单变更" description="支持数量调整、交期变更与行取消；变更重跑信用检查与 ATP 试算（超限重新冻结）；已发货/已开票行以 L1 阻断，变更仅作用于未执行部分（FR-4.3-4-7 / BR-4.3-30 / C-4.3-08）。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -136,6 +134,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSoPageApi, getSoDetailApi, changeSoApi } from '@/api/sd/so'

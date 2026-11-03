@@ -559,6 +559,15 @@ public class SecurityConfig {
                 .antMatchers(HttpMethod.POST, "/api/intf/gray-releases/**").hasAnyRole("ADMIN")
                 .antMatchers(HttpMethod.PUT, "/api/intf/gray-releases/**").hasAnyRole("ADMIN")
                 .antMatchers("/api/intf/**").hasAnyRole("ADMIN", "INTF_OPS")
+                // 工作台三层布局（add-configurable-workbench，spec personal-workbench）：
+                // 个人层（mine/user）登录即可；模板层（layers/layer 读 + role/global 写）限 ADMIN。
+                // 主防线在此 URL 规则（全站未启用 method security，@PreAuthorize 为将来预留）
+                .antMatchers(HttpMethod.GET, "/api/dash/layout/mine").authenticated()
+                .antMatchers(HttpMethod.PUT, "/api/dash/layout/user").authenticated()
+                .antMatchers(HttpMethod.GET, "/api/dash/layout/layers",
+                        "/api/dash/layout/layer").hasRole("ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/dash/layout/role/**").hasRole("ADMIN")
+                .antMatchers(HttpMethod.PUT, "/api/dash/layout/global").hasRole("ADMIN")
                 .antMatchers("/api/**").authenticated()
                 .anyRequest().permitAll()
             .and()

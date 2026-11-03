@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.2 水印标记 ==================== -->
-    <el-alert type="info" show-icon :closable="false" style="margin-bottom: 8px"
-              title="导出文件自动嵌入水印：内容 = {用户名}|{时间戳}|{唯一流水号}；Excel 页眉页脚+背景半透明、PDF 每页右下角+斜置、CSV BOM+首行注释（FR-4.10-4-4）" />
+    <PageInfo title="导出文件自动嵌入水印：内容 = {用户名}|{时间戳}|{唯一流水号}；Excel 页眉页脚+背景半透明、PDF 每页右下角+斜置、CSV BOM+首行注释（FR-4.10-4-4）" style="margin-bottom: 8px" />
     <el-table :data="tasks.filter(t => t.watermark)" border stripe size="small" max-height="320">
       <el-table-column prop="taskNo" label="任务号" width="140" />
       <el-table-column prop="userName" label="用户" width="110" />
@@ -21,6 +20,7 @@
  * 14.5.2 水印标记（拆分自原数据导出操作台）：已完成导出任务的水印明细。
  * 任务列表见 useExportConsole.js（导出申请页提交后刷新同一份数据）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useExportConsole } from './useExportConsole'
 

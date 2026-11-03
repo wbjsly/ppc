@@ -1,8 +1,6 @@
 <template>
   <div class="app-container">
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="价控校验（2.3.5，BR-4.2-15~19 / C-4.2-06 / C-4.2-03）"
-      description="三重固定优先级逐级降级：合同价(框架协议价，偏差 D1) > 历史价(近3次已下达均价，0次放行·偏差 D2) > 预算(科目本年累计 vs 预算×110%)；命中即停，全程落日志。阻断可走「申请特批」转升级链（FR-4.2-3-1）。" />
+    <PageInfo title="价控校验（2.3.5，BR-4.2-15~19 / C-4.2-06 / C-4.2-03）" description="三重固定优先级逐级降级：合同价(框架协议价，偏差 D1) > 历史价(近3次已下达均价，0次放行·偏差 D2) > 预算(科目本年累计 vs 预算×110%)；命中即停，全程落日志。阻断可走「申请特批」转升级链（FR-4.2-3-1）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ============ 价控日志 ============ -->
@@ -108,6 +106,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPoPageApi } from '@/api/proc/purchase-order'

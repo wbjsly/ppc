@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.7.4 发货确认与签收"
-              description="过账后的发货单在此确认（记录物流单号与发货时间，物流异常通知销售）→ 签收推进「已签收」；超时未签收可手工触发预警；拒收自动转退货申请草稿。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
+    <PageInfo title="3.7.4 发货确认与签收" description="过账后的发货单在此确认（记录物流单号与发货时间，物流异常通知销售）→ 签收推进「已签收」；超时未签收可手工触发预警；拒收自动转退货申请草稿。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -141,6 +139,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

@@ -8,8 +8,7 @@
       <el-button type="primary" @click="onTrial" :loading="loading">试算（不落库）</el-button>
       <el-button type="success" @click="onGenerate" :loading="generating">生成重估批次</el-button>
     </el-form>
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom:8px"
-      title="重估范围：外币货币性项目（AP 未清 / 外币银行账户 / AR 未清）；差额 = 外币额 ×（期末中间价 − 原记账汇率）。生成将自动冲回上期并落 DRAFT 凭证，待财务主管审核后过账（C-4.6-07 制单≠审核）。" />
+    <PageInfo title="重估范围：外币货币性项目（AP 未清 / 外币银行账户 / AR 未清）；差额 = 外币额 ×（期末中间价 − 原记账汇率）。生成将自动冲回上期并落 DRAFT 凭证，待财务主管审核后过账（C-4.6-07 制单≠审核）。" style="margin-bottom:8px" />
 
     <!-- 试算/生成结果汇总 -->
     <el-card v-if="trial" shadow="never" style="margin-bottom:12px">
@@ -159,6 +158,7 @@
  * 8.5.2 期末重估（拆分自原汇兑重估多 tab 页，design D1）。
  * 本页独有逻辑，金额格式化见 fx-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { trialRun, generateReval, revalBatches, revalBatchDetails } from '@/api/fin/fx'

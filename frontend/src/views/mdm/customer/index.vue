@@ -58,12 +58,11 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
+            <AppPagination
         style="margin-top: 14px; justify-content: flex-end;"
-        layout="total, prev, pager, next"
         :total="total"
-        :page-size="query.size"
-        :current-change="loadData"
+        v-model:page-size="query.size"
+        @current-change="loadData"
       />
     </el-card>
 
@@ -310,6 +309,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
@@ -329,7 +329,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ keyword: '', status: '', current: 1, size: 10 })
+const query = ref({ keyword: '', status: '', current: 1, size: 20 })
 const viewCounts = ref({})
 const legalEntities = ref([])
 const routes = ref([])   // 配送线路（wave-management：客户默认线，波次聚类第一键）

@@ -5,9 +5,7 @@
       <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
     </div>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-      title="差异对账台（L1064）：超交走收货调整单或拒收，短交待补齐或手动关闭"
-      description="无「直接接受超收」出口（BR-4.2-49 专用流程，P-1 轻量链）。差异处置为采购员职责（ADMIN）。" />
+    <PageInfo title="差异对账台（L1064）：超交走收货调整单或拒收，短交待补齐或手动关闭" description="无「直接接受超收」出口（BR-4.2-49 专用流程，P-1 轻量链）。差异处置为采购员职责（ADMIN）。" style="margin-bottom: 10px;" />
     <div class="toolbar">
       <el-select v-model="diffQuery.status" placeholder="状态" clearable style="width: 140px;" @change="loadDiffs(1)">
         <el-option label="待处置" value="PENDING" />
@@ -50,8 +48,13 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top: 8px;" layout="total, prev, pager, next" :total="diffTotal"
-                   :page-size="diffQuery.size" :current-page="diffQuery.current" @current-change="loadDiffs" />
+        <AppPagination
+      style="margin-top: 8px;"
+      :total="diffTotal"
+      v-model:page-size="diffQuery.size"
+      :current-page="diffQuery.current"
+      @current-change="loadDiffs"
+    />
 
     <el-divider content-position="left">收货调整单（BR-4.2-49，单节点审批）</el-divider>
     <el-table :data="adjList" size="small" border>
@@ -81,10 +84,12 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 2.4.3 容差校验 / 差异对账台（拆分自原收货管理操作台）：差异处置（拒收/关闭/转调整单）
  * 与收货调整单审批。共享状态与角色见 useGoodsReceipt.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -102,7 +107,7 @@ const { loading, isAdmin, canApproveAdj } = useGoodsReceipt()
 // ---------- 差异与调整单 ----------
 const diffList = ref([])
 const diffTotal = ref(0)
-const diffQuery = reactive({ status: 'PENDING', diffType: '', current: 1, size: 10 })
+const diffQuery = reactive({ status: 'PENDING', diffType: '', current: 1, size: 20 })
 async function loadDiffs(page) {
   diffQuery.current = page || 1
   loading.value = true

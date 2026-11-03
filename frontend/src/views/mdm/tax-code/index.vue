@@ -72,8 +72,12 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination layout="total, prev, pager, next" style="margin-top: 12px; justify-content: flex-end;"
-        :total="total" :page-size="query.size" :current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        :total="total"
+        v-model:page-size="query.size"
+        @current-change="loadData"
+      />
 
       <el-divider content-position="left">税码试算查询（4.14 计税预铺，C-4.1-01 口径）</el-divider>
       <el-form inline>
@@ -226,6 +230,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus } from '@element-plus/icons-vue'
@@ -241,7 +246,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ keyword: '', scope: '', calcType: '', lifecycle: '', current: 1, size: 10 })
+const query = ref({ keyword: '', scope: '', calcType: '', lifecycle: '', current: 1, size: 20 })
 
 function scopeName(s) {
   return { DOMESTIC: '国内', EXPORT: '出口', EXEMPT: '免税' }[s] || s

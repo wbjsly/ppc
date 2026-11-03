@@ -1,8 +1,6 @@
 <template>
   <div class="page-wrap">
-    <el-alert type="info" :closable="false" show-icon class="mb12"
-              title="3.7.3 分批发货"
-              description="按 3.4.2 编制的分批交付方案逐行生成发货单，每行独立交期与预留；仅生成计划发货日 ≤ 截止日的到期待发行。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
+    <PageInfo title="3.7.3 分批发货" description="按 3.4.2 编制的分批交付方案逐行生成发货单，每行独立交期与预留；仅生成计划发货日 ≤ 截止日的到期待发行。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -122,6 +120,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

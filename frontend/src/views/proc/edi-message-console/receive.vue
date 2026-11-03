@@ -57,8 +57,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="mt12" layout="total, prev, pager, next" :total="total"
-                     :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+            <AppPagination
+        class="mt12"
+        :total="total"
+        v-model:page-size="query.size"
+        :current-page="query.current"
+        @current-change="onPage"
+      />
     </el-card>
 
     <!-- 三入口 -->
@@ -117,6 +122,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getMessagesApi, uploadMessageApi, simulatePushApi } from '@/api/proc/edi-message-console'

@@ -1,10 +1,6 @@
 <template>
   <div class="cf-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="信用冻结看板（3.3.2）"
-      description="冻结单展示缺口金额、占用预占量与冻结时长；解冻回前一稳定状态（D5：审批前→待审批，已确认→已确认），不重跑审批、不释放预留；支持信用特批（上限与理由校验 BR-4.3-18）。"
-    />
+    <PageInfo title="信用冻结看板（3.3.2）" description="冻结单展示缺口金额、占用预占量与冻结时长；解冻回前一稳定状态（D5：审批前→待审批，已确认→已确认），不重跑审批、不释放预留；支持信用特批（上限与理由校验 BR-4.3-18）。" style="margin-bottom: 12px;" />
 
     <!-- 概览 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">
@@ -93,9 +89,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="current" :page-size="10" :total="total"
-        layout="total, prev, pager, next" @current-change="load" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="current"
+        :total="total"
+        @current-change="load"
+        v-model:page-size="pageSize"
+      />
     </el-card>
 
     <!-- 特批对话框 -->
@@ -140,6 +140,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -150,6 +152,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const current = ref(1)
+const pageSize = ref(20)
 const status = ref('FROZEN')
 const keyword = ref('')
 const saving = ref(false)
@@ -180,7 +183,7 @@ async function load(page) {
   if (page) current.value = page
   loading.value = true
   try {
-    const res = await getFreezesApi({ current: current.value, size: 10, status: status.value || '', keyword: keyword.value })
+    const res = await getFreezesApi({ current: current.value, size: pageSize.value, status: status.value || '', keyword: keyword.value })
     rows.value = res.data.records || []
     total.value = res.data.total
   } finally {

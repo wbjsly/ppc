@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="资产分类（7.1.4）：转资时按分类带入默认折旧政策；资本化下限为 BR-4.13-09 建卡阻断依据"
-      description="无审批立即生效（主数据基线）。分类含：资本化下限、默认年限/残值率/折旧方法、年限上下限、关联资产科目（转资凭证借方取数）。" />
+    <PageInfo title="资产分类（7.1.4）：转资时按分类带入默认折旧政策；资本化下限为 BR-4.13-09 建卡阻断依据" description="无审批立即生效（主数据基线）。分类含：资本化下限、默认年限/残值率/折旧方法、年限上下限、关联资产科目（转资凭证借方取数）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -91,6 +89,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -101,7 +100,7 @@ const loading = ref(false)
 const saving = ref(false)
 const rows = ref([])
 const keyword = ref('')
-const filters = reactive({ current: 1, size: 50 })
+const filters = reactive({ current: 1, size: 20 })
 
 const formVisible = ref(false)
 const editing = ref(false)

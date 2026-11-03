@@ -59,13 +59,18 @@
     <el-empty v-if="!loading && rows.length === 0" description="暂无外协检验批（外协 PO 收货登记后自动生成）"
               :image-size="60" />
 
-    <el-pagination v-model:current-page="current" :page-size="size" :total="total"
-                   layout="total, prev, pager, next" style="margin-top: 10px"
-                   @current-change="load" />
+        <AppPagination
+      v-model:current-page="current"
+      v-model:page-size="size"
+      :total="total"
+      style="margin-top: 10px"
+      @current-change="load"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -77,7 +82,7 @@ const loading = ref(false)
 const rows = ref([])
 const status = ref('')
 const current = ref(1)
-const size = 20
+const size = ref(20)
 const total = ref(0)
 
 const stText = (s) => ({
@@ -92,7 +97,7 @@ const stTag = (s) => ({
 async function load() {
   loading.value = true
   try {
-    const params = { current: current.value, size }
+    const params = { current: current.value, size: size.value }
     if (status.value) params.status = status.value
     const res = await getOutsourceBoardApi(params)
     rows.value = res.data?.records || []

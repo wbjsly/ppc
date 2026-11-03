@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="在途 = 已完成出库过账、未入库的调拨单；超 TRANSIT_ALERT_DAYS（默认 30 天）未入库由每日扫描自动挂起并通知双方仓库主管（C-4.4-09）。" />
+    <PageInfo title="在途 = 已完成出库过账、未入库的调拨单；超 TRANSIT_ALERT_DAYS（默认 30 天）未入库由每日扫描自动挂起并通知双方仓库主管（C-4.4-09）。" style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="关键字">
@@ -53,12 +52,21 @@
     </el-table>
 
     <el-empty v-if="!loading && rows.length === 0" description="无在途调拨单（全部已入库）" />
-    <el-pagination v-if="total > 0" class="pager" background layout="total, prev, pager, next"
-      :total="total" :page-size="size" :current-page="current" @current-change="onPage" />
+        <AppPagination
+      v-if="total > 0"
+      class="pager"
+      background
+      :total="total"
+      v-model:page-size="size"
+      :current-page="current"
+      @current-change="onPage"
+    />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getIntransitApi, postTransferInApi } from '@/api/inv/transfer'

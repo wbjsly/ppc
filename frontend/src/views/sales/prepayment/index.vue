@@ -1,10 +1,6 @@
 <template>
   <div class="pp-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="预收处理（3.3.3）"
-      description="冻结后预收目标 = 缺口金额；通知销售与客户 → 到账登记（销售/客服）→ 财务确认（仅 FINANCE_MGR/ADMIN）：到账 ≥ 缺口自动解冻并生成《SO 解冻确认单》，不足保持冻结并展示尚差（BR-4.3-17）。"
-    />
+    <PageInfo title="预收处理（3.3.3）" description="冻结后预收目标 = 缺口金额；通知销售与客户 → 到账登记（销售/客服）→ 财务确认（仅 FINANCE_MGR/ADMIN）：到账 ≥ 缺口自动解冻并生成《SO 解冻确认单》，不足保持冻结并展示尚差（BR-4.3-17）。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -71,9 +67,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="current" :page-size="10" :total="total"
-        layout="total, prev, pager, next" @current-change="load" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="current"
+        :total="total"
+        @current-change="load"
+        v-model:page-size="pageSize"
+      />
     </el-card>
 
     <!-- 登记到账 -->
@@ -108,6 +108,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
@@ -117,6 +119,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const current = ref(1)
+const pageSize = ref(20)
 const status = ref('')
 const keyword = ref('')
 const saving = ref(false)
@@ -135,7 +138,7 @@ async function load(page) {
   if (page) current.value = page
   loading.value = true
   try {
-    const res = await getNoticesApi({ current: current.value, size: 10, status: status.value || '', keyword: keyword.value })
+    const res = await getNoticesApi({ current: current.value, size: pageSize.value, status: status.value || '', keyword: keyword.value })
     rows.value = res.data.records || []
     total.value = res.data.total
   } finally {

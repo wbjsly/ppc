@@ -1,0 +1,25 @@
+/**
+ * reveal-scrollbar.css — 全站滚动条按需显隐（add-scrollbar-reveal，design D3/D4）
+ * 挂载元素带 data-reveal-scrollbar（默认滑块透明），滚动中指令切 data-reveal-on（滑块现身）。
+ * 禁用 display:none / scrollbar-width:none——那会回收滚动条占位宽度，显隐切换时内容水平抖动
+ * （spec「显隐切换无水平抖动」）。
+ * 双分支：Firefox/新 Chrome 走 scrollbar-width+scrollbar-color；旧 Chrome/Safari 走 ::-webkit-scrollbar。
+ */
+
+/* D4：body 默认 margin 8px 是根文档 16px 溢出元凶（8+视口+8，实施前已探针复核 =8px）→ 根治 */
+body { margin: 0; }
+
+/* 默认：轨道留位、滑块透明 */
+[data-reveal-scrollbar] {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+[data-reveal-scrollbar]::-webkit-scrollbar { width: 8px; height: 8px; }
+[data-reveal-scrollbar]::-webkit-scrollbar-track { background: transparent; }
+[data-reveal-scrollbar]::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+
+/* 滚动中（指令加 data-reveal-on）：滑块现身 */
+[data-reveal-on] {
+  scrollbar-color: var(--el-scrollbar-bg-color, #c0c4cc) transparent;
+}
+[data-reveal-on]::-webkit-scrollbar-thumb { background: var(--el-scrollbar-bg-color, #c0c4cc); }

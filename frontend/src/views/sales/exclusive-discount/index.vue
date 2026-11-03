@@ -1,10 +1,6 @@
 <template>
   <div class="ed-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="专属折扣（3.6.3）"
-      description="客户专属价（EXCLUSIVE 协议）列表视图，取价优先级最高（专属 > 阶梯 > 时间）。协议的创建与维护在客户管理 1.3.3，本页只读展示销售侧口径。"
-    />
+    <PageInfo title="专属折扣（3.6.3）" description="客户专属价（EXCLUSIVE 协议）列表视图，取价优先级最高（专属 > 阶梯 > 时间）。协议的创建与维护在客户管理 1.3.3，本页只读展示销售侧口径。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -54,14 +50,20 @@
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="current" :page-size="size" :total="total"
-        layout="total, prev, pager, next" @current-change="load" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="current"
+        v-model:page-size="size"
+        :total="total"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import request from '@/utils/request'
@@ -69,7 +71,7 @@ import request from '@/utils/request'
 const loading = ref(false)
 const rows = ref([])
 const current = ref(1)
-const size = 10
+const size = ref(20)
 const total = ref(0)
 const keyword = ref('')
 const status = ref('')
@@ -81,7 +83,7 @@ async function load(page) {
   loading.value = true
   try {
     const res = await request.get('/mdm/price-agreements', {
-      params: { current: current.value, size, keyword: keyword.value || '', agreementType: 'EXCLUSIVE', status: status.value || '' }
+      params: { current: current.value, size: size.value, keyword: keyword.value || '', agreementType: 'EXCLUSIVE', status: status.value || '' }
     })
     rows.value = (res.data.records || []).map(r => ({ ...r, _lines: [], _loading: false }))
     total.value = res.data.total

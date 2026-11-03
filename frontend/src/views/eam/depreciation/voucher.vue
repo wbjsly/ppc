@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      title="凭证生成（7.2.3）：折旧凭证与明细双向反查，勾稽差异"
-      description="凭证 sourceType=DEPRECIATION，来源单号=run 单号，明细↔凭证双向可反查。" />
+    <PageInfo title="凭证生成（7.2.3）：折旧凭证与明细双向反查，勾稽差异" description="凭证 sourceType=DEPRECIATION，来源单号=run 单号，明细↔凭证双向可反查。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -58,6 +56,7 @@
  * 7.2.3 凭证生成（拆分自原折旧管理操作台，原为页内 v-else 隐藏 tab）：
  * 折旧凭证按来源单号反查与明细展开。共享格式化见 dep-helpers.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { getVoucherApi, getDetailsByVoucherApi } from '@/api/eam/depreciation'
 import { fmt } from './dep-helpers'

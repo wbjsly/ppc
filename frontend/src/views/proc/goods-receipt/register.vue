@@ -5,9 +5,7 @@
       <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
     </div>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-      title="按 PO 登记（默认）：带出未清量逐行录实收，提交时按 0.5% 容差分流（BR-4.2-20/21/22）"
-      description="无 PO 收货（FREE）为辅入口：免容差、不回写 PO，仍走待检与过账。核对送货单与 PO：预填值即 PO 未清量，实收与之对照着色。" />
+    <PageInfo title="按 PO 登记（默认）：带出未清量逐行录实收，提交时按 0.5% 容差分流（BR-4.2-20/21/22）" description="无 PO 收货（FREE）为辅入口：免容差、不回写 PO，仍走待检与过账。核对送货单与 PO：预填值即 PO 未清量，实收与之对照着色。" style="margin-bottom: 10px;" />
 
     <div class="toolbar">
       <el-radio-group v-model="sourceType" size="small">
@@ -133,18 +131,25 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top: 8px;" layout="total, prev, pager, next" :total="grTotal"
-                   :page-size="grQuery.size" :current-page="grQuery.current" @current-change="loadGr" />
+        <AppPagination
+      style="margin-top: 8px;"
+      :total="grTotal"
+      v-model:page-size="grQuery.size"
+      :current-page="grQuery.current"
+      @current-change="loadGr"
+    />
 
     <GrDetailDrawer ref="detailRef" />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 2.4.1 到货登记（拆分自原收货管理操作台）：按 PO / FREE 登记、0.5% 容差预演、
  * 收货单列表与作废、详情抽屉。共享状态与角色见 useGoodsReceipt.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -250,7 +255,7 @@ async function submitCreate() {
 // ---------- 收货单列表 ----------
 const grList = ref([])
 const grTotal = ref(0)
-const grQuery = reactive({ status: '', keyword: '', current: 1, size: 10 })
+const grQuery = reactive({ status: '', keyword: '', current: 1, size: 20 })
 async function loadGr(page) {
   grQuery.current = page || 1
   loading.value = true

@@ -1,7 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 8px"
-      title="按原因分流门槛：呆滞=技术/质量/财务三方会签（C-4.4-14 未会签阻断过账）；质量=挂 NCR（处置须为报废）；损坏/其他=直接批准。过账生成凭证一，处置核销生成凭证二。" />
+    <PageInfo title="按原因分流门槛：呆滞=技术/质量/财务三方会签（C-4.4-14 未会签阻断过账）；质量=挂 NCR（处置须为报废）；损坏/其他=直接批准。过账生成凭证一，处置核销生成凭证二。" style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="状态">
@@ -60,8 +59,15 @@
       </el-table-column>
     </el-table>
     <el-empty v-if="!loading && rows.length === 0" description="暂无报废单" />
-    <el-pagination v-if="total > 0" class="pager" background layout="total, prev, pager, next"
-      :total="total" :page-size="query.size" :current-page="query.current" @current-change="onPage" />
+        <AppPagination
+      v-if="total > 0"
+      class="pager"
+      background
+      :total="total"
+      v-model:page-size="query.size"
+      :current-page="query.current"
+      @current-change="onPage"
+    />
 
     <!-- ============ 新建报废单 ============ -->
     <el-dialog v-model="createVisible" title="新建报废单（按原因分流门槛）" width="900px" :close-on-click-modal="false">
@@ -234,6 +240,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

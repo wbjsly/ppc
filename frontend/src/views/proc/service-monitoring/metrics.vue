@@ -60,14 +60,19 @@
         <el-table-column prop="monthTag" label="月份" width="80" />
         <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="q.current" :page-size="q.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="q.current"
+        v-model:page-size="q.size"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getMetricsApi, collectSlaApi } from '@/api/proc/service-monitoring'

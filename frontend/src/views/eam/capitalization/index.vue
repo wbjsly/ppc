@@ -1,8 +1,6 @@
 <template>
   <div class="eam-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px;"
-      :title="mode === 'PURCHASE' ? '采购转资（7.1.1）：入库过账+质检合格的采购订单 → 转资建卡' : '在建转资（7.1.2）：完工验收的 CIP 项目 → 转资建卡'"
-      description="BR-4.13-07 原值与发票/归集超差阻断审核；BR-4.13-09 低于资本化下限阻断建卡；一物一卡拆分；审核通过生成卡片+转资凭证（借 固定资产 / 贷 在建工程或应付暂估）。" />
+    <PageInfo title="mode === 'PURCHASE' ? '采购转资（7.1.1）：入库过账+质检合格的采购订单 → 转资建卡' : '在建转资（7.1.2）：完工验收的 CIP 项目 → 转资建卡'" description="BR-4.13-07 原值与发票/归集超差阻断审核；BR-4.13-09 低于资本化下限阻断建卡；一物一卡拆分；审核通过生成卡片+转资凭证（借 固定资产 / 贷 在建工程或应付暂估）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -167,6 +165,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -185,7 +184,7 @@ const saving = ref(false)
 const rows = ref([])
 const keyword = ref('')
 const status = ref('')
-const filters = reactive({ current: 1, size: 10 })
+const filters = reactive({ current: 1, size: 20 })
 
 const detail = reactive({ cap: null, category: null, preview: null })
 const preview = ref(null)

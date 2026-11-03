@@ -4,8 +4,7 @@
                     style="margin-bottom: 8px" />
 
     <!-- ==================== 14.2.2 脱敏规则 ==================== -->
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 8px"
-              title="类型化掩码（PHONE 前3后4 / ID_CARD 前3后4 / SALARY *** / BANK 尾4 / GENERIC 首尾）；变更须数据治理专员审批后生效（仅 ENABLED 参与查询层判定）" />
+    <PageInfo title="类型化掩码（PHONE 前3后4 / ID_CARD 前3后4 / SALARY *** / BANK 尾4 / GENERIC 首尾）；变更须数据治理专员审批后生效（仅 ENABLED 参与查询层判定）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-select v-model="maskTypeFilter" placeholder="规则类型" size="small" clearable
                  style="width: 170px" @change="loadMaskRules">
@@ -100,6 +99,7 @@
  * 14.2.2 脱敏规则（拆分自原数据抽取操作台）：规则 CRUD / 审批流转 / 变更历史。
  * 三页逻辑互不共享，全部留在页内（design D2：单 tab 独有逻辑不强抽）。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

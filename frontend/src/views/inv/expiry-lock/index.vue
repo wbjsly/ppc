@@ -1,8 +1,6 @@
 <template>
   <div class="page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="临期锁定（4.10.2）：锁定批次台账 + 变更历史 + 人工锁定（免审批）"
-      description="台账展示 EXPIRY_LOCK_FLAG=1 全量（来源区分 AUTO 系统扫描 / MANUAL 人工锁定）；人工锁定即刻生效免审批，解除唯一入口=4.10.3 评估放行（收紧免审、放宽必审）。" />
+    <PageInfo title="临期锁定（4.10.2）：锁定批次台账 + 变更历史 + 人工锁定（免审批）" description="台账展示 EXPIRY_LOCK_FLAG=1 全量（来源区分 AUTO 系统扫描 / MANUAL 人工锁定）；人工锁定即刻生效免审批，解除唯一入口=4.10.3 评估放行（收紧免审、放宽必审）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab" @tab-change="onTabChange">
       <!-- 锁定台账 -->
@@ -57,9 +55,13 @@
           </el-table-column>
         </el-table>
 
-        <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-          layout="total, prev, pager, next" :total="total" :page-size="filters.size"
-          :current-page="filters.current" @current-change="p => { filters.current = p; loadLedger() }" />
+                <AppPagination
+          style="margin-top: 10px; justify-content: flex-end;"
+          :total="total"
+          v-model:page-size="filters.size"
+          :current-page="filters.current"
+          @current-change="p => { filters.current = p; loadLedger() }"
+        />
       </el-tab-pane>
 
       <!-- 变更历史 -->
@@ -123,6 +125,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'

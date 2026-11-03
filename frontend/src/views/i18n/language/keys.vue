@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="语言管理（17.1）：键值维护、缺口报告、版本发布"
-      description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" />
+    <PageInfo title="语言管理（17.1）：键值维护、缺口报告、版本发布" description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" style="margin-bottom:12px" />
 
     <!-- 17.1.1 键值维护 -->
     <el-form inline size="small">
@@ -97,6 +95,7 @@
  * 17.1.1 键值维护（拆分自原语言管理页）：键值查询 / 编辑抽屉 / 译文导入 / 导出。
  * 覆盖率共享状态见 useLanguage.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getKeysApi, saveKeyApi, importKeysApi, exportKeysApi } from '@/api/i18n/i18n'

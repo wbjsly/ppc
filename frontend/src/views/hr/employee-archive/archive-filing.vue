@@ -7,8 +7,7 @@
           <el-button type="primary" size="small" @click="createOnb">发起建档</el-button>
         </div>
       </template>
-      <el-alert :closable="false" type="info" show-icon class="mb8"
-        title="FR-4.7-1 六步：录用单接收 → 信息登记（人工核验留桩）→ 证件核验（离职证明 L1）→ 合同签订（试用期合规 L1）→ 生成主档（工号/身份证唯一 L1）→ 社保增员留桩" />
+      <PageInfo title="FR-4.7-1 六步：录用单接收 → 信息登记（人工核验留桩）→ 证件核验（离职证明 L1）→ 合同签订（试用期合规 L1）→ 生成主档（工号/身份证唯一 L1）→ 社保增员留桩" />
 
       <el-table :data="onbs" size="small" border>
         <el-table-column prop="onbNo" label="建档单号" width="130" />
@@ -108,6 +107,7 @@
 </template>
 
 <script setup>
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { onbList, onbCreate, onbAdvance, onbReturn, deptList, posList } from '@/api/hr/employee-archive'

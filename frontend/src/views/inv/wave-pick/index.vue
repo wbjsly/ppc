@@ -51,8 +51,13 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination style="margin-top: 10px; justify-content: flex-end;" layout="total, prev, pager, next"
-            :total="total" :page-size="query.size" :current-page="query.current" @current-change="load" />
+                    <AppPagination
+            style="margin-top: 10px; justify-content: flex-end;"
+            :total="total"
+            v-model:page-size="query.size"
+            :current-page="query.current"
+            @current-change="load"
+          />
         </el-tab-pane>
 
         <!-- ===== 配送线路 ===== -->
@@ -82,9 +87,13 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination style="margin-top: 10px; justify-content: flex-end;" layout="total, prev, pager, next"
-            :total="routeTotal" :page-size="routeQuery.size" :current-page="routeQuery.current"
-            @current-change="loadRoutes" />
+                    <AppPagination
+            style="margin-top: 10px; justify-content: flex-end;"
+            :total="routeTotal"
+            v-model:page-size="routeQuery.size"
+            :current-page="routeQuery.current"
+            @current-change="loadRoutes"
+          />
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -246,6 +255,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {

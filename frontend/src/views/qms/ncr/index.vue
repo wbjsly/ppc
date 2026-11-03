@@ -110,9 +110,13 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-        layout="total, prev, pager, next" :total="total"
-        v-model:current-page="filters.current" :page-size="filters.size" @current-change="load" />
+            <AppPagination
+        style="margin-top: 10px; justify-content: flex-end;"
+        :total="total"
+        v-model:current-page="filters.current"
+        v-model:page-size="filters.size"
+        @current-change="load"
+      />
     </el-card>
 
     <!-- 详情抽屉 -->
@@ -436,6 +440,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -485,7 +490,7 @@ const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
 const tab = route.meta.tab || 'all'
-const filters = reactive({ status: '', severity: '', keyword: '', current: 1, size: 10 })
+const filters = reactive({ status: '', severity: '', keyword: '', current: 1, size: 20 })
 
 const scopeText = computed(() => ({
   isolate: '6.5.1 标识隔离：默认只看冻结中的批次',

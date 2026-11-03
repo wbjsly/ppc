@@ -5,9 +5,7 @@
       <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
     </div>
 
-    <el-alert type="info" :closable="false" style="margin-bottom: 10px;"
-      title="入库过账（FR-4.2-6-1）：回写 PO 已收货数量、行完成判定、更新库存（全部进待检锁定）、生成入库凭证"
-      description="BR-4.2-28：PO 已关闭（未按 49 重开）或供应商冻结 → 硬阻断。应付暂估与三方匹配为 4.6 桩（TODO-NOTIFY）。" />
+    <PageInfo title="入库过账（FR-4.2-6-1）：回写 PO 已收货数量、行完成判定、更新库存（全部进待检锁定）、生成入库凭证" description="BR-4.2-28：PO 已关闭（未按 49 重开）或供应商冻结 → 硬阻断。应付暂估与三方匹配为 4.6 桩（TODO-NOTIFY）。" style="margin-bottom: 10px;" />
     <div class="toolbar">
       <el-select v-model="postQuery.status" placeholder="状态" clearable style="width: 130px;" @change="loadPosts(1)">
         <el-option label="待过账" value="CREATED" />
@@ -34,18 +32,25 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top: 8px;" layout="total, prev, pager, next" :total="postTotal"
-                   :page-size="postQuery.size" :current-page="postQuery.current" @current-change="loadPosts" />
+        <AppPagination
+      style="margin-top: 8px;"
+      :total="postTotal"
+      v-model:page-size="postQuery.size"
+      :current-page="postQuery.current"
+      @current-change="loadPosts"
+    />
 
     <GrDetailDrawer ref="detailRef" />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 2.4.4 入库过账（拆分自原收货管理操作台）：过账执行与收货单详情。
  * 共享状态与角色见 useGoodsReceipt.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -62,7 +67,7 @@ const postingId = ref('')
 
 const postList = ref([])
 const postTotal = ref(0)
-const postQuery = reactive({ status: 'CREATED', current: 1, size: 10 })
+const postQuery = reactive({ status: 'CREATED', current: 1, size: 20 })
 async function loadPosts(page) {
   postQuery.current = page || 1
   loading.value = true

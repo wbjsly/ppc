@@ -1,10 +1,6 @@
 <template>
   <div class="qcv-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="报价转化（3.2.3）"
-      description="一键将已发布报价转为 SO：校验有效期、客户信用状态与占用；转化回写报价关联 SO，成功后商机自动推进「合同签订」。过期报价请先开新版本更新。"
-    />
+    <PageInfo title="报价转化（3.2.3）" description="一键将已发布报价转为 SO：校验有效期、客户信用状态与占用；转化回写报价关联 SO，成功后商机自动推进「合同签订」。过期报价请先开新版本更新。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -65,9 +61,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="query.current" :page-size="10" :total="total"
-        layout="total, prev, pager, next" @current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="query.current"
+        :total="total"
+        @current-change="loadData"
+        v-model:page-size="query.size"
+      />
     </el-card>
 
     <!-- 明细 -->
@@ -106,6 +106,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -117,7 +119,7 @@ const router = useRouter()
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = reactive({ current: 1, keyword: '', status: 'PUBLISHED' })
+const query = reactive({size: 20, current: 1, keyword: '', status: 'PUBLISHED' })
 
 const detailVisible = ref(false)
 const detail = reactive({ id: '', quoteNo: '', draftNo: '', oppNo: '', customerCode: '', customerName: '',
@@ -132,7 +134,7 @@ async function loadData(page) {
   loading.value = true
   try {
     const res = await getQuotesApi({
-      current: query.current, size: 10,
+      current: query.current, size: query.size,
       keyword: query.keyword, status: query.status || ''
     })
     rows.value = res.data.records

@@ -1,8 +1,6 @@
 <template>
   <div class="intf-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="报文网关（15.4）：四级校验、幂等判定、结果回执、死信处理"
-      description="复用 edi-message-processing。校验分传输/语法/映射/业务四级短路；重试 ≤3 次后转死信（BR-5.5-09）。" />
+    <PageInfo title="报文网关（15.4）：四级校验、幂等判定、结果回执、死信处理" description="复用 edi-message-processing。校验分传输/语法/映射/业务四级短路；重试 ≤3 次后转死信（BR-5.5-09）。" style="margin-bottom:12px" />
 
     <!-- 15.4.4 死信处理 -->
     <el-table :data="dlqRows" border size="small">
@@ -35,6 +33,7 @@
  * 15.4.4 死信处理（拆分自原报文网关操作台）：死信重放 / 放弃留痕。
  * 共享状态见 useMessages.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { replayDeliveryApi, abandonDeliveryApi } from '@/api/proc/interface-integration'

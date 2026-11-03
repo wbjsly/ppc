@@ -1,10 +1,6 @@
 <template>
   <div class="opp-page">
-    <el-alert
-      type="info" :closable="false" show-icon style="margin-bottom: 12px;"
-      title="商机录入（3.1.1）"
-      description="手工登记或从 B 级以上线索转化；编号自动且创建后不可改；预期金额超 100 万自动通知销售经理；页顶漏斗/转化率/赢率全自动统计（BR-4.8-09）。"
-    />
+    <PageInfo title="商机录入（3.1.1）" description="手工登记或从 B 级以上线索转化；编号自动且创建后不可改；预期金额超 100 万自动通知销售经理；页顶漏斗/转化率/赢率全自动统计（BR-4.8-09）。" style="margin-bottom: 12px;" />
 
     <!-- ============ 页顶统计卡片 ============ -->
     <el-row :gutter="12" style="margin-bottom: 12px;">
@@ -105,10 +101,13 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination style="margin-top: 12px; justify-content: flex-end;"
-        v-model:current-page="query.current" v-model:page-size="query.size"
-        :total="total" :page-sizes="[10, 20, 50]"
-        layout="total, prev, pager, next" @current-change="loadData" />
+            <AppPagination
+        style="margin-top: 12px; justify-content: flex-end;"
+        v-model:current-page="query.current"
+        v-model:page-size="query.size"
+        :total="total"
+        @current-change="loadData"
+      />
     </el-card>
 
     <!-- ============ 新建 / 编辑商机 ============ -->
@@ -213,6 +212,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Plus, Refresh, Promotion } from '@element-plus/icons-vue'
@@ -231,7 +232,7 @@ const STAGES = [
 const loading = ref(false)
 const rows = ref([])
 const total = ref(0)
-const query = ref({ current: 1, size: 10, keyword: '', status: '', stage: '' })
+const query = ref({ current: 1, size: 20, keyword: '', status: '', stage: '' })
 
 const stats = ref({})
 const funnel = computed(() => stats.value.funnel || [])

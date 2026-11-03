@@ -1,8 +1,6 @@
 <template>
   <div class="i18n-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:12px"
-      title="区域配置（17.2）：日期格式、数字格式、货币格式"
-      description="三语 Locale 自动应用（S-5.7-02）；输入格式不符阻断保存（C-5.7-08）；Locale 未配置回退 zh-CN（C-5.7-02）。" />
+    <PageInfo title="区域配置（17.2）：日期格式、数字格式、货币格式" description="三语 Locale 自动应用（S-5.7-02）；输入格式不符阻断保存（C-5.7-08）；Locale 未配置回退 zh-CN（C-5.7-02）。" style="margin-bottom:12px" />
 
     <!-- 17.2.2 数字格式 -->
     <el-table :data="rows" border size="small">
@@ -27,6 +25,7 @@
  * 17.2.2 数字格式（拆分自原区域配置页）：数字模板与小数位列表。
  * Locale 配置列表共享状态见 useRegionFormat.js。
  */
+import PageInfo from '@/components/PageInfo.vue'
 import { onMounted } from 'vue'
 import { useRegionFormat } from './useRegionFormat'
 

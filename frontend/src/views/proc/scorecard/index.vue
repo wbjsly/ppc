@@ -1,8 +1,6 @@
 <template>
   <div class="sc-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="绩效评估（2.9.2）— 供应商绩效记分卡（4.9 流程七）"
-      description="质量/交付/成本/响应四维每月 1 日 02:00 自动采集（不可手工修改）；ABCD 分级；D 级冻结新单（BR-4.9-05）；审核→门户公示→7 个工作日申诉→修正版重公示。审核/公示/解冻/申诉复核为高危动作（仅管理员）。" />
+    <PageInfo title="绩效评估（2.9.2）— 供应商绩效记分卡（4.9 流程七）" description="质量/交付/成本/响应四维每月 1 日 02:00 自动采集（不可手工修改）；ABCD 分级；D 级冻结新单（BR-4.9-05）；审核→门户公示→7 个工作日申诉→修正版重公示。审核/公示/解冻/申诉复核为高危动作（仅管理员）。" style="margin-bottom: 12px;" />
     <el-tabs v-model="tab">
       <!-- ===== 记分卡列表 ===== -->
       <el-tab-pane label="记分卡" name="results">
@@ -47,8 +45,13 @@
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination style="margin-top:8px" layout="total, prev, pager, next" :total="rtotal"
-          :page-size="rq.size" :current-page.sync="rq.current" @current-change="loadResults" />
+                <AppPagination
+          style="margin-top:8px"
+          :total="rtotal"
+          v-model:page-size="rq.size"
+          v-model:current-page="rq.current"
+          @current-change="loadResults"
+        />
 
         <el-dialog title="记分卡穿透（计算明细）" :visible.sync="detailVisible" width="760px">
           <el-descriptions :column="2" size="mini" border v-if="detail.result">
@@ -150,6 +153,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -172,7 +177,7 @@ const loading = ref(false)
 // ---- 记分卡 ----
 const results = ref([])
 const rtotal = ref(0)
-const rq = reactive({ monthTag: '', grade: '', current: 1, size: 10 })
+const rq = reactive({ monthTag: '', grade: '', current: 1, size: 20 })
 async function loadResults() {
   loading.value = true
   try {

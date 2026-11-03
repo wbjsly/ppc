@@ -54,9 +54,13 @@
             <el-empty description="暂无待分配行（须已登记、检验放行且核销量>0）" />
           </template>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next"
-                       :total="pendingTotal" :page-size="pendingSize"
-                       v-model:current-page="pendingPage" @current-change="loadPending" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="pendingTotal"
+          v-model:page-size="pendingSize"
+          v-model:current-page="pendingPage"
+          @current-change="loadPending"
+        />
       </el-tab-pane>
 
       <!-- ============ Tab B：未分配上架 ============ -->
@@ -103,9 +107,13 @@
             <el-empty description="没有未分配（BIN=空）的库存行" />
           </template>
         </el-table>
-        <el-pagination style="margin-top: 10px;" layout="total, prev, pager, next"
-                       :total="unassignedTotal" :page-size="unassignedSize"
-                       v-model:current-page="unassignedPage" @current-change="loadUnassigned" />
+                <AppPagination
+          style="margin-top: 10px;"
+          :total="unassignedTotal"
+          v-model:page-size="unassignedSize"
+          v-model:current-page="unassignedPage"
+          @current-change="loadUnassigned"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -184,6 +192,7 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -198,7 +207,7 @@ const activeTab = ref('pending')
 const pendingRows = ref([])
 const pendingTotal = ref(0)
 const pendingPage = ref(1)
-const pendingSize = 20
+const pendingSize = ref(20)
 const pendingKeyword = ref('')
 const pendingLoading = ref(false)
 const bulkLoading = ref(false)
@@ -207,7 +216,7 @@ async function loadPending() {
   pendingLoading.value = true
   try {
     const res = await getPendingGrLinesApi({
-      keyword: pendingKeyword.value, current: pendingPage.value, size: pendingSize
+      keyword: pendingKeyword.value, current: pendingPage.value, size: pendingSize.value
     })
     pendingRows.value = res.data.rows || []
     pendingTotal.value = Number(res.data.total) || 0
@@ -361,7 +370,7 @@ async function showHistory(sourceDocNo) {
 const unassignedRows = ref([])
 const unassignedTotal = ref(0)
 const unassignedPage = ref(1)
-const unassignedSize = 20
+const unassignedSize = ref(20)
 const unassignedKeyword = ref('')
 const unassignedLoading = ref(false)
 
@@ -369,7 +378,7 @@ async function loadUnassigned() {
   unassignedLoading.value = true
   try {
     const res = await getUnassignedApi({
-      keyword: unassignedKeyword.value, current: unassignedPage.value, size: unassignedSize
+      keyword: unassignedKeyword.value, current: unassignedPage.value, size: unassignedSize.value
     })
     unassignedRows.value = res.data.rows || []
     unassignedTotal.value = Number(res.data.total) || 0

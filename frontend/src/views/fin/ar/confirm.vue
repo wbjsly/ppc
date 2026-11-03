@@ -32,16 +32,20 @@
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination
-      v-model:current-page="cfQuery.current" v-model:page-size="cfQuery.size"
-      :total="cfTotal" layout="total, prev, pager, next" @change="loadConfirm"
-      style="margin-top:8px;justify-content:flex-end" />
+        <AppPagination
+      v-model:current-page="cfQuery.current"
+      v-model:page-size="cfQuery.size"
+      :total="cfTotal"
+      @current-change="loadConfirm"
+      style="margin-top:8px;justify-content:flex-end"
+    />
     <el-alert type="info" :closable="false" show-icon style="margin-top:8px"
       title="确认标记是账龄起算锚点：未确认的应收不计入账龄分析与坏账计提基数；已确认不可撤销。" />
   </div>
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
 /**
  * 8.2.1 应收确认（拆分自原应收管理多 tab 页，design D1）。
  * 本页独有逻辑，无跨页共享状态（D2：无共享未抽）。

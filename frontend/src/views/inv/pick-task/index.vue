@@ -1,8 +1,6 @@
 <template>
   <div class="pt-page">
-    <el-alert type="info" :closable="false" style="margin-bottom: 12px;"
-      title="拣货任务（4.7.1）：4.6.3 确认推荐后自动生成，主管改派/作废"
-      description="状态机 CREATED → PICKING → PICKED → REVIEWING → DONE → COMPLETED（分支 DIFF_PENDING/QUALITY_PENDING）。单据过账且差异闭环后任务自动 COMPLETED；差异闭环前出库过账被门闩拦截（BR-4.4-29）。" />
+    <PageInfo title="拣货任务（4.7.1）：4.6.3 确认推荐后自动生成，主管改派/作废" description="状态机 CREATED → PICKING → PICKED → REVIEWING → DONE → COMPLETED（分支 DIFF_PENDING/QUALITY_PENDING）。单据过账且差异闭环后任务自动 COMPLETED；差异闭环前出库过账被门闩拦截（BR-4.4-29）。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="filters.status" placeholder="状态" clearable style="width: 170px;"
@@ -77,9 +75,13 @@
       </el-table-column>
     </el-table>
 
-    <el-pagination style="margin-top: 10px; justify-content: flex-end;"
-      layout="total, prev, pager, next" :total="total" :page-size="20"
-      :current-page="filters.current" @current-change="p => { filters.current = p; load() }" />
+        <AppPagination
+      style="margin-top: 10px; justify-content: flex-end;"
+      :total="total"
+      :current-page="filters.current"
+      @current-change="p => { filters.current = p; load() }"
+      v-model:page-size="filters.size"
+    />
 
     <!-- 改派对话框 -->
     <el-dialog v-model="assignDlg" title="改派拣货员" width="380px">
@@ -93,6 +95,8 @@
 </template>
 
 <script setup>
+import AppPagination from '@/components/AppPagination.vue'
+import PageInfo from '@/components/PageInfo.vue'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -109,7 +113,7 @@ const loading = ref(false)
 const acting = ref(false)
 const rows = ref([])
 const total = ref(0)
-const filters = reactive({ current: 1, status: '', keyword: '' })
+const filters = reactive({size: 20, current: 1, status: '', keyword: '' })
 const assignDlg = ref(false)
 const assignPicker = ref('')
 const current = ref(null)
@@ -131,7 +135,7 @@ async function load() {
   loading.value = true
   try {
     const res = await getPickTasksApi({
-      current: filters.current, size: 20,
+      current: filters.current, size: filters.size,
       status: filters.status || undefined,
       keyword: filters.keyword || undefined
     })
