@@ -1,10 +1,7 @@
 <template>
   <div>
-    <el-page-header content="权限控制（14.4）— 行级三维度矩阵/多角色并集（BR-4.10-16）/异常回退（BR-4.10-17）；列级敏感字段登记；掩码总览与临时授权（≤24h）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.4.1 行级权限 ==================== -->
-    <PageInfo title="三维度（法人主体/组织部门树/数据密级）×（用户/角色）；SCOPE_EXPR 受控枚举 SELF/SELF_SUBTREE/LIST；变更经数据治理专员审批后生效并留版本快照" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-input v-model="rowFilter.userName" placeholder="按用户过滤" size="small"
@@ -13,6 +10,7 @@
                 clearable style="width: 150px" @change="loadRows" />
       <el-button size="small" type="success" @click="openRowEdit(null)">新建规则</el-button>
       <el-button size="small" @click="loadRows">刷新</el-button>
+      <PageInfo class="page-info--inline" title="三维度（法人主体/组织部门树/数据密级）×（用户/角色）；SCOPE_EXPR 受控枚举 SELF/SELF_SUBTREE/LIST；变更经数据治理专员审批后生效并留版本快照" />
     </div>
     <el-table :data="rowRules" border stripe size="small" max-height="300">
       <el-table-column label="授权对象" min-width="150">

@@ -4,7 +4,7 @@
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
-          <span>订单下达 · PO 推送列表（12.5.1）—— 审批通过即推送，版本变更再推送</span>
+          <span>订单下达 · PO 推送列表—— 审批通过即推送，版本变更再推送</span>
           <div>
             <el-select v-model="query.status" placeholder="确认状态" clearable size="small"
                        style="width:140px" @change="load">

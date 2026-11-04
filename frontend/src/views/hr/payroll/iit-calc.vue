@@ -2,15 +2,15 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">个税计算（10.5.2，累计预扣法）</span>
+        <span class="title">个税计算</span>
         <div>
           <el-input v-model="year" placeholder="年度" clearable style="width:100px;margin-right:8px" @change="load" />
           <el-button type="primary" @click="openSpecial">维护专项附加</el-button>
           <el-button @click="openBonus">年终奖试算</el-button>
           <el-button @click="load">刷新</el-button>
+          <PageInfo class="page-info--inline" title="累计预扣法：本期税 = 累计应纳税所得额×预扣率 - 速算扣除数 - 累计已预扣；专项附加扣除由员工自助端维护+HR 代维护；税务系统实时同步为留桩（本期手工录入）" />
         </div>
       </div>
-      <PageInfo title="累计预扣法：本期税 = 累计应纳税所得额×预扣率 - 速算扣除数 - 累计已预扣；专项附加扣除由员工自助端维护+HR 代维护；税务系统实时同步为留桩（本期手工录入）" style="margin-bottom:12px" />
       <el-tabs v-model="tab">
         <el-tab-pane label="税率表" name="rate">
           <el-table :data="taxTable" height="320">

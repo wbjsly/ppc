@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="工单释放（5.4.3）— 已确认工单释放为已释放；释放前重跑齐套，缺料不阻断仅标记「缺料待料」"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="status" style="width: 160px" size="small" @change="load">
@@ -11,7 +9,6 @@
         <el-option label="全部状态" value="" />
       </el-select>
       <el-button size="small" @click="load">刷新</el-button>
-      <span class="tip">释放留痕释放人/时间；缺料工单照常释放并打标（C-4.5-11 的 L1 阻断在 5.6 派工）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small">

@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="`库龄分析（4.14.3）：按入库日期分桶，呆滞阈值 ${buckets.staleThreshold ?? 180} 天（SLOW_MOVING_AGE_DAYS）。呆滞行可一键发起呆滞报废（三方会签链）。`" style="margin-bottom: 8px" />
+    <PageInfo title="`库龄分析：按入库日期分桶，呆滞阈值 ${buckets.staleThreshold ?? 180} 天（SLOW_MOVING_AGE_DAYS）。呆滞行可一键发起呆滞报废（三方会签链）。`" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="仓库">

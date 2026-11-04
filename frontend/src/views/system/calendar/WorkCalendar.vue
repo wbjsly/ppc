@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="工作日历（16.11.1）— 全局工作日/休息日维护（排程与负荷的时段地基）；写操作仅管理员，计划员只读"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-date-picker v-model="range" type="daterange" size="small" value-format="YYYY-MM-DD"
@@ -16,7 +14,6 @@
         同步法定假日
       </el-button>
       <el-tag v-if="!isAdmin" type="info" size="small">当前角色只读</el-tag>
-      <span class="tip">未维护日期由参数 KITTING_CALENDAR_FALLBACK 兜底判定（WEEKDAY=工作日/周末休）；法定假日以 HR 假日日历为源，点「同步法定假日」拉取（幂等，下方假日子区可维护源头）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="440"

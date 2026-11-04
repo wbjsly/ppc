@@ -296,7 +296,7 @@
             </el-table-column>
           </el-table>
           <el-button size="small" style="margin-top: 8px;" @click="form.lines.push({ itemCode: '', qty: 1, unitPrice: 0, reqDate: null })">+ 加行</el-button>
-          <div class="hint" style="margin-top: 6px;">供应商须合格（BR-4.2-18）；价控三重在提交审批时执行（2.3.5）</div>
+          <div class="hint" style="margin-top: 6px;">供应商须合格（BR-4.2-18）；价控三重在提交审批时执行</div>
         </el-tab-pane>
       </el-tabs>
       <template #footer>

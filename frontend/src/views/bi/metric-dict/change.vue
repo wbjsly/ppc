@@ -1,10 +1,7 @@
 <template>
   <div>
-    <el-page-header content="指标口径（14.3）— 口径定义/口径变更/口径校验三叶；十二要素（6.3.1）、变更两段式治理（BR-4.10-04 / C-4.10-08）、血缘四层图谱（S-4.10-15）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.3.2 口径变更 ==================== -->
-    <PageInfo title="变更两段式治理：申请 → 数据治理单签 → 灰度（旧版仍生效）→ 切换确认（数据治理+业务负责人双审 C-4.10-08，超 0.5% 容差须治理复核备注）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-select v-model="changeMetricKey" filterable placeholder="选择已发布指标" style="width: 260px"
                  @change="loadChangeView">
@@ -14,6 +11,7 @@
       <el-button size="small" type="success" :disabled="!changeMetricKey"
                  @click="openChange">发起变更</el-button>
       <el-button size="small" @click="loadChangeView">刷新</el-button>
+      <PageInfo class="page-info--inline" title="变更两段式治理：申请 → 数据治理单签 → 灰度（旧版仍生效）→ 切换确认（数据治理+业务负责人双审 C-4.10-08，超 0.5% 容差须治理复核备注）" />
     </div>
 
     <h4>进行中/历史变更</h4>

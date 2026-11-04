@@ -3,7 +3,7 @@
     <!-- 列表 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">伙伴引入申请（12.1.1 伙伴注册）</h4>
+        <h4 style="margin:0">伙伴引入申请</h4>
         <div>
           <el-select v-model="query.status" placeholder="状态" clearable style="width:140px"
                      size="small" @change="load">

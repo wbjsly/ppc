@@ -4,11 +4,13 @@
       <template #header>
         <div class="card-header">
           <span style="font-weight: bold; font-size: 16px;">请购审批</span>
-          <el-button :loading="loading" @click="loadTodo">刷新待办</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button :loading="loading" @click="loadTodo">刷新待办</el-button>
+            <PageInfo class="page-info--inline" title="分级审批（FR-4.2-1-2）：判级金额 = Σ(数量×预估单价)；≤部门限额→部门经理，≤总监限额→+采购总监，超出→+分管副总裁。" description="限额配置：app.proc.dept-approval-limit（默认 5 万）/ app.proc.director-approval-limit（默认 50 万）。节点 1 工作日超时提醒、3 工作日升级（懒扫描，通知 TODO 桩）。" />
+          </div>
         </div>
       </template>
 
-      <PageInfo title="分级审批（FR-4.2-1-2）：判级金额 = Σ(数量×预估单价)；≤部门限额→部门经理，≤总监限额→+采购总监，超出→+分管副总裁。" description="限额配置：app.proc.dept-approval-limit（默认 5 万）/ app.proc.director-approval-limit（默认 50 万）。节点 1 工作日超时提醒、3 工作日升级（懒扫描，通知 TODO 桩）。" style="margin-bottom: 12px;" />
 
       <el-table :data="todo" v-loading="loading" stripe>
         <el-table-column prop="prNo" label="PR 单号" width="170">

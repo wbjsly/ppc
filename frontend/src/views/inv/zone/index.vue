@@ -1,6 +1,5 @@
 <template>
   <div class="zone-page">
-    <PageInfo title="仓位规划（4.1.2）" description="三层模型 仓库 → 区域 → 仓位；区域挂默认属性（B2），新建仓位继承可覆盖；编号 = 区域码-排2位-列2位-层2位，系统生成不可改，字典序即拣货路径序。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -18,6 +17,7 @@
             <el-button type="primary" @click="loadZones">查询</el-button>
             <el-button type="primary" :icon="Plus" @click="openZoneForm()">新建区域</el-button>
             <el-button type="success" :icon="Grid" :disabled="!currentZone" @click="openBatch">批量规划</el-button>
+            <PageInfo class="page-info--inline" title="仓位规划" description="三层模型仓库 → 区域 → 仓位；区域挂默认属性（B2），新建仓位继承可覆盖；编号 = 区域码-排2位-列2位-层2位，系统生成不可改，字典序即拣货路径序。" />
           </div>
         </div>
       </template>

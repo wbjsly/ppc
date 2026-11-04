@@ -57,7 +57,6 @@
           </el-table-column>
           <el-table-column prop="pushedAt" label="推送时间" width="155" />
           </el-table>
-          <div style="color:#909399;font-size:12px;margin-top:8px">PO 协同操作（代录确认/接受改期/催办/协商/工单解锁）已收口至「订单协同 12.5.1 / 12.5.2」，本页保留只读摘要与时间线。</div>
                 <AppPagination
           style="margin-top: 10px;"
           :total="poTotal"
@@ -77,7 +76,6 @@
           <el-input v-model="asnFilters.keyword" placeholder="ASN 单号" clearable style="width: 170px;" @keyup.enter="loadAsns" />
           <el-button type="primary" @click="loadAsns">查询</el-button>
           <el-button v-if="canPm" type="success" @click="openAsnCreate">代录创建 ASN</el-button>
-          <span class="hint">到货登记支持「从 ASN 带出」（预填供应商/PO/物料/数量）</span>
         </div>
         <el-table :data="asnRows" size="small" border v-loading="loading">
           <el-table-column prop="asnNo" label="ASN 单号" width="160" />
@@ -206,10 +204,9 @@
           <el-button type="primary" @click="loadStatements">查询</el-button>
           <el-button @click="$router.push('/m/12.6.1')">对账匹配 12.6.1</el-button>
           <el-button @click="$router.push('/m/12.6.2')">差异处理 12.6.2</el-button>
-          <span class="hint">系统匹配与双签操作已收口至「对账协同 12.6.1 / 12.6.2」，本页保留只读差异视图。</span>
         </div>
         <el-alert v-if="reconDenied" type="info" :closable="false" show-icon
-          title="对账协同查询按菜单权限开放（12.6 口径：PM/财务主管/ADMIN），当前角色不可见" />
+          title="对账协同查询按菜单权限开放，当前角色不可见" />
         <el-table :data="reconRows" size="small" border v-loading="loading">
           <el-table-column prop="stmtNo" label="对账单号" width="150" />
           <el-table-column prop="supplierName" label="供应商" min-width="130" show-overflow-tooltip />

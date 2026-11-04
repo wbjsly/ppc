@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="收货检验（5.10.2）— 外协 PO 来源检验批：供应商/派工单/工序/供料上下文；检验动作复用既有检验批链（录入→判定→放行），不合格联动 SCAR"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="status" size="small" clearable placeholder="批次状态" style="width: 150px">
@@ -12,7 +10,6 @@
         <el-option label="已放行" value="RELEASED" />
       </el-select>
       <el-button size="small" type="primary" @click="load">查询</el-button>
-      <span class="tip">检验录入/判定/放行请在批号上点「去检验」进入既有检验台；本页提供外协上下文与快捷动作</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="560">

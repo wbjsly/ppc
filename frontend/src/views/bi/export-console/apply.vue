@@ -1,10 +1,7 @@
 <template>
   <div>
-    <el-page-header content="数据导出（14.5）— 模板/数据集双源、三格式水印（Excel 页眉/PDF 斜置/CSV BOM）、AES-256 加密下载 7 天有效、超量分级审批（经理/总监）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.1 导出申请 ==================== -->
-    <PageInfo title="任一已发布模板可导出；>1 万行自动拦截并按行数分级审批（≤5万部门经理 / >5万部门总监），用途说明 ≥10 字；文件 AES-256 加密，下载链接 7 天有效" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="form.source" size="small" style="width: 130px">
@@ -25,6 +22,7 @@
       <el-input-number v-model="form.estRows" :min="0" :max="1000000" size="small"
                        placeholder="预估行数" style="width: 140px" />
       <el-button size="small" type="success" @click="onSubmitExport">提交导出</el-button>
+      <PageInfo class="page-info--inline" title="任一已发布模板可导出；>1 万行自动拦截并按行数分级审批（≤5万部门经理 / >5万部门总监），用途说明 ≥10 字；文件 AES-256 加密，下载链接 7 天有效" />
     </div>
     <el-input v-if="overLimit" v-model="form.purpose" size="small" style="margin-bottom: 8px"
               placeholder="超量导出须填写用途说明（≥10 字）" maxlength="500" />

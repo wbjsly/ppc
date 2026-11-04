@@ -5,10 +5,10 @@
       <div>
         <el-input v-model="period" placeholder="所属期 yyyyMM" style="width: 130px; margin-right: 8px" size="small" />
         <el-button type="primary" size="small" @click="load">查询归档</el-button>
+        <PageInfo class="page-info--inline" title="保存期限 ≥10 年（FR-4.14-5-7）；仅归集已申报（FILED/PAID）产物，未申报期无归档记录" />
       </div>
     </div>
 
-    <PageInfo title="保存期限 ≥10 年（FR-4.14-5-7）；仅归集已申报（FILED/PAID）产物，未申报期无归档记录" />
 
     <el-empty v-if="loaded && archive && archive.count === 0" :description="`所属期 ${period} 无已申报归档产物`" />
 

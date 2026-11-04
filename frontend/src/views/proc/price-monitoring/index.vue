@@ -1,6 +1,6 @@
 <template>
   <div class="pm-page">
-    <PageInfo title="价格监测（2.9.3）— 监测工作台（分析页看图、本页管事）" description="价格异动处置状态机（处置/忽略留痕，补算不覆盖已处置）、阈值参数在线配置（留痕）、协议价偏离监控、比价异常清单（BR-4.2-12）。阈值调整仅管理员，其余角色可处置异动。" style="margin-bottom: 12px;" />
+    <PageInfo title="价格监测— 监测工作台（分析页看图、本页管事）" description="价格异动处置状态机（处置/忽略留痕，补算不覆盖已处置）、阈值参数在线配置（留痕）、协议价偏离监控、比价异常清单（BR-4.2-12）。阈值调整仅管理员，其余角色可处置异动。" style="margin-bottom: 12px;" />
     <el-tabs v-model="tab">
       <!-- ===== 异动清单 ===== -->
       <el-tab-pane label="价格异动" name="alerts">

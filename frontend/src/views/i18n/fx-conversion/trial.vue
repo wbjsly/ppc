@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="币种换算（17.3）：汇率换算、取整规则" description="复用汇率主数据（与 4.6 财务共用，erp_mdm_exchange_rate）；汇率缺失校验展示（C-5.7-03，不改过账链）。" style="margin-bottom:12px" />
+    <PageInfo title="币种换算：汇率换算、取整规则" description="复用汇率主数据（财务共用，erp_mdm_exchange_rate）；汇率缺失校验展示（C-5.7-03，不改过账链）。" style="margin-bottom:12px" />
 
     <!-- 17.3.1 汇率换算试算台 -->
     <el-form inline size="small">

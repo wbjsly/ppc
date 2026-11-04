@@ -4,7 +4,6 @@
       <template #header>
         <div class="card-header">
           <div class="hd-left">
-            <el-button link type="primary" @click="$router.back()">← 返回列表</el-button>
             <span class="ttl">{{ std.standardCode || '…' }} {{ std.name }}</span>
             <el-tag v-if="std.status" size="small" :type="stdStatusTag(std.status)">{{ stdStatusName(std.status) }}</el-tag>
             <el-tag v-if="std.riskLevel" size="small">风险 {{ std.riskLevel }}</el-tag>

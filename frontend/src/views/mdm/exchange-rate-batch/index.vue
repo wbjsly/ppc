@@ -4,19 +4,20 @@
       <template #header>
         <div class="card-header">
           <span style="font-weight: bold; font-size: 16px;">汇率批量更新</span>
-          <el-button link type="primary" @click="goList">查看汇率列表 →</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button link type="primary" @click="goList">查看汇率列表 →</el-button>
+            <PageInfo class="page-info--inline" title="载体说明：支持 CSV 文件上传或直接粘贴表格文本（Excel 单元格复制）；单批 ≤ 500 行；逐行校验按行发布（BR-4.1-19）。" />
+          </div>
         </div>
       </template>
 
       <!-- ① 模板区 -->
-      <PageInfo title="载体说明：支持 CSV 文件上传或直接粘贴表格文本（Excel 单元格复制）；单批 ≤ 500 行；逐行校验按行发布（BR-4.1-19）。" style="margin-bottom: 12px;" />
       <div class="toolbar">
         <el-button @click="downloadTemplate">下载模板 CSV</el-button>
         <el-upload :auto-upload="false" :show-file-list="false" accept=".csv,text/csv"
                    :on-change="onFileChange">
           <el-button type="primary" plain>上传 .csv 文件</el-button>
         </el-upload>
-        <span class="tip">列序：基础币种,报价币种,汇率类型,生效日期,失效日期,汇率值,来源文件编号</span>
       </div>
 
       <!-- ② 录入区 -->

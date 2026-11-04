@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="缺料预警（5.5.2）— 跨工单按物料聚合缺料，勾选转采购建议（5.3.1 审核转正单一漏斗防重复下单）"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-input v-model="itemCode" placeholder="物料编码（模糊）" clearable style="width: 180px"
@@ -12,7 +10,6 @@
       <el-button size="small" :disabled="selectedMos.length === 0" @click="doConvert">
         转采购建议（{{ selectedMos.length }}）
       </el-button>
-      <span class="tip">转出为待审核建议，须在 5.3.1 审核→转正；同工单同物料未处置前不可重复转（422）</span>
     </div>
 
     <el-table :data="groups" v-loading="loading" border stripe size="small"

@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.10.2 退货判定工作台" description="判定确认责任方（我方质量/客户原因/物流破损）、每行核定可退数量与超期标记，记录判定人/时间/依据；超期（超过 RETURN_PERIOD_DAYS）自动标记并附说明；判定驳回注明原因退回。退款类提交后走 L2 审批（销售经理 + 财务），驳回退回调整（spec 12.3/12.4）。" />
 
     <el-row :gutter="12">
       <!-- 队列 -->
@@ -18,6 +17,7 @@
                   <el-option label="全部" value="" />
                 </el-select>
                 <el-button size="small" style="margin-left:8px" @click="load">刷新</el-button>
+                <PageInfo class="page-info--inline" title="3.10.2 退货判定工作台" description="判定确认责任方（我方质量/客户原因/物流破损）、每行核定可退数量与超期标记，记录判定人/时间/依据；超期（超过 RETURN_PERIOD_DAYS）自动标记并附说明；判定驳回注明原因退回。退款类提交后走 L2 审批（销售经理 + 财务），驳回退回调整。" />
               </div>
             </div>
           </template>

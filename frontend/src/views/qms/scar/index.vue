@@ -1,7 +1,7 @@
 <template>
   <div class="scar-page">
     <el-alert type="warning" :closable="false" style="margin-bottom: 12px;"
-      title="SCAR 供应商质量索赔（6.8）：NCR 退货/挑选自动带出 → 重大（≥1万）质量经理审批发出 → 5 工作日回复"
+      title="SCAR 供应商质量索赔：NCR 退货/挑选自动带出 → 重大（≥1万）质量经理审批发出 → 5 工作日回复"
       description="SENT 起该供方抽样强制加严一档（BR-4.12-44）；回复超期升级采购经理 + 响应及时性扣分 + 每 3 天提醒；SQE 代录 8D 回复（浅层根因退回计数）；扣款单待财务确认 → 待抵扣（应付桩 D3）。" />
 
     <el-card shadow="never">

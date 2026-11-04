@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="外协发料（5.10.3）— 甲供外协派工单从仓库调拨原材料至供应商保管：所有权留厂内，出库入外协在途，收货定额冲减、余料退回"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-input v-model="filters.dispatchNo" size="small" clearable placeholder="派工单号"
@@ -15,7 +13,6 @@
       </el-select>
       <el-button size="small" type="primary" @click="load">查询</el-button>
       <el-button size="small" type="success" @click="openCreate">新建发料单</el-button>
-      <span class="tip">仅甲供（COMPANY_SUPPLY）外协派工单可发料；出库即入外协在途，收货按 BOM 定额自动冲减</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="560">

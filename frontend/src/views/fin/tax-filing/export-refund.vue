@@ -7,10 +7,10 @@
         <el-button type="primary" size="small" @click="openRegisterDeal">登记一票一档</el-button>
         <el-button type="warning" size="small" @click="doWarnings">分级预警</el-button>
         <el-button type="success" size="small" @click="openCreateApply">创建退税申报单</el-button>
+        <PageInfo class="page-info--inline" title="数据为手工登记代理口径（电子口岸/收汇系统不直连）；CIF/CFR 自动扣运保费佣金折算 FOB（BR-41）；单证缺一阻断（L2 豁免留痕）" />
       </div>
     </div>
 
-    <PageInfo title="数据为手工登记代理口径（电子口岸/收汇系统不直连）；CIF/CFR 自动扣运保费佣金折算 FOB（BR-41）；单证缺一阻断（L2 豁免留痕）" />
 
     <el-tabs v-model="tab">
       <el-tab-pane label="一票一档" name="deals">

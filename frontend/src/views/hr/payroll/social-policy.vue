@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">社保扣缴（10.5.1）</span>
+        <span class="title">社保扣缴</span>
         <el-button @click="reloadAll">刷新</el-button>
       </div>
       <el-tabs v-model="tab">

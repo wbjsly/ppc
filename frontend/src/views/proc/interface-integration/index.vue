@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="接口对接（2.8.3）：开放入口真实生效的签名 / 时间戳 / 限流 / 熔断 / 审计，事件投递与 EDI 四级校验、接入治理与 SLA 月报" description="凭证紧急吊销、生产放行会签、SLA 报告归档与发布、限流降档与解除熔断四类高危动作仅管理员可执行（C-0-03 发起人≠复核人）；接口运维角色可读可处置但无高危按钮。" style="margin-bottom: 12px;" />
+    <PageInfo title="接口对接：开放入口真实生效的签名 / 时间戳 / 限流 / 熔断 / 审计，事件投递与 EDI 四级校验、接入治理与 SLA 月报" description="凭证紧急吊销、生产放行会签、SLA 报告归档与发布、限流降档与解除熔断四类高危动作仅管理员可执行（C-0-03 发起人≠复核人）；接口运维角色可读可处置但无高危按钮。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== Tab1 运行总览 ==================== -->
@@ -126,7 +126,6 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="muted" style="margin-top:8px">重放 / 死信放弃等处理动作已收口至「事件订阅 12.2.3 消费监控」，本页保留只读台账。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">
@@ -150,7 +149,6 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="muted" style="margin-top:8px">工单处置（含可选重放）已收口至「事件订阅 12.2.3 消费监控」。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">
@@ -186,7 +184,6 @@
             <el-table-column prop="receivedAt" label="接收时间" width="160" />
             <el-table-column prop="remark" label="说明" min-width="180" show-overflow-tooltip />
           </el-table>
-          <div class="muted" style="margin-top:8px">报文操作（上传/模拟推送/映射规则/重放）已收口至「报文处理 12.4」，本页保留只读摘要。</div>
         </el-card>
       </el-tab-pane>
 
@@ -264,7 +261,7 @@
                      密钥签发等配置动作在 12.1.3 通道开通，本页只读+跳转 -->
                 <el-tooltip content="密钥签发/限流初始配置/证书更新已收口至 12.1.3 通道开通" placement="top">
                   <el-button size="small" type="primary" @click="$router.push('/m/12.1.3')">
-                    前往通道开通（12.1.3）
+                    前往通道开通
                   </el-button>
                 </el-tooltip>
               </span>
@@ -378,7 +375,6 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="muted" style="margin-top:8px">告警确认 / 升级处理已收口至「事件订阅 12.2.4 告警处理」，本页保留只读视图（与 12.2.4 同源）。</div>
         </el-card>
 
         <el-card shadow="never" style="margin-top: 12px;">

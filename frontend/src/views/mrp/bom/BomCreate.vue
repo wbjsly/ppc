@@ -1,6 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="清单创建（5.1.1）— 新建 / 复制 / 草稿编辑，保存内嵌循环校验" style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="状态">

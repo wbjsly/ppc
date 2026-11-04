@@ -1,11 +1,11 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="凭证生成（7.2.3）：折旧凭证与明细双向反查，勾稽差异" description="凭证 sourceType=DEPRECIATION，来源单号=run 单号，明细↔凭证双向可反查。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
         <el-input v-model="vSearch" placeholder="来源单号（run 单号，如 JZ202609-0001）" style="width:260px;" clearable />
         <el-button type="primary" @click="loadVouchers">反查凭证</el-button>
+        <PageInfo class="page-info--inline" title="凭证生成：折旧凭证与明细双向反查，勾稽差异" description="凭证 sourceType=DEPRECIATION，来源单号=run 单号，明细↔凭证双向可反查。" />
       </div>
 
       <el-table :data="voucherRows" size="small" border v-loading="loading">

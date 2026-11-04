@@ -1,7 +1,7 @@
 <template>
   <div class="page">
     <!-- 发起表单（三索引，FR-4.4-8-1） -->
-    <PageInfo title="批次追溯（4.13.1）：批次号/序列号/供应商批次号三索引发起 → 五类流向自动物化 → 批量冻结 / 在途拦截 / 召回登记。发起与登记为质量动作，冻结执行复用 4.9 质量冻结链。" style="margin-bottom: 8px" />
+    <PageInfo title="批次追溯：批次号/序列号/供应商批次号三索引发起 → 五类流向自动物化 → 批量冻结 / 在途拦截 / 召回登记。发起与登记为质量动作，冻结执行复用质量冻结链。" style="margin-bottom: 8px" />
     <el-form inline @submit.prevent>
       <el-form-item label="索引类型">
         <el-select v-model="form.indexType" style="width: 150px">

@@ -1,6 +1,6 @@
 <template>
   <div class="gauge-page">
-    <PageInfo title="计量器具与校准（6.9）：台账 → 到期预警（30/7 天）→ 校准执行 → 可疑批次追溯评估" description="CTQ 器具校准周期 ≤12 个月；校准 FAIL 自动停用并反向追溯自上次合格校准日起用过该器具的检验批；未评估可疑批次阻断放行（C-4.12-12），5 工作日评估时限。" style="margin-bottom: 12px;" />
+    <PageInfo title="计量器具与校准：台账 → 到期预警（30/7 天）→ 校准执行 → 可疑批次追溯评估" description="CTQ 器具校准周期 ≤12 个月；校准 FAIL 自动停用并反向追溯自上次合格校准日起用过该器具的检验批；未评估可疑批次阻断放行（C-4.12-12），5 工作日评估时限。" style="margin-bottom: 12px;" />
 
     <!-- 到期预警（6.9.3） -->
     <el-row :gutter="12" style="margin-bottom:12px;" v-if="warnings.due7 || warnings.due30">

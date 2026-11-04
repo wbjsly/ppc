@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">岗位管理（10.2.2）</span>
+        <span class="title">岗位管理</span>
         <div>
           <el-select v-model="deptId" clearable placeholder="全部部门" style="width: 200px; margin-right: 8px"
                      @change="load">

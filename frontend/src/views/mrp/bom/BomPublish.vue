@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="版本发布（5.1.3）— 提交审核 → 工艺主管签署 → 发布生效；可手动废止"
-                    style="margin-bottom: 8px" />
 
     <!-- 审批待办（BomPublish，工艺主管可签） -->
     <div class="section">

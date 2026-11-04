@@ -1,6 +1,5 @@
 <template>
   <div class="rv-page">
-    <PageInfo title="红字凭证（2.6.3）：已出库退货的红字入库凭证台账（只读）——凭证号 RV + 退货单 + 供应商 + 物料明细 + 出库追溯" description="数据来源：2.6.1 质量退货与 2.6.2 其他退货出库动作自动生成（BR-4.2-34）；本台账仅归集查询，不提供编辑或作废。应付冲减为 4.6 财务域桩（D4）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -16,6 +15,7 @@
           start-placeholder="出库开始" end-placeholder="出库结束" style="width: 250px;"
           @change="load" />
         <el-button type="primary" @click="load">查询</el-button>
+        <PageInfo class="page-info--inline" title="红字凭证：已出库退货的红字入库凭证台账（只读）——凭证号 RV + 退货单 + 供应商 + 物料明细 + 出库追溯" description="数据来源：质量退货与其他退货出库动作自动生成（BR-4.2-34）；本台账仅归集查询，不提供编辑或作废。应付冲减为财务域桩（D4）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

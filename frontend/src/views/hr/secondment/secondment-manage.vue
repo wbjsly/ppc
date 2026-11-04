@@ -3,16 +3,16 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>{{ type === 'DISPATCH' ? '外派管理（10.8.1）' : '借调管理（10.8.2）' }}—— 主体三要素 / 双人复核（C-4.7-11）/ 分摊凭证</span>
+          <span>{{ type === 'DISPATCH' ? '外派管理' : '借调管理' }}—— 主体三要素 / 双人复核（C-4.7-11）/ 分摊凭证</span>
           <div>
             <el-button size="small" @click="scanRemind">提醒扫描</el-button>
             <el-button type="primary" size="small" @click="openSubmit">发起{{ type === 'DISPATCH' ? '外派' : '借调' }}</el-button>
+            <PageInfo class="page-info--inline" title="type === 'DISPATCH'
+          ? '外派=主体永久转移：生效写回法人主体/合同/缴纳地 + 社保减员增员双单；补贴按属地×职级标准带出（可改，差异审批可见）'
+          : '借调=劳动关系不变：主档零改动，单据落用工主体/成本中心/分摊比例（双方确认后锁定）；协议编号必填，到期前 15 天提醒，逾期未返岗 L1 阻断分摊'" />
           </div>
         </div>
       </template>
-      <PageInfo title="type === 'DISPATCH'
-          ? '外派=主体永久转移：生效写回法人主体/合同/缴纳地 + 社保减员增员双单；补贴按属地×职级标准带出（可改，差异审批可见）'
-          : '借调=劳动关系不变：主档零改动，单据落用工主体/成本中心/分摊比例（双方确认后锁定）；协议编号必填，到期前 15 天提醒，逾期未返岗 L1 阻断分摊'" />
 
       <el-tabs v-model="tab">
         <el-tab-pane :label="type === 'DISPATCH' ? '外派单据' : '借调单据'" name="list">

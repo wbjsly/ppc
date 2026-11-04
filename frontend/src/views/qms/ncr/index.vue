@@ -1,7 +1,7 @@
 <template>
   <div class="ncr-page">
     <el-alert type="error" :closable="false" style="margin-bottom: 12px;"
-      title="不合格品 NCR（2.5.3 / 6.5）：判不合格同事务生成并冻结，评审须选定处置，处置凭证齐全 → CAPA 有效 + 复检放行方可关闭"
+      title="不合格品 NCR：判不合格同事务生成并冻结，评审须选定处置，处置凭证齐全 → CAPA 有效 + 复检放行方可关闭"
       :description="tab === 'isolate'
         ? '6.5.1 标识隔离：冻结中的 NCR 隔离清单，行内隔离确认（货位/贴标人留痕）与标识卡打印。'
         : tab === 'dispose'

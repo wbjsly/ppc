@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="报工录入（5.7.1）— 扫/选派工单 → 开工 → 投料 → 产出（批量/逐件）→ 工时 → 提交；首件/IPQC 未决将被阻断"
-                    style="margin-bottom: 8px" />
 
     <!-- 扫码输入（D11 输入源无关：扫码枪键盘模拟走同一通道） -->
     <div class="toolbar">
@@ -11,7 +9,6 @@
       <el-input v-model="dispatchKeyword" placeholder="或按单号/工单号搜索" clearable style="width: 180px"
                 size="small" @keyup.enter="loadDispatches" @clear="loadDispatches" />
       <el-button size="small" @click="loadDispatches">查询</el-button>
-      <span class="tip">录入通道输入源无关：手工点击与扫码枪输入走同一累加/填充逻辑（design D11）</span>
     </div>
 
     <!-- 派工单选择（开工准入：终态阻断/超期黄条/人单提示） -->
@@ -66,7 +63,6 @@
             <el-button size="small" type="primary" :disabled="rpt.status !== 'OPEN'" @click="doFeed">
               投料（即扣库存）
             </el-button>
-            <span class="tip">保存即扣 AVAILABLE_QTY；不足 422 护栏；投料缺记录不阻断提交（完工倒冲补足 D13）</span>
           </div>
           <el-table :data="feeds" border stripe size="small">
             <el-table-column prop="itemCode" label="物料" width="140" />
@@ -137,7 +133,6 @@
             <el-button size="small" type="primary" :disabled="rpt.status !== 'OPEN'" @click="doHours">
               保存工时
             </el-button>
-            <span class="tip">偏离快照标准工时 &gt; WORKHOUR_DEVIATION_ALERT 生成主管待办（FR-4.5-5-6）</span>
           </div>
           <el-alert v-if="rpt.hourAlertFlag === '1' && !rpt.hourConfirmBy"
                     title="工时异常待主管确认后方可提交（待办已推送）"
@@ -151,7 +146,6 @@
           提交报工
         </el-button>
         <el-button :disabled="rpt.status !== 'OPEN'" @click="doDiscard">放弃草稿</el-button>
-        <span class="tip">提交后只读（BR-4.5-25 仅可冲销）；首件/IPQC/超产/工时/冻结前置校验</span>
       </div>
     </el-card>
 

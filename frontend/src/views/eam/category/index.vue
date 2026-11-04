@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="资产分类（7.1.4）：转资时按分类带入默认折旧政策；资本化下限为 BR-4.13-09 建卡阻断依据" description="无审批立即生效（主数据基线）。分类含：资本化下限、默认年限/残值率/折旧方法、年限上下限、关联资产科目（转资凭证借方取数）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -9,6 +8,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
         <el-button v-if="canEdit" type="success" @click="openCreate">新增分类</el-button>
+        <PageInfo class="page-info--inline" title="资产分类：转资时按分类带入默认折旧政策；资本化下限为 BR-4.13-09 建卡阻断依据" description="无审批立即生效（主数据基线）。分类含：资本化下限、默认年限/残值率/折旧方法、年限上下限、关联资产科目（转资凭证借方取数）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

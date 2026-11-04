@@ -1,6 +1,5 @@
 <template>
   <div class="exp-page">
-    <PageInfo title="效期优先（4.6.2）：FEFO 排序第二键 + 效期两级标记 + 黄橙红预警" description="推荐排序：同日入库按有效期升序（FEFO）。两级标记——效期警告（剩余 < MIN_REMAINING_SHELF_DAYS，放行但出库单加注）；效期锁定（剩余 < 有效期×EXPIRY_LOCK_RATIO，剔出推荐池并禁止出库过账，BR-4.4-20 / C-4.4-03）。锁定后的质量评估处置归 4.10 效期管理。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-input v-model="filters.itemCode" placeholder="物料" clearable style="width: 160px;"
@@ -20,6 +19,7 @@
       </el-select>
       <el-button @click="load">查询</el-button>
       <el-button type="primary" plain @click="load">刷新</el-button>
+      <PageInfo class="page-info--inline" title="效期优先：FEFO 排序第二键 + 效期两级标记 + 黄橙红预警" description="推荐排序：同日入库按有效期升序（FEFO）。两级标记——效期警告（剩余 < MIN_REMAINING_SHELF_DAYS，放行但出库单加注）；效期锁定（剩余 < 有效期×EXPIRY_LOCK_RATIO，剔出推荐池并禁止出库过账，BR-4.4-20 / C-4.4-03）。锁定后的质量评估处置归效期管理。" />
     </div>
 
     <div class="stats" v-if="thresholds">

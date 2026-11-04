@@ -1,12 +1,9 @@
 <template>
   <div>
-    <el-page-header content="报表模板管理（14.1）— 设计/测试/发布/版本四叶；口径 diff 硬阻断（C-4.10-01）、三方发布审批、快照回退"
-                    style="margin-bottom: 8px" />
 
     <!-- ========== 14.1.3 模板发布 ========== -->
     <div class="toolbar">
       <el-button size="small" type="primary" @click="load">刷新</el-button>
-      <span class="tip">三方串行审批：数据治理（口径）→ 业务负责人（业务准确性）→ IT（性能）；3/5 工作日超时催办升级；发布前二次口径校验（BR-4.10-11）</span>
     </div>
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="400">
       <el-table-column prop="code" label="编码" width="130" />

@@ -1,6 +1,5 @@
 <template>
   <div class="tm-page">
-    <PageInfo title="三方匹配（2.7.2）：PO - 收货单 - 发票逐行比对（容差 TOLERANCE_DEFAULT = 0.5%）" description="容差内自动冲回暂估并生成正式应付凭证（借 应付暂估 + 采购价差 / 贷 应付账款）；超容差冻结生成异常对账单，采购员确认后过账价差；跨期（发票月份早于当前月）确认后仍须 ADMIN 手工过账。未关联 PO 的发票仅登记留存，不入匹配。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -19,6 +18,7 @@
           start-placeholder="开票开始" end-placeholder="开票结束" style="width: 250px;" @change="load" />
         <el-button type="primary" @click="load">查询</el-button>
         <el-button type="success" @click="openCreate">登记发票</el-button>
+        <PageInfo class="page-info--inline" title="三方匹配：PO - 收货单 - 发票逐行比对（容差 TOLERANCE_DEFAULT = 0.5%）" description="容差内自动冲回暂估并生成正式应付凭证（借应付暂估 + 采购价差 / 贷应付账款）；超容差冻结生成异常对账单，采购员确认后过账价差；跨期（发票月份早于当前月）确认后仍须 ADMIN 手工过账。未关联 PO 的发票仅登记留存，不入匹配。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading" @expand-change="onExpand">

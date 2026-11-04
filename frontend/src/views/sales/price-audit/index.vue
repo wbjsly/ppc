@@ -1,6 +1,5 @@
 <template>
   <div class="pa-page">
-    <PageInfo title="取价记录（3.6.4）" description="价格审计明细（C-4.3-04 / BR-4.3-35/36）：原始基准价、每层折扣率、叠加规则、最终生效价、冲突裁决、操作人与时间戳，只增不改，保留期按 AUDIT_RETENTION_DAYS 参数。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -18,6 +17,7 @@
                             start-placeholder="开始" end-placeholder="结束" style="width: 240px;" />
             <el-button type="primary" @click="load(1)">查询</el-button>
             <el-button :icon="Refresh" @click="load()">刷新</el-button>
+            <PageInfo class="page-info--inline" title="取价记录" description="价格审计明细（C-4.3-04 / BR-4.3-35/36）：原始基准价、每层折扣率、叠加规则、最终生效价、冲突裁决、操作人与时间戳，只增不改，保留期按 AUDIT_RETENTION_DAYS 参数。" />
           </div>
         </div>
       </template>

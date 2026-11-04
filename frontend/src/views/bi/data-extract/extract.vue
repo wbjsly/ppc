@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="数据抽取（14.2）— 抽取配置/脱敏规则/质量校验三叶；波动暂停（BR-4.10-12）、断点续抽（BR-4.10-13）、质量分级阻断（BR-4.10-14）、schema 变更检测（BR-4.10-15）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.2.1 抽取配置 ==================== -->
     <el-alert v-if="ready.ready !== undefined" :type="ready.ready ? 'success' : 'warning'"

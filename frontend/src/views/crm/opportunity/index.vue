@@ -1,6 +1,6 @@
 <template>
   <div class="opp-page">
-    <PageInfo title="商机录入（3.1.1）" description="手工登记或从 B 级以上线索转化；编号自动且创建后不可改；预期金额超 100 万自动通知销售经理；页顶漏斗/转化率/赢率全自动统计（BR-4.8-09）。" style="margin-bottom: 12px;" />
+    <PageInfo title="商机录入" description="手工登记或从 B 级以上线索转化；编号自动且创建后不可改；预期金额超 100 万自动通知销售经理；页顶漏斗/转化率/赢率全自动统计（BR-4.8-09）。" style="margin-bottom: 12px;" />
 
     <!-- ============ 页顶统计卡片 ============ -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

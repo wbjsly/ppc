@@ -1,14 +1,12 @@
 <template>
   <div>
-    <el-page-header content="权限控制（14.4）— 行级三维度矩阵/多角色并集（BR-4.10-16）/异常回退（BR-4.10-17）；列级敏感字段登记；掩码总览与临时授权（≤24h）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.4.2 列级权限 ==================== -->
-    <PageInfo title="敏感字段登记位（COL_SENSITIVE）：登记后未命中掩码规则的字段默认掩码（C-4.10-02）；变更走数据治理审批链" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-button size="small" type="success" @click="sensVisible = true">新增登记位</el-button>
       <el-button size="small" @click="loadSensitive">刷新</el-button>
+      <PageInfo class="page-info--inline" title="敏感字段登记位（COL_SENSITIVE）：登记后未命中掩码规则的字段默认掩码（C-4.10-02）；变更走数据治理审批链" />
     </div>
     <el-table :data="sensitiveFields" border stripe size="small" max-height="300">
       <el-table-column prop="targetKey" label="字段" min-width="160" />

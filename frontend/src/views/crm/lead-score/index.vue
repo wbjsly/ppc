@@ -1,6 +1,6 @@
 <template>
   <div class="lead-score-page">
-    <PageInfo title="线索评分（11.1.2）" description="五维加权：需求 30% / 预算 25% / 决策链 20% / 紧迫 15% / 竞争 10%；每维 1-5 分，缺项按 0 分计并提示。等级 A≥80、B 60-79、C 40-59、D<40，D 级自动入线索池。" style="margin-bottom: 12px;" />
+    <PageInfo title="线索评分" description="五维加权：需求 30% / 预算 25% / 决策链 20% / 紧迫 15% / 竞争 10%；每维 1-5 分，缺项按 0 分计并提示。等级 A≥80、B 60-79、C 40-59、D<40，D 级自动入线索池。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== 评分与等级看板 ==================== -->

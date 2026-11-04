@@ -4,11 +4,13 @@
       <template #header>
         <div class="card-header">
           <span class="ttl">{{ title }}</span>
-          <el-button size="small" :loading="loading" @click="load">刷新</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button size="small" :loading="loading" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="检验记录：全状态历史查询——已放行/冻结/免检/在途批次均可查。" description="行点击下钻批次详情工作台；行内「打印报告」出七段版式检验报告（含抽样记录段）。" />
+          </div>
         </div>
       </template>
 
-      <PageInfo title="检验记录（6.3.2）：全状态历史查询——已放行/冻结/免检/在途批次均可查。" description="行点击下钻批次详情工作台；行内「打印报告」出七段版式检验报告（含抽样记录段）。" style="margin-bottom: 10px;" />
 
       <div class="filters">
         <el-select v-model="filters.lotType" placeholder="类型" clearable style="width: 120px;" @change="load">

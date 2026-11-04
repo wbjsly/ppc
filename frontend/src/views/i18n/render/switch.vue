@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="界面渲染（17.6）：动态切换、缺失回退" description="BR-5.7-04 切换 500ms 内无需重启；BR-5.7-05 缺失键回退 zh-CN+视觉标记+批量埋点；BR-5.7-06 加载异常整体回退。" style="margin-bottom:12px" />
+    <PageInfo title="界面渲染：动态切换、缺失回退" description="BR-5.7-04 切换 500ms 内无需重启；BR-5.7-05 缺失键回退 zh-CN+视觉标记+批量埋点；BR-5.7-06 加载异常整体回退。" style="margin-bottom:12px" />
 
     <!-- 17.6.1 动态切换 -->
     <el-form inline size="small">

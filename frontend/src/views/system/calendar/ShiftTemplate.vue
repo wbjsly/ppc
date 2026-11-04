@@ -1,13 +1,10 @@
 <template>
   <div>
-    <el-page-header content="班次模板（16.11.2）— 班次时段（供排程时段装箱）与工作中心绑定；写操作仅管理员，计划员只读"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <strong>班次模板</strong>
       <el-button size="small" type="success" :disabled="!isAdmin" @click="openEdit(null)">新建班次</el-button>
       <el-tag v-if="!isAdmin" type="info" size="small">当前角色只读</el-tag>
-      <span class="tip">工时必须 > 0；编码唯一；被工作中心引用时禁删（422）</span>
     </div>
 
     <el-table :data="shifts" v-loading="loading" border stripe size="small">
@@ -39,7 +36,6 @@
       <el-input v-model="wcCode" placeholder="工作中心编码" clearable style="width: 160px"
                 size="small" @keyup.enter="loadBindings" @clear="loadBindings" />
       <el-button size="small" type="primary" @click="loadBindings">查询</el-button>
-      <span class="tip">未绑定的 WC 排程时按默认白班 DAY；首期单班次替换式绑定</span>
     </div>
     <el-table :data="bindings" v-loading="bLoading" border stripe size="small" max-height="260">
       <el-table-column prop="wcCode" label="工作中心" width="160" />

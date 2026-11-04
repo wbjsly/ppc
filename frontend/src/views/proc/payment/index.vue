@@ -1,6 +1,6 @@
 <template>
   <div class="pay-page">
-    <PageInfo title="付款管理（2.7.3）：对账冻结 → 申请 → 分级审批 → 排期 → 执行 → 付款凭证 → FIFO 核销" description="C-4.2-15 对账差异超 0.5% 冻结付款须采购员+财务双签；付款按金额三级审批（≤5万 PM / ≤50万 +财务主管 / >50万 +总经理）；执行付款与排期仅 ADMIN；预付款受 C-4.2-13 双 L1 约束，发票过账后自动按最早未核销顺序冲抵应付。" style="margin-bottom: 10px;" />
+    <PageInfo title="付款管理：对账冻结 → 申请 → 分级审批 → 排期 → 执行 → 付款凭证 → FIFO 核销" description="C-4.2-15 对账差异超 0.5% 冻结付款须采购员+财务双签；付款按金额三级审批（≤5万 PM / ≤50万 +财务主管 / >50万 +总经理）；执行付款与排期仅 ADMIN；预付款受 C-4.2-13 双 L1 约束，发票过账后自动按最早未核销顺序冲抵应付。" style="margin-bottom: 10px;" />
 
     <el-tabs v-model="tab" @tab-change="onTab">
 
@@ -19,9 +19,6 @@
             <el-option v-for="s in suppliers" :key="s.id" :label="s.supplierName" :value="s.id" />
           </el-select>
           <el-button @click="loadStatements">查询</el-button>
-        </div>
-        <div style="color: #909399; font-size: 12px; margin-bottom: 8px;">
-          登记/系统匹配/双签操作已收口至「对账协同 12.6.1 / 12.6.2」，本页保留只读视图。
         </div>
         <el-table :data="stmtRows" size="small" border v-loading="loading">
           <el-table-column type="expand">

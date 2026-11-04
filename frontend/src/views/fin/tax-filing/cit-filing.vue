@@ -6,10 +6,10 @@
         <el-input v-model="period" placeholder="所属期 yyyyMM" style="width: 130px; margin-right: 8px" size="small" />
         <el-button size="small" @click="load">查询</el-button>
         <el-button type="primary" size="small" @click="openGenerate">生成预缴申报</el-button>
+        <PageInfo class="page-info--inline" title="税基 = 当年累计利润总额（总账 6xxx 取数）+ 手工纳税调整项汇总；应补退 = 累计应纳 − 已预缴（负值归零不退）。不做纳税调整明细（偏差记录）" />
       </div>
     </div>
 
-    <PageInfo title="税基 = 当年累计利润总额（总账 6xxx 取数）+ 手工纳税调整项汇总；应补退 = 累计应纳 − 已预缴（负值归零不退）。不做纳税调整明细（偏差记录）" />
 
     <el-table :data="rows" size="small" border>
       <el-table-column prop="returnNo" label="申报单号" width="180" />

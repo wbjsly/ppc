@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="接口目录（15.1）：契约登记、评审队列、语义化版本台账" description="复用接入治理数据（interface-onboarding）。契约未登记/未发布不得签发生产凭证（BR-5.5-01）。" style="margin-bottom:12px" />
+    <PageInfo title="接口目录：契约登记、评审队列、语义化版本台账" description="复用接入治理数据（interface-onboarding）。契约未登记/未发布不得签发生产凭证（BR-5.5-01）。" style="margin-bottom:12px" />
 
     <!-- 15.1.3 版本登记 -->
     <el-table :data="contracts" border size="small">

@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.7.3 分批发货" description="按 3.4.2 编制的分批交付方案逐行生成发货单，每行独立交期与预留；仅生成计划发货日 ≤ 截止日的到期待发行。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -13,6 +12,7 @@
                        :disabled="!soId" :loading="generating" @click="generate">
               生成分批发货单
             </el-button>
+            <PageInfo class="page-info--inline" title="3.7.3 分批发货" description="编制的分批交付方案逐行生成发货单，每行独立交期与预留；仅生成计划发货日 ≤ 截止日的到期待发行。拣货作业由库存域拣货复核承载，本页为销售侧策略与确认。" />
           </div>
         </div>
       </template>

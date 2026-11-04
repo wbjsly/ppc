@@ -2,13 +2,13 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">薪酬发放 · 代发文件（10.6.1）</span>
+        <span class="title">薪酬发放 · 代发文件</span>
         <div>
           <el-input v-model="runId" placeholder="PayrollRun ID" clearable style="width:260px;margin-right:8px" @change="loadAll" />
           <el-button type="primary" @click="loadAll">查询</el-button>
+          <PageInfo class="page-info--inline" title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" />
         </div>
       </div>
-      <PageInfo title="代发文件须批次 APPROVED；缺银行卡号阻断入文件；对账全部匹配且金额一致 → RECONCILED；差异 5 个工作日处理，金额调整 L2；对账完成+差异清零 → 归档锁定" style="margin-bottom:12px" />
 
       <el-descriptions v-if="board" :column="4" border style="margin-bottom:12px">
         <el-descriptions-item label="批次状态">{{ board.runStatus }}</el-descriptions-item>

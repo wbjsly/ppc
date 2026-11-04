@@ -4,7 +4,7 @@
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
-          <span>交期确认 · 待确认作业台（12.5.2）—— 48h 催办 / 72h 升级 / 连 3 张锁定</span>
+          <span>交期确认 · 待确认作业台—— 48h 催办 / 72h 升级 / 连 3 张锁定</span>
           <div>
             <el-select v-model="query.status" placeholder="确认状态" clearable size="small"
                        style="width:140px" @change="load">

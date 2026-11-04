@@ -1,13 +1,15 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="认证鉴权（15.2）：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）" description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" style="margin-bottom:12px" />
 
     <!-- 15.2.3 单点登录 -->
     <el-card shadow="never" style="margin-bottom:12px">
       <template #header>
         <div class="card-head">
           <span>兄弟系统（IdP 注册）</span>
-          <el-button type="primary" size="small" @click="regDrawer=true">注册兄弟系统</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="regDrawer=true">注册兄弟系统</el-button>
+            <PageInfo class="page-info--inline" title="认证鉴权：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）" description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" />
+          </div>
         </div>
       </template>
       <el-table :data="ssoApps" border size="small">

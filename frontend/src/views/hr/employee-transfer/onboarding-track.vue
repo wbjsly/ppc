@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>入职管理（10.7.1）—— 建档进度与入职提醒</span>
-          <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+          <span>入职管理—— 建档进度与入职提醒</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+            <PageInfo class="page-info--inline" title="建档登记；本页跟踪入职进度：建档状态 + 开通审批状态 + 试用期提醒" />
+          </div>
         </div>
       </template>
-      <PageInfo title="建档登记在 10.1.1；本页跟踪入职进度：建档状态 + 开通审批状态 + 试用期提醒" />
 
       <div class="warn-title">试用期 ≤15 天提醒（BR-4.7-08）</div>
       <el-table :data="remindings" size="small" border class="mb8">

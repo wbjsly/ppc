@@ -1,7 +1,7 @@
 <template>
   <div class="pd-page">
     <el-alert type="warning" :closable="false" style="margin-bottom: 12px;"
-      title="差异处理（4.7.4）：《盘点差异单》拣货差异闭环"
+      title="差异处理：《盘点差异单》拣货差异闭环"
       description="PENDING 差异存在时该单据全部出库过账入口 422（BR-4.4-29 门闩）；闭环（处理说明必填）后自动解锁并回迁任务。本组仅主管确认、不挂审批（偏差 D3，超容差审批留 4.11）。" />
 
     <div class="toolbar">

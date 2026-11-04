@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="租赁管理（7.4.3）：合同 → 分类确认 → 使用权确认（PV+摊余计划+ROU 建卡）→ 月度处理（幂等）→ 重计量 / 临期 / 到期终止" description="短期低值豁免（BR-25）不建卡不出计划，直线进损益留痕；重新计量经财务资产会计单签。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -12,6 +11,7 @@
         <el-button @click="loadExpiry">临期清单</el-button>
         <span class="spacer" />
         <el-button plain size="small" @click="loadLeases">刷新</el-button>
+        <PageInfo class="page-info--inline" title="租赁管理：合同 → 分类确认 → 使用权确认（PV+摊余计划+ROU 建卡）→ 月度处理（幂等）→ 重计量 / 临期 / 到期终止" description="短期低值豁免（BR-25）不建卡不出计划，直线进损益留痕；重新计量经财务资产会计单签。" />
       </div>
 
       <el-table :data="leaseRows" size="small" border v-loading="loading" max-height="360">

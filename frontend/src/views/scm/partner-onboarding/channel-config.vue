@@ -3,7 +3,7 @@
     <!-- 入驻状态聚合 + 通道列表 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">通道开通（12.1.3）—— 配置动作唯一入口</h4>
+        <h4 style="margin:0">通道开通—— 配置动作唯一入口</h4>
         <div>
           <el-input v-model="partnerCode" placeholder="伙伴编码" clearable size="small"
                     style="width:160px" @keyup.enter="load" />

@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="数据导出（14.5）— 模板/数据集双源、三格式水印（Excel 页眉/PDF 斜置/CSV BOM）、AES-256 加密下载 7 天有效、超量分级审批（经理/总监）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.2 水印标记 ==================== -->
     <PageInfo title="导出文件自动嵌入水印：内容 = {用户名}|{时间戳}|{唯一流水号}；Excel 页眉页脚+背景半透明、PDF 每页右下角+斜置、CSV BOM+首行注释（FR-4.10-4-4）" style="margin-bottom: 8px" />

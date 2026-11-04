@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">评分录入（10.10.2）</span>
+        <span class="title">评分录入</span>
         <div>
           <el-select v-model="planId" placeholder="选择方案" clearable style="width:220px;margin-right:8px" @change="load">
             <el-option v-for="p in plans" :key="p.id" :label="`${p.period} ${p.name}`" :value="p.id" />

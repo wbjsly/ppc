@@ -1,6 +1,5 @@
 <template>
   <div class="pr-page">
-    <PageInfo title="出库复核（4.7.3）：行级三分支——通过 / 数量品种差异 / 外观异常" description="差异 → 任务挂 DIFF_PENDING 并锁过账（BR-4.4-29，闭环前 4.7.4 才能解锁）；外观异常 → 系统自动发起质量冻结申请（质量主管审批不省）+ 释放该批次预留（BR-4.4-30）。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="taskId" placeholder="选择任务（拣货完成/差异待处理）" filterable
@@ -12,6 +11,7 @@
       <el-button v-if="task && task.status === 'PICKED'" type="primary"
         @click="submitReview">送复核</el-button>
       <span v-if="task" class="state">状态：{{ taskText(task.status) }}</span>
+      <PageInfo class="page-info--inline" title="出库复核：行级三分支——通过 / 数量品种差异 / 外观异常" description="差异 → 任务挂 DIFF_PENDING 并锁过账（BR-4.4-29，闭环前才能解锁）；外观异常 → 系统自动发起质量冻结申请（质量主管审批不省）+ 释放该批次预留（BR-4.4-30）。" />
     </div>
 
     <el-table :data="lines" size="small" border>

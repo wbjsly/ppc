@@ -3,7 +3,7 @@
     <!-- 订阅配置 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">订阅配置（12.2.2）—— 伙伴 × 事件类型独立路由</h4>
+        <h4 style="margin:0">订阅配置—— 伙伴 × 事件类型独立路由</h4>
         <div>
           <el-input v-model="query.partnerCode" placeholder="伙伴编码" clearable size="small"
                     style="width:150px" @keyup.enter="load" />
@@ -56,7 +56,7 @@
           <el-input v-model="form.partnerCode" :disabled="editing" placeholder="如 SUP0001" />
         </el-form-item>
         <el-form-item label="事件类型" required>
-          <el-input v-model="form.eventType" :disabled="editing" placeholder="如 PROC.PO_PUSHED（12.2.1 注册的类型码）" />
+          <el-input v-model="form.eventType" :disabled="editing" placeholder="如 PROC.PO_PUSHED" />
         </el-form-item>
         <el-form-item label="回调 URL">
           <el-input v-model="form.callbackUrl" placeholder="https://（留空 = 回落通道 URL）" />

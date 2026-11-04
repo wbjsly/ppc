@@ -2,10 +2,12 @@
   <div class="page">
     <div class="card-header">
       <span style="font-weight: bold; font-size: 16px;">{{ title }}</span>
-      <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+        <PageInfo class="page-info--inline" title="按 PO 登记（默认）：带出未清量逐行录实收，提交时按 0.5% 容差分流（BR-4.2-20/21/22）" description="无 PO 收货（FREE）为辅入口：免容差、不回写 PO，仍走待检与过账。核对送货单与 PO：预填值即 PO 未清量，实收与之对照着色。" />
+      </div>
     </div>
 
-    <PageInfo title="按 PO 登记（默认）：带出未清量逐行录实收，提交时按 0.5% 容差分流（BR-4.2-20/21/22）" description="无 PO 收货（FREE）为辅入口：免容差、不回写 PO，仍走待检与过账。核对送货单与 PO：预填值即 PO 未清量，实收与之对照着色。" style="margin-bottom: 10px;" />
 
     <div class="toolbar">
       <el-radio-group v-model="sourceType" size="small">

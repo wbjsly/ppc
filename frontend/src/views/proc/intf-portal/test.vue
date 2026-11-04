@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="沙箱联调（15.6）：沙箱配置、联调测试、生产放行" description="复用 interface-onboarding。沙箱通过率须达 100% 方可申请生产放行（BR-5.5-02）；放行双人会签（C-0-03）。" style="margin-bottom:12px" />
+    <PageInfo title="沙箱联调：沙箱配置、联调测试、生产放行" description="复用 interface-onboarding。沙箱通过率须达 100% 方可申请生产放行（BR-5.5-02）；放行双人会签（C-0-03）。" style="margin-bottom:12px" />
 
     <!-- 15.6.2 联调测试 -->
     <el-table :data="contracts" border size="small">

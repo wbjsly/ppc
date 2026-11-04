@@ -66,7 +66,6 @@
       <el-tab-pane label="我的 ASN" name="asn">
         <div class="toolbar">
           <el-button type="primary" :disabled="!confirmedPos.length" @click="openAsnCreate">创建发货通知（ASN）</el-button>
-          <span class="hint">ASN 须基于交期已确认的 PO；发货量超出容差部分由采购与仓库审批</span>
         </div>
         <el-table :data="asnRows" size="small" border v-loading="loading">
           <el-table-column prop="asnNo" label="ASN 单号" width="160" />

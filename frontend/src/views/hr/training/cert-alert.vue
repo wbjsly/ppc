@@ -3,7 +3,7 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>资格认证到期预警（10.9.3，BR-4.7-06：到期前 60 天复审提醒 · 失效限制排班）</span>
+          <span>资格认证到期预警（BR-4.7-06：到期前 60 天复审提醒 · 失效限制排班）</span>
           <div>
             <el-button size="small" @click="load">刷新</el-button>
             <el-button size="small" type="warning" @click="flipScan">手动翻转扫描</el-button>

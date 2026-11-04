@@ -86,7 +86,7 @@
             </el-table-column>
           </el-table>
           <div v-if="!rows.length && !loading" class="empty">
-            该期间暂无归集数据——工单完工归集后自动出现在报表（8.10.1 可核对归集要素）
+            该期间暂无归集数据——工单完工归集后自动出现在报表
           </div>
         </el-card>
       </el-tab-pane>

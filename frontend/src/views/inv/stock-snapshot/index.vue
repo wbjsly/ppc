@@ -81,7 +81,7 @@
 
       <!-- ============ 4.3.3 在制库存（空态骨架，偏差 D5） ============ -->
       <el-tab-pane label="在制库存" name="wip">
-        <el-empty description="暂无在制数据 —— 待工单管理（5.4）上线后自动接入，接口契约已就位">
+        <el-empty description="暂无在制数据 —— 待工单管理上线后自动接入，接口契约已就位">
           <template #image>
             <el-icon :size="64" color="#c0c4cc"><Coin /></el-icon>
           </template>

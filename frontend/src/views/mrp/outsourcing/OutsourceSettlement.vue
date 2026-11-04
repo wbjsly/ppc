@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="外协对账（5.10.4）— 按外协 PO 汇总未对账收货明细生成对账单，审批通过生成应付挂账（金额=数量×PO 成交价，禁改价）"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-input v-model="filters.poNo" size="small" clearable placeholder="PO 号"
@@ -18,7 +16,6 @@
       <el-button size="small" @click="tab = tab === 'settle' ? 'ap' : 'settle'">
         {{ tab === 'settle' ? '查看应付挂账' : '返回对账单' }}
       </el-button>
-      <span class="tip">金额取 PO 成交价快照，不可人工改价；同一收货行至多进一张对账单</span>
     </div>
 
     <!-- 对账单 -->

@@ -1,6 +1,5 @@
 <template>
   <div class="rt-page">
-    <PageInfo title="质量退货（2.6.1）：NCR 评审选退货自动带出（PO/收货单/数量/PO 单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="本页仅管理 NCR 源质量退货；非质量退货（发错货/多发货等）已迁移至 2.6.2「其他退货」独立入口。未入库质检退货仅关联 PO 与收货单（BR-4.2-32 例外口），质量退货打绩效扣分标记（D4）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -17,6 +16,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
         <el-button link type="primary" @click="$router.push('/m/2.6.2')">非质量退货请走 2.6.2 其他退货 →</el-button>
+        <PageInfo class="page-info--inline" title="质量退货：NCR 评审选退货自动带出（PO/收货单/数量/PO 单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="本页仅管理 NCR 源质量退货；非质量退货（发错货/多发货等）已迁移至「其他退货」独立入口。未入库质检退货仅关联 PO 与收货单（BR-4.2-32 例外口），质量退货打绩效扣分标记（D4）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading" @row-click="openDetail" row-style="cursor:pointer">

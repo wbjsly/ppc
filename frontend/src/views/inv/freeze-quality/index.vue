@@ -1,6 +1,5 @@
 <template>
   <div>
-    <el-page-header content="质量冻结（4.9.1）— 质量管理员发起、质量经理审批" style="margin-bottom: 8px" />
     <FreezePanel freeze-type="QUALITY" />
   </div>
 </template>

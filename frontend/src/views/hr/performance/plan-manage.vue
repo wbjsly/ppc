@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">绩效方案（10.10.1）</span>
+        <span class="title">绩效方案</span>
         <div>
           <el-button type="primary" @click="openCreate">新建方案</el-button>
           <el-button @click="load">刷新</el-button>

@@ -1,6 +1,5 @@
 <template>
   <div class="qcv-page">
-    <PageInfo title="报价转化（3.2.3）" description="一键将已发布报价转为 SO：校验有效期、客户信用状态与占用；转化回写报价关联 SO，成功后商机自动推进「合同签订」。过期报价请先开新版本更新。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -17,6 +16,7 @@
                       :prefix-icon="Search" style="width: 190px;" @keyup.enter="loadData(1)" />
             <el-button type="primary" @click="loadData(1)">查询</el-button>
             <el-button :icon="Refresh" @click="loadData()">刷新</el-button>
+            <PageInfo class="page-info--inline" title="报价转化" description="一键将已发布报价转为 SO：校验有效期、客户信用状态与占用；转化回写报价关联 SO，成功后商机自动推进「合同签订」。过期报价请先开新版本更新。" />
           </div>
         </div>
       </template>

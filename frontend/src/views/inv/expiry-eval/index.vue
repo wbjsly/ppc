@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="质量评估（4.10.3）：锁定批次处置——报废 / 让步放行 / 转质量冻结" description="质量管理员对锁定批次手工发起；判定三分支：报废（生成报废单，质量经理签）→ 走 4.5.4；让步放行（必填放行有效期，质量经理签）→ 写豁免放行；转质量冻结（调 4.9 冻结链，即刻关闭）。解除锁定唯一入口=本页放行。" style="margin-bottom: 12px;" />
+    <PageInfo title="质量评估：锁定批次处置——报废 / 让步放行 / 转质量冻结" description="质量管理员对锁定批次手工发起；判定三分支：报废（生成报废单，质量经理签）→ 走；让步放行（必填放行有效期，质量经理签）→ 写豁免放行；转质量冻结（调冻结链，即刻关闭）。解除锁定唯一入口=本页放行。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- 评估单列表 -->
@@ -70,7 +70,6 @@
       <el-tab-pane label="待我签署" name="todo">
         <div class="toolbar">
           <el-button @click="loadTodo">刷新</el-button>
-          <span class="tip">仅显示 ExpiryEval 待办（角色匹配由底座强制，同人不可签）</span>
         </div>
         <el-table :data="todos" v-loading="loading" size="small" border>
           <el-table-column prop="apprNo" label="审批单号" width="150" />

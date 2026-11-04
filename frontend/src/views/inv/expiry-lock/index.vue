@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="临期锁定（4.10.2）：锁定批次台账 + 变更历史 + 人工锁定（免审批）" description="台账展示 EXPIRY_LOCK_FLAG=1 全量（来源区分 AUTO 系统扫描 / MANUAL 人工锁定）；人工锁定即刻生效免审批，解除唯一入口=4.10.3 评估放行（收紧免审、放宽必审）。" style="margin-bottom: 12px;" />
+    <PageInfo title="临期锁定：锁定批次台账 + 变更历史 + 人工锁定（免审批）" description="台账展示 EXPIRY_LOCK_FLAG=1 全量（来源区分 AUTO 系统扫描 / MANUAL 人工锁定）；人工锁定即刻生效免审批，解除唯一入口=4.10.3 评估放行（收紧免审、放宽必审）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab" @tab-change="onTabChange">
       <!-- 锁定台账 -->

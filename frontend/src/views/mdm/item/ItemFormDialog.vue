@@ -99,7 +99,7 @@
               <el-option label="B（中值）" value="B" />
               <el-option label="C（低值）" value="C" />
             </el-select>
-            <div class="form-tip">库存报表库龄/周转分组维度（4.14），留空=未分类</div>
+            <div class="form-tip">库存报表库龄/周转分组维度，留空=未分类</div>
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -116,7 +116,7 @@
         <el-col :span="12">
           <el-form-item label="序列管理">
             <el-switch v-model="form.serialFlag" active-value="1" inactive-value="0" />
-            <div class="form-tip">开启后出入库逐件校验序列号（4.2.2）</div>
+            <div class="form-tip">开启后出入库逐件校验序列号</div>
           </el-form-item>
         </el-col>
         <el-col :span="12">

@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="11.11.2 收款计划（合同维度分期，不参与记账）" description="按合同登记分期（期数/计划金额/到期日）；每期关联展示实际应收、已核销金额与达成率，超期未收标红（合同 → SO → 应收链路实时口径，D10）；手工登记实际收款走应收核销记录（不重复记账）。计划合计与合同额不符时给出待调整提示。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -14,6 +13,7 @@
                          :value="c.id" />
             </el-select>
             <el-button size="small" style="margin-left:8px" @click="loadProgress">刷新</el-button>
+            <PageInfo class="page-info--inline" title="11.11.2 收款计划（合同维度分期，不参与记账）" description="按合同登记分期（期数/计划金额/到期日）；每期关联展示实际应收、已核销金额与达成率，超期未收标红（合同 → SO → 应收链路实时口径，D10）；手工登记实际收款走应收核销记录（不重复记账）。计划合计与合同额不符时给出待调整提示。" />
           </div>
         </div>
       </template>
@@ -29,7 +29,7 @@
 
     <el-alert v-if="adjust && adjust.needed" type="warning" :closable="false" show-icon
               class="mb12"
-              :title="`收款计划合计 ¥${fmt(adjust.planSum)} 与合同金额 ¥${fmt(adjust.contractAmount)} 不符（差额 ¥${fmt(adjust.diff)}）—— 请调整期次（14.6 变更后常见）`" />
+              :title="`收款计划合计 ¥${fmt(adjust.planSum)} 与合同金额 ¥${fmt(adjust.contractAmount)} 不符（差额 ¥${fmt(adjust.diff)}）—— 请调整期次`" />
 
     <!-- 交付执行（S-4.8-08 交付跟踪，只读聚合） -->
     <el-card v-if="delivery" shadow="never" class="mb12">

@@ -1,6 +1,6 @@
 <template>
   <div class="dm-page">
-    <PageInfo title="折扣矩阵（3.6.2）" description="三层折扣规则配置：渠道折扣（按客户渠道属性）/ 时间促销（窗口内重叠取最大）/ 量价阶梯（复用 LADDER 协议，见专属折扣页）；叠加规则默认最优单层，可切逐层递减（BR-4.3-31）。" style="margin-bottom: 12px;" />
+    <PageInfo title="折扣矩阵" description="三层折扣规则配置：渠道折扣（按客户渠道属性）/ 时间促销（窗口内重叠取最大）/ 量价阶梯（复用 LADDER 协议，见专属折扣页）；叠加规则默认最优单层，可切逐层递减（BR-4.3-31）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ============ 渠道折扣 ============ -->

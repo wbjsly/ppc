@@ -1,14 +1,11 @@
 <template>
   <div>
-    <el-page-header content="工单创建（5.4.1）— 手工新建 / 从 PMO 选入；BOM·路线双快照 + 缺料预检（缺料不阻断）"
-                    style="margin-bottom: 8px" />
 
     <el-tabs v-model="tab">
       <!-- PMO 选入 -->
       <el-tab-pane label="从计划工单（PMO）选入" name="pmo">
         <div class="toolbar">
           <el-button size="small" @click="loadPmos">刷新</el-button>
-          <span class="tip">5.3 已转正且未关联工单的生产建议；同一 PMO 只能建单一次（幂等回写）</span>
         </div>
         <el-table :data="pmos" size="small" border v-loading="loading">
           <el-table-column prop="pmoNo" label="计划工单号" width="160" />

@@ -20,7 +20,6 @@
           <el-option label="已发布" value="PUBLISHED" />
         </el-select>
         <el-button size="small" type="primary" @click="load">查询</el-button>
-        <span class="hint">状态机 GENERATED → REVIEWED → ARCHIVED → PUBLISHED，非法跃迁 422；未归档发布 L1 硬阻断（BR-4.9-29）</span>
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

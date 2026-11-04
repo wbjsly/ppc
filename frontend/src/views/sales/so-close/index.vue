@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.5.4 订单关闭" description="手动关闭必填原因并经销售经理确认；关闭时未执行余量显式处理留痕、释放未消耗预留（ATP 回升）；关闭后仅可查询，重启须新建 SO 并关联原单号（业务逻辑 6）。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -16,6 +15,7 @@
               <el-option label="已关闭 CLOSED" value="CLOSED" />
             </el-select>
             <el-button size="small" style="margin-left:8px" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="3.5.4 订单关闭" description="手动关闭必填原因并经销售经理确认；关闭时未执行余量显式处理留痕、释放未消耗预留（ATP 回升）；关闭后仅可查询，重启须新建 SO 并关联原单号（业务逻辑 6）。" />
           </div>
         </div>
       </template>

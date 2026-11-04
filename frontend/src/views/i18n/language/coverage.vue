@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="语言管理（17.1）：键值维护、缺口报告、版本发布" description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" style="margin-bottom:12px" />
+    <PageInfo title="语言管理：键值维护、缺口报告、版本发布" description="后端表为源（决策2）；占位符不一致拒绝导入（BR-5.7-03）；预检 P0/P1=100%+总体≥99% 阻断发布（BR-5.7-01/02）。" style="margin-bottom:12px" />
 
     <!-- 17.1.2 缺口报告 -->
     <el-form inline size="small">

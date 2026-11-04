@@ -1,6 +1,6 @@
 <template>
   <div class="pr-page">
-    <PageInfo title="拣货推荐（4.6.3）：出库队列 A 单据 → 《批次推荐表》（批次+仓位）→ 确认回写" description="排序口径：入库日期升序（FIFO）→ 同日有效期升序（FEFO）→ 排除冻结与效期锁定（BR-4.4-19）。确认仅回写单据行批次/仓位，不生成预留；过账时按行值扣减，库存不足 422 封顶兜底（偏差 D2）。下发/扫码/复核归 4.7。" style="margin-bottom: 12px;" />
+    <PageInfo title="拣货推荐：出库队列 A 单据 → 《批次推荐表》（批次+仓位）→ 确认回写" description="排序口径：入库日期升序（FIFO）→ 同日有效期升序（FEFO）→ 排除冻结与效期锁定（BR-4.4-19）。确认仅回写单据行批次/仓位，不生成预留；过账时按行值扣减，库存不足 422 封顶兜底（偏差 D2）。下发/扫码/复核。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="type" @tab-change="onTypeChange">
       <el-tab-pane label="销售出库" name="SALES_OUT" />

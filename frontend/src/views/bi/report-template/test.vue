@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="报表模板管理（14.1）— 设计/测试/发布/版本四叶；口径 diff 硬阻断（C-4.10-01）、三方发布审批、快照回退"
-                    style="margin-bottom: 8px" />
 
     <!-- ========== 14.1.2 模板测试 ========== -->
     <div class="toolbar">
@@ -10,7 +8,6 @@
       </el-select>
       <el-button size="small" type="primary" :disabled="!testTplId" :loading="testing"
                  @click="doTest">执行测试</el-button>
-      <span class="tip">三项报告：样本人工核对 / 性能阈值（标准10s·复杂30s）/ 权限行数对比；模板变更后旧报告作废须重测</span>
     </div>
     <el-table :data="tests" v-loading="testsLoading" border stripe size="small">
       <el-table-column label="执行时间" width="150">

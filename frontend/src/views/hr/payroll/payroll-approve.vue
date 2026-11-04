@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">核算审批（10.5.4，PayrollRun 锁定与更正）</span>
+        <span class="title">核算审批</span>
         <div>
           <el-input v-model="period" placeholder="核算期 如 202610" clearable style="width:140px;margin-right:8px" @change="load" />
           <el-button @click="load">刷新</el-button>

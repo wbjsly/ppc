@@ -1,6 +1,5 @@
 <template>
   <div>
-    <el-page-header content="冻结库存总览（4.3.2）— 全类型查询与统一入口" style="margin-bottom: 8px" />
     <FreezePanel />
   </div>
 </template>

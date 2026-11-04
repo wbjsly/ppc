@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">排班管理（10.3.1）</span>
+        <span class="title">排班管理</span>
         <div>
           <el-date-picker v-model="period" type="month" value-format="YYYYMM" style="width:130px;margin-right:8px" @change="load" />
           <el-button type="primary" @click="openBulk">部门批量</el-button>

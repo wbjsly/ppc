@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="本地合规（17.5）：字段扩展、格式校验、字段加载" description="引擎+复用既有列（决策5）：包定义/正则规则集中配置禁硬编码（BR-5.7-13）；字段挂 TAXPAYER_NO 等既有列；注册地→包映射（17.5.3）。" style="margin-bottom:12px" />
+    <PageInfo title="本地合规：字段扩展、格式校验、字段加载" description="引擎+复用既有列（决策5）：包定义/正则规则集中配置禁硬编码（BR-5.7-13）；字段挂 TAXPAYER_NO 等既有列；注册地→包映射。" style="margin-bottom:12px" />
 
     <!-- 17.5.2 格式校验 -->
     <el-form inline size="small">

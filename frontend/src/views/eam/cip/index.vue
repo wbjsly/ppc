@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="在建工程台账（7.1.5）：CIP 项目 + 成本归集（工程款/安装费/资本化利息）→ 完工验收后发起在建转资" description="BR-4.13-08：归集 vs 已结算差额 ≠0 时转资须选「部分转资」并填说明；完工验收日期为转资超期预警基准（BR-4.13-06）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -14,6 +13,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
         <el-button v-if="canEdit" type="success" @click="openCreate">新建项目</el-button>
+        <PageInfo class="page-info--inline" title="在建工程台账：CIP 项目 + 成本归集（工程款/安装费/资本化利息）→ 完工验收后发起在建转资" description="BR-4.13-08：归集 vs 已结算差额 ≠0 时转资须选「部分转资」并填说明；完工验收日期为转资超期预警基准（BR-4.13-06）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading"

@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="服务报告（15.8）：接口 SLA 月度生成、归档发布" description="复用 interface-sla-monitoring。四指标（可用率/P95/错误率/同步延迟）月度采集；未归档不得对外发布（BR-5.5-16 / C-5.5-04）。" style="margin-bottom:12px" />
+    <PageInfo title="服务报告：接口 SLA 月度生成、归档发布" description="复用 interface-sla-monitoring。四指标（可用率/P95/错误率/同步延迟）月度采集；未归档不得对外发布（BR-5.5-16 / C-5.5-04）。" style="margin-bottom:12px" />
 
     <!-- 15.8.1 月度生成 -->
     <el-table :data="reports" border size="small">

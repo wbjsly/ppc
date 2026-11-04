@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="路线装配（5.2.4）— 产品 → 有序工序序列；版本化 + 审批发布，同产品唯一在途"
-                    style="margin-bottom: 8px" />
 
     <!-- 审批待办（RoutingPublish，工艺主管可签；工艺管理无独立发布菜单，签署落此处） -->
     <div class="section">

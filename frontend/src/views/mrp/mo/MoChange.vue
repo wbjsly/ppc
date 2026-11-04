@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="工单变更（5.4.4）— 挂起/恢复/取消（原因必填）+ 拆分（子单合计=剩余量，C-4.5-15）；合并为只读校验提示"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="status" style="width: 160px" size="small" @change="load">

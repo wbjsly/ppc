@@ -4,7 +4,7 @@
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
-          <span>格式校验（12.4.2）—— 四级校验详情 / 重试轨迹 / 待人工工单联动</span>
+          <span>格式校验—— 四级校验详情 / 重试轨迹 / 待人工工单联动</span>
           <div>
             <el-select v-model="pick" placeholder="选择报文（优先 REJECTED / MANUAL）" filterable
                        size="small" style="width:420px" @change="loadDetail">

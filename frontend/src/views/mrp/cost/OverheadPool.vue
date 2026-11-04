@@ -3,9 +3,11 @@
     <el-card shadow="never">
       <div class="head">
         <span class="title">5.11.3 制造费用池</span>
-        <el-button type="primary" :disabled="!canWrite" @click="openForm()">录入期次池</el-button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <el-button type="primary" :disabled="!canWrite" @click="openForm()">录入期次池</el-button>
+          <PageInfo class="page-info--inline" title="制造费用 = 池总额 × (工单基准 / 当期总基准)；分摊规则未配置默认工时比例（FR-4.5-6-3）。池缺失时制费记 0 并标记，阻断工单关闭。" />
+        </div>
       </div>
-      <PageInfo title="制造费用 = 池总额 × (工单基准 / 当期总基准)；分摊规则未配置默认工时比例（FR-4.5-6-3）。池缺失时制费记 0 并标记，阻断工单关闭。" style="margin-bottom: 12px" />
       <el-table :data="pools" border stripe v-loading="loading">
         <el-table-column prop="period" label="期次" width="100" />
         <el-table-column label="池总额" width="140" align="right">

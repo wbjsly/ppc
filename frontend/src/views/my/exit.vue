@@ -4,10 +4,12 @@
       <template #header>
         <div class="card-header">
           <span>我的离职申请（自助端，FR-4.7-4-11）</span>
-          <el-button type="primary" size="small" @click="openApply">提交离职申请</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="openApply">提交离职申请</el-button>
+            <PageInfo class="page-info--inline" title="提交后进入正式审批流（HR 办理）；法定提前通知期：正式员工 30 天 / 试用期 3 天，未满仅提示留痕不阻断；审批通过后在 HR 侧完成交接与结算" />
+          </div>
         </div>
       </template>
-      <PageInfo title="提交后进入正式审批流（HR 办理）；法定提前通知期：正式员工 30 天 / 试用期 3 天，未满仅提示留痕不阻断；审批通过后在 HR 侧完成交接与结算" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="exitNo" label="单号" width="140" />

@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>关联交易定价（9.6.3）</span>
-          <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+          <span>关联交易定价</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+            <PageInfo class="page-info--inline" title="S-4.14-08：关联交易定价须符合独立交易原则，定价文档备查，特别纳税调整风险提前评估（自评留痕不阻断业务）" />
+          </div>
         </div>
       </template>
-      <PageInfo title="S-4.14-08：关联交易定价须符合独立交易原则，定价文档备查，特别纳税调整风险提前评估（自评留痕不阻断业务）" />
 
       <el-row :gutter="12" class="mb8">
         <!-- 提醒 -->

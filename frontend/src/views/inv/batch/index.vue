@@ -1,6 +1,5 @@
 <template>
   <div class="batch-page">
-    <PageInfo title="批号管理（4.2.1）" description="批次号系统生成（B+年月日+-+4位流水）或手工录入，同物料唯一且创建后不可改；批次管理物料有效期至必填。有效期至为 FIFO/效期预警的数据源。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -16,6 +15,7 @@
             </el-select>
             <el-button type="primary" @click="loadData">查询</el-button>
             <el-button type="primary" :icon="Plus" @click="openForm()">新建批次</el-button>
+            <PageInfo class="page-info--inline" title="批号管理" description="批次号系统生成（B+年月日+-+4位流水）或手工录入，同物料唯一且创建后不可改；批次管理物料有效期至必填。有效期至为 FIFO/效期预警的数据源。" />
           </div>
         </div>
       </template>

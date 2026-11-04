@@ -23,7 +23,6 @@
           <el-option v-for="s in suppliers" :key="s.id" :label="s.supplierName" :value="s.id" />
         </el-select>
         <el-button size="small" type="primary" @click="load">查询</el-button>
-        <span class="hint">比对基准 = 该供应商 OPEN 暂估余额合计；差异率 &gt; 0.5%（TOLERANCE_DEFAULT）→ 冻结付款并转 12.6.2 双签</span>
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

@@ -3,7 +3,7 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>信息维护（10.1.2）—— 档案列表与变更日志</span>
+          <span>信息维护—— 档案列表与变更日志</span>
           <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
         </div>
       </template>

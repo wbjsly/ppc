@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="智能派工（5.6.1）— 待派列表按优先级排序，勾选生成工序级派工单；齐套<100% 阻断可走缺料派工申请（L2 计划主管签）"
-                    style="margin-bottom: 8px" />
 
     <!-- 待派工列表 -->
     <div class="toolbar">
@@ -11,7 +9,6 @@
       <el-button size="small" type="success" :disabled="selected.length === 0" @click="doGenerate(selected)">
         生成派工单（{{ selected.length }}）
       </el-button>
-      <span class="tip">勾选多行=批量（工单级操作语义 D7）；wcCode 空 = 工序快照默认工作中心；齐套不足将被阻断</span>
     </div>
 
     <el-table :data="pendingRows" v-loading="loading" border stripe size="small"
@@ -61,7 +58,6 @@
       <el-button size="small" :disabled="!rescheduleWc" @click="doReschedule">
         重新排程{{ rescheduleWc ? `（${rescheduleWc}）` : '' }}
       </el-button>
-      <span class="tip">点选下方派工单行选择重排工作中心；已确认占用固定，低优先级后移（FR-4.5-4-7）</span>
     </div>
 
     <el-table :data="dispatches" v-loading="dLoading" border stripe size="small" max-height="300"
@@ -117,7 +113,7 @@
         <template #title>{{ blockMessage }}</template>
       </el-alert>
       <p class="tip">
-        处置方式：① 等待到货后重试（5.5 调度器自动恢复齐套）；② 确需先行开工 → 提交缺料派工申请，
+        处置方式：① 等待到货后重试；② 确需先行开工 → 提交缺料派工申请，
         由计划主管审批（C-4.5-12，通过后生成「缺料先行」派工单）。
       </p>
       <template #footer>

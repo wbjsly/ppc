@@ -4,7 +4,7 @@
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
-          <span>报文台账（12.4.1）—— 三入口接收 / 状态流转 / MDN 接收结论</span>
+          <span>报文台账—— 三入口接收 / 状态流转 / MDN 接收结论</span>
           <div>
             <el-select v-model="query.msgType" placeholder="报文类型" clearable size="small"
                        style="width:130px" @change="load">
@@ -80,7 +80,7 @@
             <p>签名失败 / 时间戳超窗 → HTTP 401 拒收并记安全事件（BR-4.9-22），不产生台账入库记录。</p>
             <p>本页不提供人工代推；对接与凭证签发 → 12.1.3 通道开通。</p>
           </div>
-          <el-button size="small" style="margin-top:8px" @click="$router.push('/m/12.3.1')">查看传输层拒绝视图（12.3.1）</el-button>
+          <el-button size="small" style="margin-top:8px" @click="$router.push('/m/12.3.1')">查看传输层拒绝视图</el-button>
         </el-card>
         <el-card shadow="never" style="flex:1;min-width:280px">
           <h4 style="margin:0 0 8px">入口② 页面上传报文</h4>

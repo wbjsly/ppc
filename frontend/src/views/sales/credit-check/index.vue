@@ -1,6 +1,5 @@
 <template>
   <div class="cc-page">
-    <PageInfo title="信用检查（3.3.1）" description="可用额度 = 信用额度（含有效临时额度）− 应收余额 − 未清 SO 预占 − 本次订单 − 寄售占用（BR-4.3-13）；附账龄超比（>20% 需审批）与近 12 个月付款及时率判定。" style="margin-bottom: 12px;" />
 
     <!-- 检查执行 -->
     <el-card style="margin-bottom: 12px;">
@@ -15,6 +14,7 @@
             </el-select>
             <el-input-number v-model="orderAmount" :min="0" :precision="2" placeholder="本次订单金额" />
             <el-button type="primary" :loading="loading" @click="runCheck">执行检查</el-button>
+            <PageInfo class="page-info--inline" title="信用检查" description="可用额度 = 信用额度（含有效临时额度）− 应收余额 − 未清 SO 预占 − 本次订单 − 寄售占用（BR-4.3-13）；附账龄超比（>20% 需审批）与近 12 个月付款及时率判定。" />
           </div>
         </div>
       </template>

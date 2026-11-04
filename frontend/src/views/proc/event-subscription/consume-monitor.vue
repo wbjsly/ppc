@@ -19,7 +19,7 @@
     <!-- 投递台账 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">消费监控（12.2.3）—— 投递台账按事件类型视角</h4>
+        <h4 style="margin:0">消费监控—— 投递台账按事件类型视角</h4>
         <div>
           <el-input v-model="query.eventType" placeholder="事件类型（如 PROC.）" clearable size="small"
                     style="width:200px" @keyup.enter="load" />

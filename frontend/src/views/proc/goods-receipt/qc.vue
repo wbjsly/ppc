@@ -2,10 +2,12 @@
   <div class="page">
     <div class="card-header">
       <span style="font-weight: bold; font-size: 16px;">{{ title }}</span>
-      <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+        <PageInfo class="page-info--inline" title="待检看板：数据源为检验批，时限自 GR 登记提交起算（偏差 D1），A/B/C = 24/48/72h" description="人工兜底放行已移除（qc-hold-area REMOVED）：检验录入/判定/放行在「来料检验」页完成；未放行的批次过账被 C-4.12-06 阻断。" />
+      </div>
     </div>
 
-    <PageInfo title="待检看板（2.5 已接入）：数据源为检验批，时限自 GR 登记提交起算（偏差 D1），A/B/C = 24/48/72h" description="人工兜底放行已移除（qc-hold-area REMOVED）：检验录入/判定/放行在「来料检验」页完成；未放行的批次过账被 C-4.12-06 阻断。" style="margin-bottom: 10px;" />
     <el-table :data="qcList" size="small" border v-loading="loading">
       <el-table-column prop="lotNo" label="检验批号" width="170">
         <template #default="{ row }"><b>{{ row.lotNo }}</b></template>

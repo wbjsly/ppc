@@ -1,17 +1,19 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.7.1 部分发货" description="按 SO 行未发余量生成发货单，可多次执行；行数量不超过未发余量与可锁预留量（超限拒绝并提示剩余可发）。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
           <span>① 选择已确认订单</span>
-          <el-select v-model="soId" filterable placeholder="选择 SO" size="small"
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-select v-model="soId" filterable placeholder="选择 SO" size="small"
                      style="width:360px" @change="loadLines">
             <el-option v-for="s in sos" :key="s.id"
                        :label="`${s.soNo} ${s.customerName} ¥${s.totalAmount}（${s.status}）`"
                        :value="s.id" />
           </el-select>
+            <PageInfo class="page-info--inline" title="3.7.1 部分发货" description="按 SO 行未发余量生成发货单，可多次执行；行数量不超过未发余量与可锁预留量（超限拒绝并提示剩余可发）。拣货作业由库存域拣货复核承载，本页为销售侧策略与确认。" />
+          </div>
         </div>
       </template>
 

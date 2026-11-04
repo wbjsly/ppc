@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="实时查询（4.14.1）：库存位行明细视角（含库龄列）。四列口径计算与预留/冻结下钻见 4.3.1 可用库存查询。" style="margin-bottom: 8px" />
+    <PageInfo title="实时查询：库存位行明细视角（含库龄列）。四列口径计算与预留/冻结下钻见可用库存查询。" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="仓库">

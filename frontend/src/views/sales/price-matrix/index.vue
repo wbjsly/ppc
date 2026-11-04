@@ -1,6 +1,5 @@
 <template>
   <div class="pm-page">
-    <PageInfo title="价格矩阵（3.6.1）" description="按客户 × SKU 展示最终取价结果：协议基准价 → 渠道/阶梯/促销三层折扣 → 叠加规则 → 最终生效价与命中来源。只读视图，数据来自协议试算与折扣引擎。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -15,6 +14,7 @@
             <el-input v-model="itemsText" placeholder="SKU，逗号分隔" style="width: 260px;" />
             <el-input-number v-model="qty" :min="1" style="width: 120px;" />
             <el-button type="primary" :loading="loading" @click="runMatrix">查询矩阵</el-button>
+            <PageInfo class="page-info--inline" title="价格矩阵" description="按客户 × SKU 展示最终取价结果：协议基准价 → 渠道/阶梯/促销三层折扣 → 叠加规则 → 最终生效价与命中来源。只读视图，数据来自协议试算与折扣引擎。" />
           </div>
         </div>
       </template>

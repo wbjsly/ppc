@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="备件领用（7.3.3）：关联工单领料，超清单须说明（BR-17）；走库存 MAINT 领料单扣减" description="关闭前置（BR-20）：未过账领料/未回填工时/未闭子工单/外协未传验收单 → 阻断并列清单。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -8,6 +7,7 @@
         <el-button plain @click="loadWoIssues">查询该工单领料</el-button>
         <span class="spacer" />
         <el-button type="primary" :disabled="!spareWoNo" @click="spareVisible = true">发起领料</el-button>
+        <PageInfo class="page-info--inline" title="备件领用：关联工单领料，超清单须说明（BR-17）；走库存 MAINT 领料单扣减" description="关闭前置（BR-20）：未过账领料/未回填工时/未闭子工单/外协未传验收单 → 阻断并列清单。" />
       </div>
       <el-table :data="issueRows" size="small" border max-height="320" style="margin-top:8px;">
         <el-table-column prop="ISSUE_NO" label="领料单号" width="170" />

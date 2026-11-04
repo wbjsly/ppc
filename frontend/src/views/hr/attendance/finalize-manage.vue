@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">考勤终审（10.3.5）</span>
+        <span class="title">考勤终审</span>
         <div>
           <el-date-picker v-model="period" type="month" value-format="YYYYMM" style="width:130px;margin-right:8px" @change="load" />
           <el-button type="primary" :disabled="!mgrConfirmed.length" @click="doFinalize">终审锁定（{{ mgrConfirmed.length }} 条）</el-button>

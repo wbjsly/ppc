@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="区域配置（17.2）：日期格式、数字格式、货币格式" description="三语 Locale 自动应用（S-5.7-02）；输入格式不符阻断保存（C-5.7-08）；Locale 未配置回退 zh-CN（C-5.7-02）。" style="margin-bottom:12px" />
+    <PageInfo title="区域配置：日期格式、数字格式、货币格式" description="三语 Locale 自动应用（S-5.7-02）；输入格式不符阻断保存（C-5.7-08）；Locale 未配置回退 zh-CN（C-5.7-02）。" style="margin-bottom:12px" />
 
     <!-- 17.2.1 日期格式 -->
     <el-table :data="rows" border size="small">

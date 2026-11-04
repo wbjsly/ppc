@@ -3,15 +3,15 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span class="ttl">标准审批（6.1.2）— 审批中版本待办</span>
+          <span class="ttl">标准审批— 审批中版本待办</span>
           <div>
             <el-button size="small" @click="$router.push('/m/qms-approval')">全局审批待办</el-button>
             <el-button size="small" type="primary" :loading="loading" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="版本维度跨标准平铺（spec inspection-standard 标准审批独立待办页）" description="本页只读展示审批中版本与双签状态；签署动作在「全局审批待办」完成，点击条目进入标准详情查看特性与发布进度。" />
           </div>
         </div>
       </template>
 
-      <PageInfo title="版本维度跨标准平铺（spec inspection-standard 标准审批独立待办页）" description="本页只读展示审批中版本与双签状态；签署动作在「全局审批待办」完成，点击条目进入标准详情查看特性与发布进度。" style="margin-bottom: 12px;" />
 
       <el-table :data="rows" v-loading="loading" stripe>
         <el-table-column prop="standardCode" label="标准编码" width="170">

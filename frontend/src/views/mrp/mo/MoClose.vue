@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="工单关闭（5.4.5）— 手动完工确认（Released→Completed）→ 关闭预检 → 关闭（终态，锁定数据）"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="status" style="width: 170px" size="small" @change="load">
@@ -11,7 +9,6 @@
         <el-option label="全部状态" value="" />
       </el-select>
       <el-button size="small" @click="load">刷新</el-button>
-      <span class="tip">过渡：完工确认为手动按钮，5.7 报工落地后改为自动；关闭前置的工序/成本/在制校验为占位钩子（proposal D3）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small">

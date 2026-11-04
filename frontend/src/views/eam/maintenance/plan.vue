@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="点检保养（7.3.1）：维护计划 → 批量生成计划工单（幂等/停机顺延）→ 执行 → 关闭成本归集" description="关键设备计划须设备主管审批；人工成本 = 工时 × SysParam 岗位费率（缺参标待调整，不阻断关闭）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -8,6 +7,7 @@
         <el-button type="success" :loading="generating" @click="doGenerate">生成计划工单</el-button>
         <span class="spacer" />
         <el-button plain size="small" @click="loadPlans">刷新</el-button>
+        <PageInfo class="page-info--inline" title="点检保养：维护计划 → 批量生成计划工单（幂等/停机顺延）→ 执行 → 关闭成本归集" description="关键设备计划须设备主管审批；人工成本 = 工时 × SysParam 岗位费率（缺参标待调整，不阻断关闭）。" />
       </div>
 
       <div v-if="genResult" class="gen-result">

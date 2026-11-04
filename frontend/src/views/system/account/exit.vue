@@ -1,6 +1,6 @@
 <template>
   <div class="acc-page">
-    <PageInfo title="账号管理（16.1）— 账号生命周期" description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" style="margin-bottom: 12px;" />
+    <PageInfo title="账号管理— 账号生命周期" description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" style="margin-bottom: 12px;" />
     <el-form inline size="mini">
       <el-form-item>
         <el-button type="warning" size="mini" @click="doSweep">执行生命周期清扫（24h 强停 + 90 天归档）</el-button>

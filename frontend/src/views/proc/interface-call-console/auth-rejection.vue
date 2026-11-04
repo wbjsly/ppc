@@ -3,7 +3,7 @@
     <!-- 拒绝原因聚合 + 明细下钻 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">认证拒绝原因分析（12.3.1）—— 400/401/403 按可观测信号四类分组</h4>
+        <h4 style="margin:0">认证拒绝原因分析—— 400/401/403 按可观测信号四类分组</h4>
         <div>
           <el-input v-model="query.caller" placeholder="调用方" clearable size="small"
                     style="width:150px" @keyup.enter="load" />

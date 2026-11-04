@@ -1,6 +1,6 @@
 <template>
   <div class="copq-page">
-    <PageInfo title="质量成本 COPQ（6.7）：四类归集（预防/鉴定/内部失败/外部失败）→ 财务确认进正式报表 → 损失分析" description="单笔 ≥10× 近 3 月月均标记异常阻断入表（BR-4.12-39）；未确认以草稿单列（BR-4.12-40）；外部失败占比 >30% 红标改善建议（BR-4.12-41）；可追溯至供应商维度（BR-4.12-42）。" style="margin-bottom: 12px;" />
+    <PageInfo title="质量成本 COPQ：四类归集（预防/鉴定/内部失败/外部失败）→ 财务确认进正式报表 → 损失分析" description="单笔 ≥10× 近 3 月月均标记异常阻断入表（BR-4.12-39）；未确认以草稿单列（BR-4.12-40）；外部失败占比 >30% 红标改善建议（BR-4.12-41）；可追溯至供应商维度（BR-4.12-42）。" style="margin-bottom: 12px;" />
 
     <!-- KPI 卡片 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

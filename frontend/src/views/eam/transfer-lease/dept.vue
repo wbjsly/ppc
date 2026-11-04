@@ -1,6 +1,6 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="部门调拨（7.4.1）：共享池入口 → 申请（BR-21 四前置）→ 三节点审批 → 交接双确认 → 完成（BR-22 当月归属回溯）" description="完成当月折旧仍归调出成本中心（引擎回溯调出方），次月起自动切调入方。" style="margin-bottom:12px;" />
+    <PageInfo title="部门调拨：共享池入口 → 申请（BR-21 四前置）→ 三节点审批 → 交接双确认 → 完成（BR-22 当月归属回溯）" description="完成当月折旧仍归调出成本中心（引擎回溯调出方），次月起自动切调入方。" style="margin-bottom:12px;" />
 
     <TransferSection mode="dept" />
   </div>

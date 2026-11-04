@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="工序维护（5.2.1）— 全局工序字典，编码创建后不可修改，禁止硬删除"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="关键字">

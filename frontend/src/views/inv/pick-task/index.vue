@@ -1,6 +1,5 @@
 <template>
   <div class="pt-page">
-    <PageInfo title="拣货任务（4.7.1）：4.6.3 确认推荐后自动生成，主管改派/作废" description="状态机 CREATED → PICKING → PICKED → REVIEWING → DONE → COMPLETED（分支 DIFF_PENDING/QUALITY_PENDING）。单据过账且差异闭环后任务自动 COMPLETED；差异闭环前出库过账被门闩拦截（BR-4.4-29）。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="filters.status" placeholder="状态" clearable style="width: 170px;"
@@ -19,6 +18,7 @@
       <el-input v-model="filters.keyword" placeholder="任务号/单号/拣货员" clearable
         style="width: 200px;" @clear="load" @keyup.enter="load" />
       <el-button @click="load">查询</el-button>
+      <PageInfo class="page-info--inline" title="拣货任务：确认推荐后自动生成，主管改派/作废" description="状态机 CREATED → PICKING → PICKED → REVIEWING → DONE → COMPLETED（分支 DIFF_PENDING/QUALITY_PENDING）。单据过账且差异闭环后任务自动 COMPLETED；差异闭环前出库过账被门闩拦截（BR-4.4-29）。" />
     </div>
 
     <el-table :data="rows" size="small" border v-loading="loading" @expand-change="loadDetail">

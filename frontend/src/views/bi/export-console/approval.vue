@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="数据导出（14.5）— 模板/数据集双源、三格式水印（Excel 页眉/PDF 斜置/CSV BOM）、AES-256 加密下载 7 天有效、超量分级审批（经理/总监）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.5.3 超量审批 ==================== -->
     <PageInfo title="超量导出走 ApprovalEngine 分级单签：≤50000 行部门经理、>50000 行部门总监；签署在审批台完成；月度同一用户超量 ≥5 次自动告警信息安全专员（C-4.10-03）" style="margin-bottom: 8px" />

@@ -1,7 +1,7 @@
 <template>
   <div class="cc-page">
     <el-alert type="warning" :closable="false" style="margin-bottom: 12px;"
-      title="让步接收（2.5.2 / 6.4.2）：申请要素必填 → 双签（质量经理 + 技术负责人，缺一不生效）→ 过账锁定 → 核销放行"
+      title="让步接收：申请要素必填 → 双签（质量经理 + 技术负责人，缺一不生效）→ 过账锁定 → 核销放行"
       description="限制条件（有效期 / 批准数量上限 / 使用范围）过账时写入库存快照；核销逐次校验，越界 422 并留 REJECTED 留痕。安全/法规 CTQ 不合格禁止让步（BR-4.12-26）。" />
 
     <el-card shadow="never">

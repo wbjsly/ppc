@@ -1,6 +1,6 @@
 <template>
   <div class="acc-page">
-    <PageInfo title="账号管理（16.1）— 账号生命周期" description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" style="margin-bottom: 12px;" />
+    <PageInfo title="账号管理— 账号生命周期" description="入职开通（HR 审批自动建号 + 人工兜底）、在岗变更（角色调整/密码重置）、离职回收（强停 + 权限清单快照）、账号归档（停用 90 天自动归档，归档不可恢复 C-0-05）。停用/归档账号 token 立即失效。" style="margin-bottom: 12px;" />
     <el-table :data="activeRows" size="mini" border v-loading="loading">
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="nickName" label="姓名" width="120" />

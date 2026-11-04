@@ -1,6 +1,6 @@
 <template>
   <div class="qm-page">
-    <PageInfo title="毛利测算（3.2.2）" description="毛利率 =（报价金额 − 标准成本 × 数量）/ 报价金额；0 ≤ 毛利率 < MIN_MARGIN_RATE 须二次确认（留痕确认人与时间，不构成价格授权）；负毛利锁定待审批，销售主管与财务会签，释放前禁止转化 SO。" style="margin-bottom: 12px;" />
+    <PageInfo title="毛利测算" description="毛利率 =（报价金额 − 标准成本 × 数量）/ 报价金额；0 ≤ 毛利率 < MIN_MARGIN_RATE 须二次确认（留痕确认人与时间，不构成价格授权）；负毛利锁定待审批，销售主管与财务会签，释放前禁止转化 SO。" style="margin-bottom: 12px;" />
 
     <!-- 阈值卡 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

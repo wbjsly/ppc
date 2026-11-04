@@ -4,18 +4,17 @@
       <template #header>
         <div class="card-head">
           <span>12.7.2 告警升级（Warning / Critical / Emergency，5 分钟聚合去重，连续 3 次 Critical 自动升级）</span>
-          <span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span>
             <el-button size="small" @click="load">刷新</el-button>
             <el-button size="small" @click="$router.push('/m/12.7.1')">指标采集 12.7.1</el-button>
             <el-button size="small" @click="$router.push('/m/12.7.3')">月度报告 12.7.3</el-button>
           </span>
+            <PageInfo class="page-info--inline" title="升级链：同一指标连续 3 次 Critical → 自动升级接口运维主管 + 30 分钟响应计时（ESCALATION_RESPONSE_MIN）→ 超时未响应逐级升级供应链协同管理员并留痕（BR-4.9-28）" />
+          </div>
         </div>
       </template>
 
-      <PageInfo title="升级链：同一指标连续 3 次 Critical → 自动升级接口运维主管 + 30 分钟响应计时（ESCALATION_RESPONSE_MIN）→ 超时未响应逐级升级供应链协同管理员并留痕（BR-4.9-28）" style="margin-bottom: 10px;" />
-      <div class="hint" style="margin-bottom: 10px;">
-        告警确认/响应回执已收口至「事件订阅 12.2.4 告警处理」，本页为升级链只读视图。
-      </div>
 
       <div class="toolbar">
         <el-select v-model="q.level" placeholder="级别" clearable size="small" style="width: 140px;" @change="load">

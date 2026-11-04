@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">评分校准（10.10.3，自建状态机批量流转）</span>
+        <span class="title">评分校准</span>
         <div>
           <el-input v-model="period" placeholder="周期 如 2026H2" clearable style="width:140px;margin-right:8px" @change="load" />
           <el-button type="warning" :disabled="!sel.length" @click="doCalibrate">校准通过（{{ sel.length }}）</el-button>

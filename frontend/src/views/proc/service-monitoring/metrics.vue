@@ -26,7 +26,6 @@
         </el-select>
         <el-input v-model="q.monthTag" placeholder="月份 yyyyMM" clearable size="small" style="width: 130px;" @keyup.enter="load" />
         <el-button size="small" type="primary" @click="load">查询</el-button>
-        <span class="hint">数据缺失（MISSING）为数据源不可达，不填零、不参与当月达成率（BR-4.9-30）</span>
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

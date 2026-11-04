@@ -11,7 +11,7 @@
     </el-alert>
 
     <!-- 4.4.3 退货镜像说明 -->
-    <el-alert v-if="isReturnMirror" title="退货流程在销售退货（3.10）页面办理，本页为库存域镜像查询与流水"
+    <el-alert v-if="isReturnMirror" title="退货流程在销售退货页面办理，本页为库存域镜像查询与流水"
       type="warning" :closable="false" style="margin-bottom: 8px" show-icon />
 
       <el-form :inline="true" class="filter-bar" @submit.prevent>

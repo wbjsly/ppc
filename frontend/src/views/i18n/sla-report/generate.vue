@@ -1,6 +1,6 @@
 <template>
   <div class="i18n-page">
-    <PageInfo title="服务报告（17.7）：月度报告、归档发布" description="五指标（版本数/三语覆盖率/缺口闭环率/渲染异常/灰度回退）；未归档发布 422 阻断留痕（BR-5.7-14 / C-5.7-05，复用 18.5 范式）。" style="margin-bottom:12px" />
+    <PageInfo title="服务报告：月度报告、归档发布" description="五指标（版本数/三语覆盖率/缺口闭环率/渲染异常/灰度回退）；未归档发布 422 阻断留痕（BR-5.7-14 / C-5.7-05，复用范式）。" style="margin-bottom:12px" />
 
     <!-- 17.7.1 月度报告 -->
     <el-form inline size="small">

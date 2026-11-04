@@ -1,6 +1,5 @@
 <template>
   <div class="ps-page">
-    <PageInfo title="扫码确认（4.7.2）：逐行 码校验 → 录实拣数 → 确认本行" description="行级实时拦截：仓位码不符（BR-4.4-25）/ 批次≠推荐（BR-4.4-26）/ 物料不符（BR-4.4-27）均 422 并落扫码失败记录；批次不符同时登记批次差异。实拣<应拣请走「登记短少差异」。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="taskId" placeholder="选择拣货任务（拣货中）" filterable
@@ -13,6 +12,7 @@
         开始拣货
       </el-button>
       <span v-if="task" class="state">状态：{{ taskText(task.status) }}</span>
+      <PageInfo class="page-info--inline" title="扫码确认：逐行码校验 → 录实拣数 → 确认本行" description="行级实时拦截：仓位码不符（BR-4.4-25）/ 批次≠推荐（BR-4.4-26）/ 物料不符（BR-4.4-27）均 422 并落扫码失败记录；批次不符同时登记批次差异。实拣<应拣请走「登记短少差异」。" />
     </div>
 
     <div v-for="line in lines" :key="line.id" class="line-card"

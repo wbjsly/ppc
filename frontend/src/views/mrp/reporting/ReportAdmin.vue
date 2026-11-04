@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="报工管理（5.7.2）— 记录查询 / 冲销发起（原因必填，PLAN_MGR 签）/ 完工确认（倒冲补足）/ 良率冻结与 NCR 入口"
-                    style="margin-bottom: 8px" />
 
     <!-- 查询条件 -->
     <div class="toolbar">
@@ -15,8 +13,6 @@
         <el-option label="已冲销" value="REVERSED" />
       </el-select>
       <el-button size="small" type="primary" @click="load">查询</el-button>
-      <span class="tip">确认后只读（BR-4.5-25）；冲销走 ReportReversal 审批（计划主管签）；
-        标「外协自动」的记录由外协收货过账自动生成、直接 CONFIRMED 免审（4.1）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="300"

@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.4.2 分批交付" description="ATP 不足的行可编制分批方案：拆分后各行独立绑定交期与库存预留，Σ 必须等于原行数量（不等回滚，BR-4.3-23）；已确认订单拆行将释放原行预留并按新行重锁，锁不足整体回滚；客户不接受分批时订单可搁置或取消。" />
 
     <!-- 选择订单 -->
     <el-card shadow="never" class="mb12">
@@ -15,6 +14,7 @@
                          :value="s.id" />
             </el-select>
             <el-button size="small" style="margin-left:8px" @click="loadSo">刷新</el-button>
+            <PageInfo class="page-info--inline" title="3.4.2 分批交付" description="ATP 不足的行可编制分批方案：拆分后各行独立绑定交期与库存预留，Σ 必须等于原行数量（不等回滚，BR-4.3-23）；已确认订单拆行将释放原行预留并按新行重锁，锁不足整体回滚；客户不接受分批时订单可搁置或取消。" />
           </div>
         </div>
       </template>

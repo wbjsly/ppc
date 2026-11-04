@@ -22,7 +22,7 @@
     <!-- 告警列表 -->
     <el-card shadow="never">
       <div class="card-head mb12">
-        <h4 style="margin:0">告警处理（12.2.4）—— 三级告警聚合展示 + 确认收口</h4>
+        <h4 style="margin:0">告警处理—— 三级告警聚合展示 + 确认收口</h4>
         <div>
           <el-select v-model="query.level" placeholder="级别" clearable size="small" style="width:130px" @change="load">
             <el-option label="Warning" value="WARNING" />

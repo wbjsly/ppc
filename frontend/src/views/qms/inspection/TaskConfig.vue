@@ -4,7 +4,6 @@
       <template #header>
         <div class="card-header">
           <div class="hd-left">
-            <el-button link type="primary" @click="$router.back()">← 返回</el-button>
             <span class="ttl">检验任务配置（巡检 / 免检 / 严格度 / 客户协议）</span>
           </div>
           <el-button size="small" type="primary" :loading="loading" @click="loadAll">刷新</el-button>

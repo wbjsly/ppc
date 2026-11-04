@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="召回处理（4.13.2）：受限区入库（RECALL_IN，仅退货区/残次品区，量进 QC 冻结列）→ 报废处置（qcFirst 核销）→ 结案报告（召回率）。入库与处置为仓库动作。" style="margin-bottom: 8px" />
+    <PageInfo title="召回处理：受限区入库（RECALL_IN，仅退货区/残次品区，量进 QC 冻结列）→ 报废处置（qcFirst 核销）→ 结案报告（召回率）。入库与处置为仓库动作。" style="margin-bottom: 8px" />
 
     <!-- 追溯单选择 -->
     <el-form inline>
@@ -73,7 +73,7 @@
       <!-- 结案面板 -->
       <el-col :span="7">
         <el-card shadow="never">
-          <template #header>结案报告（8.7）</template>
+          <template #header>结案报告</template>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="状态">{{ statusText(trace.status) }}</el-descriptions-item>
             <el-descriptions-item label="应召合计">{{ stat.expect }}</el-descriptions-item>

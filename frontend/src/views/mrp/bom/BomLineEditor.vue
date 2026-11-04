@@ -2,7 +2,6 @@
   <div class="line-editor">
     <div class="toolbar">
       <el-button size="small" type="primary" plain :disabled="disabled" @click="addRow">+ 添加子项行</el-button>
-      <span class="tip">用量须 &gt; 0；损耗率 0~100%；替代料单位须与主料一致（保存时后端 L1 校验）</span>
     </div>
 
     <el-table :data="rows" size="small" border>
@@ -74,7 +73,6 @@
           <el-button size="small" type="warning" plain :loading="mdmLoading" @click="importMdm">
             从 MDM 替代关系带出候选
           </el-button>
-          <span class="tip">替代比例 = 1 单位主料可替代的替代料数量（如 1.2）；优先级数值小者优先；单位不一致将被 L1 阻断</span>
         </div>
         <el-table :data="subsRow.substitutes" size="small" border>
           <el-table-column label="#" width="44" type="index" />

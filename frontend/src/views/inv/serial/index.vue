@@ -1,6 +1,5 @@
 <template>
   <div class="serial-page">
-    <PageInfo title="序列管理（4.2.2）" description="序列号手工录入、全局唯一（含历史，重复即串码）；状态机：在库 → 已出库/冻结/报废，冻结可解冻，已出库与报废为终态不可回退。流转全程留痕。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -17,6 +16,7 @@
             </el-select>
             <el-button type="primary" @click="loadData">查询</el-button>
             <el-button type="primary" :icon="Plus" @click="openForm()">新建序列</el-button>
+            <PageInfo class="page-info--inline" title="序列管理" description="序列号手工录入、全局唯一（含历史，重复即串码）；状态机：在库 → 已出库/冻结/报废，冻结可解冻，已出库与报废为终态不可回退。流转全程留痕。" />
           </div>
         </div>
       </template>

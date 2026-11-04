@@ -1,6 +1,6 @@
 <template>
   <div class="vmi-page">
-    <PageInfo title="寄售采购 VMI（2.8.1）：物权属供应商，领用时点转移并生成应付暂估（FR-4.2-8-1~4）" description="协议维护/结算确认/处置确认限 ADMIN+PM，寄售领用过账限 ADMIN+WAREHOUSE；超最高水位收货阻断，采购员确认放行；账龄超 180 天未领用自动生成处置建议（BR-4.2-39）。" style="margin-bottom: 12px;" />
+    <PageInfo title="寄售采购 VMI：物权属供应商，领用时点转移并生成应付暂估（FR-4.2-8-1~4）" description="协议维护/结算确认/处置确认限 ADMIN+PM，寄售领用过账限 ADMIN+WAREHOUSE；超最高水位收货阻断，采购员确认放行；账龄超 180 天未领用自动生成处置建议（BR-4.2-39）。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ============ Tab1 协议 ============ -->
@@ -84,7 +84,6 @@
           <el-input v-model="stFilters.itemCode" placeholder="物料编码" clearable style="width: 160px;"
             @clear="loadStocks" @keyup.enter="loadStocks" />
           <el-button @click="loadStocks">查询</el-button>
-          <span class="hint">加载即自动扫描补货建议与账龄处置（L4，design D4）</span>
         </div>
         <el-table :data="stRows" size="small" border v-loading="loading">
           <el-table-column prop="itemCode" label="物料" width="140" />
@@ -141,7 +140,6 @@
             @clear="loadIssues" @keyup.enter="loadIssues" />
           <el-button @click="loadIssues">查询</el-button>
           <el-button type="primary" v-if="canWh" @click="openIssueDialog">发起寄售领用</el-button>
-          <span class="hint">FIFO 配批 → 领用时点协议价 → 《寄售转自有凭证》+ 应付暂估（BR-4.2-37 / C-4.2-09）</span>
         </div>
         <el-table :data="isRows" size="small" border v-loading="loading" @expand-change="loadIssueDetail">
           <el-table-column type="expand">
@@ -204,7 +202,6 @@
             <el-option label="已开票" value="INVOICED" />
           </el-select>
           <el-button type="primary" v-if="canPm" @click="openSettleDialog">生成结算单</el-button>
-          <span class="hint">结算单 = Σ(领用量 × 领用时点协议价)；期末价差 &gt; 0.5% 挂起须采购员+供应商双确认（BR-4.2-38）</span>
         </div>
         <el-table :data="seRows" size="small" border v-loading="loading" @expand-change="loadSettleDetail">
           <el-table-column type="expand">

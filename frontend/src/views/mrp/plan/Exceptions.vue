@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="异常标记（5.3.3）— 过量供给与逾期需求聚合；标记已处理留痕"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="关键字">

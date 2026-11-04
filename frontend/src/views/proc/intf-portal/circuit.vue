@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="限流熔断（15.5）：令牌桶限流、熔断降级、配额档位、灰度切流量" description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" style="margin-bottom:12px" />
+    <PageInfo title="限流熔断：令牌桶限流、熔断降级、配额档位、灰度切流量" description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" style="margin-bottom:12px" />
 
     <!-- 15.5.2 熔断降级 -->
     <el-table :data="channels" border size="small">

@@ -1,13 +1,15 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="限流熔断（15.5）：令牌桶限流、熔断降级、配额档位、灰度切流量" description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" style="margin-bottom:12px" />
 
     <!-- 15.5.4 灰度发布 -->
     <el-card shadow="never" style="margin-bottom:12px">
       <template #header>
         <div class="card-head">
           <span>灰度规则（双凭证并行 · 阶梯切量 · 自动回滚）</span>
-          <el-button type="primary" size="small" @click="grayDrawer=true">配置灰度</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="grayDrawer=true">配置灰度</el-button>
+            <PageInfo class="page-info--inline" title="限流熔断：令牌桶限流、熔断降级、配额档位、灰度切流量" description="复用 open-api-gateway。超限 429+Retry-After（BR-5.5-05）、连续超限自动降档（BR-5.5-06）、错误率熔断半开（BR-5.5-07）。灰度切流量限 ADMIN。" />
+          </div>
         </div>
       </template>
       <el-table :data="grays" border size="small">

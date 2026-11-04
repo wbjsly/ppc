@@ -1,12 +1,9 @@
 <template>
   <div>
-    <el-page-header content="指标口径（14.3）— 口径定义/口径变更/口径校验三叶；十二要素（6.3.1）、变更两段式治理（BR-4.10-04 / C-4.10-08）、血缘四层图谱（S-4.10-15）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.3.3 口径校验 ==================== -->
     <div class="toolbar">
       <el-button size="small" type="primary" @click="onCheckAll">执行批量校验</el-button>
-      <span class="hint">遍历已发布模板指标引用 × 字典当前版（现算，C-4.10-01）</span>
     </div>
     <el-table :data="checkReport" v-loading="checkLoading" border stripe size="small" max-height="420">
       <el-table-column prop="templateCode" label="模板编码" width="130" />

@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="负荷监控（5.6.2）— WC×日期负荷 = RELEASED 派工占用 ÷ 日历班次可用；超 110%（CAPACITY_LOAD_TRIGGER）标红并可跳外协建议"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-date-picker v-model="range" type="daterange" size="small" value-format="YYYY-MM-DD"
@@ -11,7 +9,6 @@
                 size="small" @keyup.enter="load" @clear="load" />
       <el-button size="small" type="primary" @click="load">查询</el-button>
       <el-switch v-model="onlyOver" active-text="只看超限" size="small" @change="applyFilter" />
-      <span class="tip">阈值来自参数 CAPACITY_LOAD_TRIGGER（默认 110%）；无可用时段有占用 = 999%</span>
     </div>
 
     <el-table :data="shown" v-loading="loading" border stripe size="small" max-height="440"

@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="报表模板管理（14.1）— 设计/测试/发布/版本四叶；口径 diff 硬阻断（C-4.10-01）、三方发布审批、快照回退"
-                    style="margin-bottom: 8px" />
 
     <!-- ========== 14.1.4 版本控制 ========== -->
     <div class="toolbar">
@@ -9,7 +7,6 @@
                  @change="loadVersions">
         <el-option v-for="t in allRows" :key="t.id" :label="`${t.code} ${t.name}`" :value="t.id" />
       </el-select>
-      <span class="tip">发布即不可变快照（报表版本 × 口径版本双维度绑定 BR-4.10-07）；回退生成新版本号保留链</span>
     </div>
     <el-table :data="versions" v-loading="versLoading" border stripe size="small">
       <el-table-column prop="versionNo" label="版本号" width="90" align="center">

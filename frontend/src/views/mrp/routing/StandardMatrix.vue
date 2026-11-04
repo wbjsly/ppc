@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="标准工时（5.2.3）— （工序 × 工作中心）工时定额矩阵，同时表达适配关系"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="工序">

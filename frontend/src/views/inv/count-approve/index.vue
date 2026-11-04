@@ -1,12 +1,11 @@
 <template>
   <div class="page">
-    <PageInfo title="差异审批（4.11.3）：CountDiff 待签 + 盘点差异台账 + 重点监控仓位" description="超容差差异（>0.5%）挂单节点仓库主管审批；通过后同事务自动执行库存调整（按正负拆 ADJUST_IN/OUT）并生成凭证，驳回回待复盘。与拣货差异（4.7.4）视图隔离。" style="margin-bottom: 12px;" />
+    <PageInfo title="差异审批：CountDiff 待签 + 盘点差异台账 + 重点监控仓位" description="超容差差异（>0.5%）挂单节点仓库主管审批；通过后同事务自动执行库存调整（按正负拆 ADJUST_IN/OUT）并生成凭证，驳回回待复盘。与拣货差异视图隔离。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab" @tab-change="onTab">
       <el-tab-pane label="待我审批" name="todo">
         <div class="toolbar">
           <el-button @click="loadTodo">刷新</el-button>
-          <span class="tip">仅显示 CountDiff 待签（底座按角色强制，同人不可签）</span>
         </div>
         <el-table :data="todos" v-loading="loading" size="small" border>
           <el-table-column prop="apprNo" label="审批单号" width="150" />

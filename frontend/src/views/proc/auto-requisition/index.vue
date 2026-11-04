@@ -13,13 +13,12 @@
 
       <!-- ① 模拟净算 -->
       <template v-if="tab === 'mrp'">
-        <PageInfo title="模拟 MRP 净算（FR-4.5-2-3）：NetReq = 需求 − 现有库存 − 在制 − 在途；真实需求/供给源（4.5/WMS）未落地，输入为模拟值。" description="列序：物料编码,需求日期,需求量,现有库存,在制,在途,来源类型,来源单号,建议供应商编码（前 6 列必需，来源类型缺省 SIMULATED）" style="margin-bottom: 12px;" />
+        <PageInfo title="模拟 MRP 净算（FR-4.5-2-3）：NetReq = 需求 − 现有库存 − 在制 − 在途；真实需求/供给源未落地，输入为模拟值。" description="列序：物料编码,需求日期,需求量,现有库存,在制,在途,来源类型,来源单号,建议供应商编码（前 6 列必需，来源类型缺省 SIMULATED）" style="margin-bottom: 12px;" />
         <div class="toolbar">
           <el-button @click="downloadMrpTemplate">下载模板 CSV</el-button>
           <el-upload :auto-upload="false" :show-file-list="false" accept=".csv,text/csv" :on-change="onFileChange">
             <el-button type="primary" plain>上传 .csv 文件</el-button>
           </el-upload>
-          <span class="tip">或直接粘贴表格文本（Excel 复制，Tab/逗号分隔）</span>
         </div>
         <el-input v-model="pasteText" type="textarea" :rows="5"
           placeholder="物料编码,需求日期,需求量,现有库存,在制,在途,来源类型,来源单号,建议供应商编码" @input="dirty = true" />

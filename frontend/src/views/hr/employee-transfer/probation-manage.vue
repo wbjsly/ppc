@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>转正管理（10.7.2）—— 主管评价 / HR 审核 / 超期兜底</span>
-          <el-button type="primary" size="small" @click="openSubmit">发起转正</el-button>
+          <span>转正管理—— 主管评价 / HR 审核 / 超期兜底</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="openSubmit">发起转正</el-button>
+            <PageInfo class="page-info--inline" title="超期未评价：每日扫描自动按期转正（留痕「系统默认转正」）；延期须法定上限内（L1）；终止衔接离职流程" />
+          </div>
         </div>
       </template>
-      <PageInfo title="超期未评价：每日扫描自动按期转正（留痕「系统默认转正」）；延期须法定上限内（L1）；终止衔接离职流程" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="trfNo" label="单号" width="120" />

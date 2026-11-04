@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>离职管理（10.7.4）—— 交接清单 / 结算 / 离场凭证（C-4.7-04）</span>
-          <el-button type="primary" size="small" @click="openApply">发起离职</el-button>
+          <span>离职管理—— 交接清单 / 结算 / 离场凭证（C-4.7-04）</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="openApply">发起离职</el-button>
+            <PageInfo class="page-info--inline" title="四类交接（资产归还联动 EAM 卡片回写 / 权限移交联动账号禁用 / 知识文档 / 在办工作）全齐才放行离场凭证；未满通知期 L4 提示不阻断" />
+          </div>
         </div>
       </template>
-      <PageInfo title="四类交接（资产归还联动 EAM 卡片回写 / 权限移交联动账号禁用 / 知识文档 / 在办工作）全齐才放行离场凭证；未满通知期 L4 提示不阻断" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="exitNo" label="离职单号" width="120" />

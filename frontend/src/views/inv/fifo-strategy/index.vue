@@ -1,6 +1,6 @@
 <template>
   <div class="fifo-page">
-    <PageInfo title="先进先出（4.6.1）：FIFO+FEFO 批次推荐试算与改批偏离监控" description="排序口径：入库日期升序（FIFO）→ 同日按有效期升序（FEFO）→ 排除冻结、效期锁定与零可用批次（BR-4.4-19）。试算为只读模拟，不生成预留、不改库存。" style="margin-bottom: 12px;" />
+    <PageInfo title="先进先出：FIFO+FEFO 批次推荐试算与改批偏离监控" description="排序口径：入库日期升序（FIFO）→ 同日按有效期升序（FEFO）→ 排除冻结、效期锁定与零可用批次（BR-4.4-19）。试算为只读模拟，不生成预留、不改库存。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ================= Tab B：推荐试算 ================= -->
@@ -116,7 +116,7 @@
         />
 
         <el-alert type="info" :closable="false" style="margin-top: 10px;"
-          title="首期仅留痕：非波次的行级改批记录偏离台账（原因必填），强制审批随波次管理（4.8）上线再挂接（C-4.4-08 / 偏差 D1）。" />
+          title="首期仅留痕：非波次的行级改批记录偏离台账（原因必填），强制审批随波次管理上线再挂接（C-4.4-08 / 偏差 D1）。" />
       </el-tab-pane>
     </el-tabs>
   </div>

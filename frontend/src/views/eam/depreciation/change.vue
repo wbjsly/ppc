@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="变动处理（7.2.2）：政策变更下期生效不追溯 / 减值次月重算（BR-4.13-14/15）" description="政策变更/减值均单签 ROLE_FIN_ASSET；冲回为整单全冲（红冲凭证+台账回滚+放行重提）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -13,6 +12,7 @@
         <span class="spacer" />
         <el-button v-if="canChange" type="success" @click="policyVisible = true">政策变更</el-button>
         <el-button v-if="canChange" type="warning" plain @click="impairVisible = true">减值</el-button>
+        <PageInfo class="page-info--inline" title="变动处理：政策变更下期生效不追溯 / 减值次月重算（BR-4.13-14/15）" description="政策变更/减值均单签 ROLE_FIN_ASSET；冲回为整单全冲（红冲凭证+台账回滚+放行重提）。" />
       </div>
 
       <el-table :data="changeRows" size="small" border v-loading="loading">

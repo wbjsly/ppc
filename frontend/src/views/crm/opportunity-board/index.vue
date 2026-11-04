@@ -1,6 +1,6 @@
 <template>
   <div class="opp-board">
-    <PageInfo title="商机推进（11.1.3）" description="CRM 管理视角看板：页顶漏斗/转化率/赢率自动统计（BR-4.8-09），待推进清单含超期与停留 30 天预警；推进/跟进/丢失等操作跳 3.1.3 商机跟进页执行，本页不重复承载操作表单。" style="margin-bottom: 12px;" />
+    <PageInfo title="商机推进" description="CRM 管理视角看板：页顶漏斗/转化率/赢率自动统计（BR-4.8-09），待推进清单含超期与停留 30 天预警；推进/跟进/丢失等操作跳转商机跟进页执行，本页不重复承载操作表单。" style="margin-bottom: 12px;" />
 
     <!-- ============ 页顶漏斗统计 ============ -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

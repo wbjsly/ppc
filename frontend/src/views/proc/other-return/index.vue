@@ -1,6 +1,5 @@
 <template>
   <div class="rt-page">
-    <PageInfo title="其他退货（2.6.2）：非质量退货——供应商发错货 / 多发货 / 到货后发现质量问题，采购员按 PO 发起（自动带出原入库凭证与单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="BR-4.2-32：已入库退货必须关联原 PO 与原入库单，金额由系统按原入库单价自动计算（单价只读）；BR-4.2-34：非质量退货不打绩效扣分（PERF=0）。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -23,6 +22,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
         <el-button v-if="canOperate" type="success" @click="openCreate">发起其他退货</el-button>
+        <PageInfo class="page-info--inline" title="其他退货：非质量退货——供应商发错货 / 多发货 / 到货后发现质量问题，采购员按 PO 发起（自动带出原入库凭证与单价）→ 采购经理审批 → 退货出库（红字凭证 RV）→ 30 天补发/退款跟踪" description="BR-4.2-32：已入库退货必须关联原 PO 与原入库单，金额由系统按原入库单价自动计算（单价只读）；BR-4.2-34：非质量退货不打绩效扣分（PERF=0）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading" @row-click="openDetail" row-style="cursor:pointer">

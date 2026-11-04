@@ -4,7 +4,6 @@
       <template #header>
         <div class="card-header">
           <div class="hd-left">
-            <el-button link type="primary" @click="$router.back()">← 返回看板</el-button>
             <span class="ttl">{{ lot?.lotNo || '检验批详情' }}</span>
             <el-tag v-if="lot" size="small" :type="lotStatusTag(lot.status)">{{ lotStatusName(lot.status) }}</el-tag>
             <el-tag v-if="lot?.priority === 'URGENT'" size="small" type="danger">紧急</el-tag>

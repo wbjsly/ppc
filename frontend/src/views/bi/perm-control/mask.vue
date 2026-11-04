@@ -1,10 +1,8 @@
 <template>
   <div>
-    <el-page-header content="权限控制（14.4）— 行级三维度矩阵/多角色并集（BR-4.10-16）/异常回退（BR-4.10-17）；列级敏感字段登记；掩码总览与临时授权（≤24h）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.4.3 字段掩码 ==================== -->
-    <PageInfo title="生效掩码规则总览（复用 14.2.2 规则管理）+ 效果预览 + 临时授权申请（≤24h 到期自动收回，spec bi-temp-grant）" style="margin-bottom: 8px" />
+    <PageInfo title="生效掩码规则总览+ 效果预览 + 临时授权申请（≤24h 到期自动收回，spec bi-temp-grant）" style="margin-bottom: 8px" />
 
     <h4>生效规则总览</h4>
     <el-table :data="maskRules" border stripe size="small" max-height="200">

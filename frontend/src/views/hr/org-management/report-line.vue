@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">汇报关系（10.2.3）</span>
+        <span class="title">汇报关系</span>
         <el-button @click="load">刷新</el-button>
       </div>
       <el-table :data="employees" height="560">

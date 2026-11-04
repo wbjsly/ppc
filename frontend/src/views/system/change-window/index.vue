@@ -2,7 +2,7 @@
   <div class="change-window-page">
     <el-card shadow="never">
       <div slot="header" class="card-header">
-        <span>变更窗口维护（16.4.1）</span>
+        <span>变更窗口维护</span>
         <div class="header-actions">
           <el-tag :type="inWindowNow ? 'success' : 'info'" size="large">
             {{ inWindowNow ? '当前处于变更窗口内' : '当前在变更窗口外（窗口外提交将升级 CCB）' }}

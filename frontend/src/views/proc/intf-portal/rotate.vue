@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="凭证管理（15.3）：签发、轮换提醒、紧急吊销、泄露追溯" description="复用 api-credential-management。Secret 仅签发时一次性展示；紧急吊销 3 秒生效（BR-5.5-15），限 ADMIN。" style="margin-bottom:12px" />
+    <PageInfo title="凭证管理：签发、轮换提醒、紧急吊销、泄露追溯" description="复用 api-credential-management。Secret 仅签发时一次性展示；紧急吊销 3 秒生效（BR-5.5-15），限 ADMIN。" style="margin-bottom:12px" />
 
     <!-- 15.3.2 定期轮换 -->
     <div class="tab-bar">

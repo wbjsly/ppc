@@ -2,10 +2,12 @@
   <div class="page">
     <div class="card-header">
       <span style="font-weight: bold; font-size: 16px;">{{ title }}</span>
-      <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+        <PageInfo class="page-info--inline" title="差异对账台（L1064）：超交走收货调整单或拒收，短交待补齐或手动关闭" description="无「直接接受超收」出口（BR-4.2-49 专用流程，P-1 轻量链）。差异处置为采购员职责（ADMIN）。" />
+      </div>
     </div>
 
-    <PageInfo title="差异对账台（L1064）：超交走收货调整单或拒收，短交待补齐或手动关闭" description="无「直接接受超收」出口（BR-4.2-49 专用流程，P-1 轻量链）。差异处置为采购员职责（ADMIN）。" style="margin-bottom: 10px;" />
     <div class="toolbar">
       <el-select v-model="diffQuery.status" placeholder="状态" clearable style="width: 140px;" @change="loadDiffs(1)">
         <el-option label="待处置" value="PENDING" />

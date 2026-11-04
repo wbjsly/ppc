@@ -212,7 +212,7 @@
       <template v-if="dt.quotes && dt.quotes.length">
         <el-divider content-position="left">比价矩阵</el-divider>
         <el-alert type="info" :closable="false" style="margin-bottom: 8px;"
-          title="矩阵展示、四维权重、异常处置与定标归档已集中至「比价矩阵（2.2.4）」"
+          title="矩阵展示、四维权重、异常处置与定标归档已集中至「比价矩阵」"
           description="本页保留询价流程动作：报价录入、异常确认/剔除、谈判双轨。定标请前往 2.2.4（成功后自动生成比价结果快照）。" />
         <el-button type="primary" size="small" @click="goMatrix">前往比价矩阵 →</el-button>
       </template>

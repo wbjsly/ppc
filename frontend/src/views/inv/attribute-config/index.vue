@@ -1,11 +1,13 @@
 <template>
   <div class="attr-config-page">
-    <PageInfo title="属性配置（4.1.3）" description="仓库域五类字典：仓库类型 / 仓位类型 / 温湿度 / 危化品 / 洁净等级。编码创建后不可改；停用条目退出新数据可选范围，既有引用不受影响。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
           <span style="font-weight: bold; font-size: 16px;">属性配置</span>
-          <el-button type="primary" :icon="Plus" @click="openForm()">新增条目</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" :icon="Plus" @click="openForm()">新增条目</el-button>
+            <PageInfo class="page-info--inline" title="属性配置" description="仓库域五类字典：仓库类型 / 仓位类型 / 温湿度 / 危化品 / 洁净等级。编码创建后不可改；停用条目退出新数据可选范围，既有引用不受影响。" />
+          </div>
         </div>
       </template>
 

@@ -1,6 +1,5 @@
 <template>
   <div class="pp-page">
-    <PageInfo title="预收处理（3.3.3）" description="冻结后预收目标 = 缺口金额；通知销售与客户 → 到账登记（销售/客服）→ 财务确认（仅 FINANCE_MGR/ADMIN）：到账 ≥ 缺口自动解冻并生成《SO 解冻确认单》，不足保持冻结并展示尚差（BR-4.3-17）。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -16,6 +15,7 @@
             <el-input v-model="keyword" placeholder="通知号/SO/客户" clearable
                       :prefix-icon="Search" style="width: 200px;" @keyup.enter="load(1)" />
             <el-button type="primary" @click="load(1)">查询</el-button>
+            <PageInfo class="page-info--inline" title="预收处理" description="冻结后预收目标 = 缺口金额；通知销售与客户 → 到账登记（销售/客服）→ 财务确认（仅 FINANCE_MGR/ADMIN）：到账 ≥ 缺口自动解冻并生成《SO 解冻确认单》，不足保持冻结并展示尚差（BR-4.3-17）。" />
           </div>
         </div>
       </template>

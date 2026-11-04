@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">加班申请（10.4.1）</span>
+        <span class="title">加班申请</span>
         <div>
           <el-select v-model="statusFilter" placeholder="状态过滤" clearable style="width:130px;margin-right:8px" @change="load">
             <el-option label="GM 特批待办" value="GM_SPECIAL" />

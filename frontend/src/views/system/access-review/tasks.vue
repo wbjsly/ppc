@@ -5,8 +5,8 @@
       <el-button type="primary" @click="loadTasks">刷新</el-button>
       <el-button type="danger" plain :loading="generating" @click="doGenerate">手动生成季度任务</el-button>
       <el-button type="warning" plain @click="doSweep">逾期升级扫描（BR-5.6-10）</el-button>
+      <PageInfo class="page-info--inline" title="风险分层：特权/敏感账号 100% 人工复核；普通账号仅基线偏离进清单；基线内自动通过。完成时限 10 个工作日。" />
     </div>
-    <PageInfo title="风险分层：特权/敏感账号 100% 人工复核；普通账号仅基线偏离进清单；基线内自动通过。完成时限 10 个工作日。" style="margin-bottom: 10px" />
     <el-table :data="tasks" v-loading="taskLoading" border stripe>
       <el-table-column prop="cycleTag" label="周期" width="110" />
       <el-table-column label="截止时间" width="170" :formatter="(_, r) => fmtTime(r.dueAt)" />

@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="月度计提（7.2.1）：手动执行本月折旧，同事务出凭证+回写台账" description="PERIOD_TAG 幂等卡控（同月已提 422，先冲回）；三方法 SL/DDB/SYD；成本中心→科目分摊；BR-4.13-13 勾稽。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -10,6 +9,7 @@
         <span class="spacer" />
         <el-button v-if="canRun && detail.run" type="danger" plain size="small"
           @click="doReverse(detail.run)">冲回本单</el-button>
+        <PageInfo class="page-info--inline" title="月度计提：手动执行本月折旧，同事务出凭证+回写台账" description="PERIOD_TAG 幂等卡控（同月已提 422，先冲回）；三方法 SL/DDB/SYD；成本中心→科目分摊；BR-4.13-13 勾稽。" />
       </div>
 
       <el-alert v-if="preview.missingParams && preview.missingParams.length" type="warning"

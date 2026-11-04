@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">部门管理（10.2.1）</span>
+        <span class="title">部门管理</span>
         <div>
           <el-button type="primary" @click="openCreate">新建部门</el-button>
           <el-button @click="load">刷新</el-button>

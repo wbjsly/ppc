@@ -1,6 +1,6 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="法人调拨（7.4.2）：四节点审批（+财务经理）→ 完成同事务双凭证 + 内部交易单据 + 开票待办（C-10 月结卡控）" description="跨法人以双方法人 USCC 不同为判定；任一凭证失败整体回滚。" style="margin-bottom:12px;" />
+    <PageInfo title="法人调拨：四节点审批（+财务经理）→ 完成同事务双凭证 + 内部交易单据 + 开票待办（C-10 月结卡控）" description="跨法人以双方法人 USCC 不同为判定；任一凭证失败整体回滚。" style="margin-bottom:12px;" />
 
     <TransferSection mode="cross" />
   </div>

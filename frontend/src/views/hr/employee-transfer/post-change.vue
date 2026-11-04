@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>调岗管理（10.7.3）—— 双确认 / 双人复核（C-4.7-03）/ 生效联动</span>
-          <el-button type="primary" size="small" @click="openSubmit">发起调岗</el-button>
+          <span>调岗管理—— 双确认 / 双人复核（C-4.7-03）/ 生效联动</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="openSubmit">发起调岗</el-button>
+            <PageInfo class="page-info--inline" title="流程：发起 → 调出确认 → 调入确认 → HR 审核 → 双人复核（HR 经理+另一 HR 专员独立确认五要素，系统比对一致才流转）→ 审批 → 生效（主档+账号角色联动）。薪酬超职级带宽 → 自动追加 HR 经理 L2 复核节点；HR 审核环节可勾选变更社保缴纳地（生效时更新主档并开社保转移单）" />
+          </div>
         </div>
       </template>
-      <PageInfo title="流程：发起 → 调出确认 → 调入确认 → HR 审核 → 双人复核（HR 经理+另一 HR 专员独立确认五要素，系统比对一致才流转）→ 审批 → 生效（主档+账号角色联动）。薪酬超职级带宽 → 自动追加 HR 经理 L2 复核节点；HR 审核环节可勾选变更社保缴纳地（生效时更新主档并开社保转移单）" />
 
       <el-table :data="rows" size="small" border>
         <el-table-column prop="trfNo" label="单号" width="120" />

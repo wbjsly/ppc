@@ -2,10 +2,12 @@
   <div class="page">
     <div class="card-header">
       <span style="font-weight: bold; font-size: 16px;">比价矩阵</span>
-      <span class="tip">2.2.4 · FR-4.2-2-2 四维矩阵 · BR-4.2-12 异常 · BR-4.2-14 双轨归档</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="tip">2.2.4 · FR-4.2-2-2 四维矩阵 · BR-4.2-12 异常 · BR-4.2-14 双轨归档</span>
+        <PageInfo class="page-info--inline" title="比价矩阵工作台" description="单据矩阵：四维结构（价格/交付实算，质量维待接入故锁定 0），权重可调、±20% 异常确认/剔除、谈判双轨、定标与快照归档集中本页；品类/供应商双透视为跨 RFQ 聚合视图。询价流程（创建/发送/报价录入）。" />
+      </div>
     </div>
 
-    <PageInfo title="比价矩阵工作台（菜单 2.2.4，独立界面要素）" description="单据矩阵：四维结构（价格/交付实算，质量维待 2.4/2.5 接入故锁定 0），权重可调、±20% 异常确认/剔除、谈判双轨、定标与快照归档集中本页；品类/供应商双透视为跨 RFQ 聚合视图。询价流程（创建/发送/报价录入）仍在 2.2.1。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="activeTab">
       <!-- ============ Tab1 单据矩阵 ============ -->
@@ -27,7 +29,6 @@
             <el-input-number :model-value="0" :min="0" :max="100" :precision="0" size="small"
                              style="width: 90px;" disabled />
             <el-tag type="info" size="small" style="margin-left: 4px;">待接入 2.4/2.5，锁定 0</el-tag>
-            <span class="tip" style="margin-left: 12px;">（价格+交付合计须 100）</span>
           </template>
         </div>
 
@@ -116,7 +117,6 @@
             <el-button type="success" :disabled="!isAdmin || isAwarded" @click="openAward">
               {{ isAwarded ? '已定标（可查比价记录）' : '定标（登记比价分析表并归档快照）' }}
             </el-button>
-            <span class="tip" style="margin-left: 8px;">定标动作与 2.2.1 API 同契约；成功后自动生成比价结果快照</span>
           </div>
         </template>
         <el-empty v-else description="该 RFQ 暂无报价或未选择" :image-size="80" />

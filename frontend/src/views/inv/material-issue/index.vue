@@ -1,6 +1,5 @@
 <template>
   <div class="mi-page">
-    <PageInfo title="领料出库（4.5.2）：领料单 DRAFT → POSTED，FIFO 配批，可用量不足 422（spec material-issue）" description="自有领料扣减可用库存；寄售（VMI）领用执行物权转移——生成《寄售转自有凭证》并按领用时点协议价生成应付暂估。创建/过账限 ADMIN 与仓库。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="filters.issueType" placeholder="类型" clearable style="width: 130px;"
@@ -17,6 +16,7 @@
         @clear="load" @keyup.enter="load" />
       <el-button @click="load">查询</el-button>
       <el-button type="primary" v-if="canWh" @click="openDialog">创建领料单</el-button>
+      <PageInfo class="page-info--inline" title="领料出库：领料单 DRAFT → POSTED，FIFO 配批，可用量不足 422（spec material-issue）" description="自有领料扣减可用库存；寄售（VMI）领用执行物权转移——生成《寄售转自有凭证》并按领用时点协议价生成应付暂估。创建/过账限 ADMIN 与仓库。" />
     </div>
 
     <el-table :data="rows" size="small" border v-loading="loading" @expand-change="loadDetail">

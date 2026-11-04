@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.7.2 合并发货" description="同一客户、同一仓库的多张已确认 SO 合并为一张发货单，行级保留来源 SO 引用（过账与确认时各自回写）。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -16,6 +15,7 @@
                        @click="generate">
               合并生成发货单（{{ selected.length }} 张）
             </el-button>
+            <PageInfo class="page-info--inline" title="3.7.2 合并发货" description="同一客户、同一仓库的多张已确认 SO 合并为一张发货单，行级保留来源 SO 引用（过账与确认时各自回写）。拣货作业由库存域拣货复核承载，本页为销售侧策略与确认。" />
           </div>
         </div>
       </template>

@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="故障维修（7.3.2）：全员报修 → 工程师确认派工（BR-16 挂锁阻断）→ 双验收 → BR-19 大修评估" description="安全停机挂锁解除限设备主管；同故障 12 月 ≥3 次触发大修/更换评估并冻结同类工单（BR-19）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -9,6 +8,7 @@
         <span class="spacer" />
         <el-input v-model="historyCardId" placeholder="卡片ID 查设备履历" style="width:220px;" clearable />
         <el-button plain @click="loadHistory">设备履历</el-button>
+        <PageInfo class="page-info--inline" title="故障维修：全员报修 → 工程师确认派工（BR-16 挂锁阻断）→ 双验收 → BR-19 大修评估" description="安全停机挂锁解除限设备主管；同故障 12 月 ≥3 次触发大修/更换评估并冻结同类工单（BR-19）。" />
       </div>
       <el-table :data="reportRows" size="small" border max-height="260" style="margin-top:8px;">
         <el-table-column prop="reportNo" label="报修单号" width="150" />

@@ -3,7 +3,7 @@
     <!-- 状态总览 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">限流状态总览（12.3.2）—— 档位 / 令牌桶 / 熔断态（与网关实时判定同源）</h4>
+        <h4 style="margin:0">限流状态总览—— 档位 / 令牌桶 / 熔断态（与网关实时判定同源）</h4>
         <el-button size="small" @click="load">刷新</el-button>
       </div>
       <el-table :data="channels" size="small" border>

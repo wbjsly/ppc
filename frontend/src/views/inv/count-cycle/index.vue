@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="周期盘点（4.11.1）：手工选范围生成任务，生成即锁仓位" description="按仓库+仓位/物料筛选生成 CYCLE 任务，账面在锁生效时定格；差异 ≤0.5% 自动调整，超容差走 4.11.3 审批，>10% 阻断待复盘。" style="margin-bottom: 12px;" />
+    <PageInfo title="周期盘点：手工选范围生成任务，生成即锁仓位" description="按仓库+仓位/物料筛选生成 CYCLE 任务，账面在锁生效时定格；差异 ≤0.5% 自动调整，超容差走审批，>10% 阻断待复盘。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never" style="margin-bottom: 12px;">
       <template #header>生成周期盘点任务</template>

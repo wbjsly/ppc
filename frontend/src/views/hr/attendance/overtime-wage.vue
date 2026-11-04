@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">加班工资（10.4.3）</span>
+        <span class="title">加班工资</span>
         <el-button @click="load">刷新</el-button>
       </div>
       <el-table :data="wageRows" height="480">

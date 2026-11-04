@@ -4,14 +4,16 @@
       <template #header>
         <div class="card-header">
           <span style="font-weight: bold; font-size: 16px;">历史汇率</span>
-          <el-radio-group v-model="tab" @change="onTabChange">
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-radio-group v-model="tab" @change="onTabChange">
             <el-radio-button value="sequence">区间历史链</el-radio-button>
             <el-radio-button value="timeline">版本时间线</el-radio-button>
           </el-radio-group>
+            <PageInfo class="page-info--inline" title="历史保留（FR-4.1-3-4 / BR-4.1-18）：本页只读，已发生业务按当时生效汇率核算，历史不可篡改。" description="区间历史链按币对×类型展示完整 append-only 区间；版本时间线为跨记录快照流水，支持任意两版本对比与按历史值预填维护。" />
+          </div>
         </div>
       </template>
 
-      <PageInfo title="历史保留（FR-4.1-3-4 / BR-4.1-18）：本页只读，已发生业务按当时生效汇率核算，历史不可篡改。" description="区间历史链按 币对×类型 展示完整 append-only 区间；版本时间线为跨记录快照流水，支持任意两版本对比与按历史值预填维护。" style="margin-bottom: 12px;" />
 
       <!-- ========== Tab1 区间历史链 ========== -->
       <template v-if="tab === 'sequence'">

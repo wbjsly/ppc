@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="外协建议（5.6.3）— 超载工作中心下钻占用工序，按定额矩阵推荐可替代外协资源（含协议价参考），改派走 L2 审批（BR-4.5-21）"
-                    style="margin-bottom: 8px" />
 
     <!-- 超载工作中心 -->
     <div class="toolbar">
@@ -9,7 +7,6 @@
                       start-placeholder="开始" end-placeholder="结束" :clearable="false"
                       style="width: 250px" />
       <el-button size="small" type="primary" @click="load">查询超载</el-button>
-      <span class="tip">数据与 5.6.2 同一读口径（只列超限行）；点行下钻占用工序</span>
     </div>
 
     <el-table :data="overRows" v-loading="loading" border stripe size="small" max-height="220"
@@ -30,7 +27,6 @@
     <template v-if="pickedWc">
       <div class="toolbar" style="margin-top: 14px">
         <strong>{{ pickedWc.wcCode }} 占用工序（{{ pickedDate }}）</strong>
-        <span class="tip">选中工序行 → 右侧推荐可替代外协资源</span>
       </div>
       <el-table :data="occupyRows" v-loading="oLoading" border stripe size="small" max-height="220"
                 highlight-current-row @current-change="onPickDispatch">
@@ -56,7 +52,6 @@
     <template v-if="pickedDispatch">
       <div class="toolbar" style="margin-top: 14px">
         <strong>{{ pickedDispatch.dispatchNo }} 可替代外协资源</strong>
-        <span class="tip">候选 = 定额矩阵存在该工序定额 + 外协 + 启用 + 供应商 QUALIFIED（C-4.5-05 前置过滤）；协议价仅参考不参与计算</span>
       </div>
       <el-table :data="candidates" v-loading="cLoading" border stripe size="small" max-height="240">
         <el-table-column prop="wcCode" label="外协工作中心" width="150" />
@@ -87,7 +82,6 @@
     <div class="toolbar" style="margin-top: 16px">
       <strong>外协派工回联</strong>
       <el-button size="small" type="primary" @click="loadOutsource">刷新</el-button>
-      <span class="tip">PENDING_PR（PR 已建待转单）→ ORDERED（PO 已下达）→ RECEIVED（GR 已过账）；状态推进由采购域钩子自动回写并通知申请人</span>
     </div>
     <el-table :data="outsourceRows" border stripe size="small" max-height="220">
       <el-table-column prop="dispatchNo" label="派工单号" width="160" />

@@ -2,10 +2,12 @@
   <div class="page">
     <div class="card-header">
       <span style="font-weight: bold; font-size: 16px;">{{ title }}</span>
-      <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="tip">2.4 收货管理 · FR-4.2-4-1 · C-4.2-04 容差 0.5% · BR-4.2-21/22/28/49</span>
+        <PageInfo class="page-info--inline" title="入库过账（FR-4.2-6-1）：回写 PO 已收货数量、行完成判定、更新库存（全部进待检锁定）、生成入库凭证" description="BR-4.2-28：PO 已关闭（未按 49 重开）或供应商冻结 → 硬阻断。应付暂估与三方匹配为桩（TODO-NOTIFY）。" />
+      </div>
     </div>
 
-    <PageInfo title="入库过账（FR-4.2-6-1）：回写 PO 已收货数量、行完成判定、更新库存（全部进待检锁定）、生成入库凭证" description="BR-4.2-28：PO 已关闭（未按 49 重开）或供应商冻结 → 硬阻断。应付暂估与三方匹配为 4.6 桩（TODO-NOTIFY）。" style="margin-bottom: 10px;" />
     <div class="toolbar">
       <el-select v-model="postQuery.status" placeholder="状态" clearable style="width: 130px;" @change="loadPosts(1)">
         <el-option label="待过账" value="CREATED" />

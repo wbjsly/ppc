@@ -1,6 +1,6 @@
 <template>
   <div class="pa-page">
-    <PageInfo title="成本分析（2.9.1）" description="双口径成本构成（PO承诺 vs 发票实付+差异）、价格趋势（移动均价+异动标红+协议价线）、比价与降本（环比/同比自动基准）。聚合数据为每日 01:00 抽取快照，异动与价差实时。" style="margin-bottom: 12px;" />
+    <PageInfo title="成本分析" description="双口径成本构成（PO承诺 vs 发票实付+差异）、价格趋势（移动均价+异动标红+协议价线）、比价与降本（环比/同比自动基准）。聚合数据为每日 01:00 抽取快照，异动与价差实时。" style="margin-bottom: 12px;" />
     <el-tabs v-model="tab">
       <!-- ============ Tab1 成本构成 ============ -->
       <el-tab-pane label="成本构成" name="composition">

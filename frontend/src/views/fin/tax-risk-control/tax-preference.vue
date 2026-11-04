@@ -3,11 +3,13 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>税收优惠管理（9.6.2）</span>
-          <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+          <span>税收优惠管理</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
+            <PageInfo class="page-info--inline" title="BR-4.14-05：申报数据须落在备案范围内，越界申报生成将被 422 阻断；BR-4.14-06：到期前 90 天预警续期，政策废止自动终止并评估补税风险" />
+          </div>
         </div>
       </template>
-      <PageInfo title="BR-4.14-05：申报数据须落在备案范围内，越界申报生成将被 422 阻断；BR-4.14-06：到期前 90 天预警续期，政策废止自动终止并评估补税风险" />
 
       <!-- 到期预警 / 冻结终止 -->
       <el-row :gutter="12" class="mb8">

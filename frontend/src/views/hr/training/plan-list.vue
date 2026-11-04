@@ -3,7 +3,7 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>培训计划（10.9.1，编制即发布 · 任务展开到人 · 完成率）</span>
+          <span>培训计划</span>
           <div>
             <el-select v-model="year" size="small" style="width: 110px; margin-right: 8px" @change="load">
               <el-option v-for="y in years" :key="y" :label="y + ' 年'" :value="y" />

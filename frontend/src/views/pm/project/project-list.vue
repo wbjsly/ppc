@@ -4,7 +4,7 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span class="title">项目立项（11.3.1）</span>
+          <span class="title">项目立项</span>
           <div class="actions">
             <el-select v-model="filters.status" placeholder="状态" clearable style="width: 130px;" @change="load">
               <el-option label="草稿" value="DRAFT" />
@@ -151,7 +151,7 @@
           </el-descriptions>
         </template>
 
-        <el-divider content-position="left">IP 归属协议附件（11.8 接手门禁，本期仅归档位）</el-divider>
+        <el-divider content-position="left">IP 归属协议附件</el-divider>
         <el-upload :show-file-list="false" :http-request="doUploadIp" multiple>
           <el-button size="small" type="primary" plain>上传协议</el-button>
         </el-upload>

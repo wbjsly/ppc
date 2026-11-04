@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="全面盘点（4.11.2）：一键对选仓全量生成任务" description="生成 FULL 任务覆盖该仓全部有货维度（仓位×物料×批次），生成即锁仓位；'' 未分配位不入盘点范围。" style="margin-bottom: 12px;" />
+    <PageInfo title="全面盘点：一键对选仓全量生成任务" description="生成 FULL 任务覆盖该仓全部有货维度（仓位×物料×批次），生成即锁仓位；'' 未分配位不入盘点范围。" style="margin-bottom: 12px;" />
 
     <el-card shadow="never" style="margin-bottom: 12px;">
       <template #header>一键全面盘点</template>

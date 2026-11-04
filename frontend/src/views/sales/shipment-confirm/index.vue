@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.7.4 发货确认与签收" description="过账后的发货单在此确认（记录物流单号与发货时间，物流异常通知销售）→ 签收推进「已签收」；超时未签收可手工触发预警；拒收自动转退货申请草稿。拣货作业由库存域拣货复核（4.7）承载，本页为销售侧策略与确认。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -17,6 +16,7 @@
             <el-button size="small" style="margin-left:8px" @click="load">刷新</el-button>
             <el-button size="small" type="warning" style="margin-left:8px"
                        @click="doSweep">触发超时预警扫描</el-button>
+            <PageInfo class="page-info--inline" title="3.7.4 发货确认与签收" description="过账后的发货单在此确认（记录物流单号与发货时间，物流异常通知销售）→ 签收推进「已签收」；超时未签收可手工触发预警；拒收自动转退货申请草稿。拣货作业由库存域拣货复核承载，本页为销售侧策略与确认。" />
           </div>
         </div>
       </template>

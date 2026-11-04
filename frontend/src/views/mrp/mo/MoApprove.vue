@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="工单审批（5.4.2）— 计划员提交 → 计划主管签署 → 已确认；驳回回计划可改"
-                    style="margin-bottom: 8px" />
 
     <!-- 审批待办（MoApprove，计划主管可签） -->
     <div class="section">

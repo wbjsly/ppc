@@ -1,6 +1,5 @@
 <template>
   <div class="qc-page">
-    <PageInfo title="报价创建（3.2.1）" description="由商机入口创建（引用商机编号）；三类协议取价「专属 > 阶梯 > 时间」，无协议 L1 阻断；MOQ 行级拒绝（样品单豁免）；试算出毛利后再提交审批（小额高毛利自动发布）。" style="margin-bottom: 12px;" />
 
     <el-row :gutter="12">
       <!-- ============ 左：草稿列表 ============ -->
@@ -13,6 +12,7 @@
                 <el-input v-model="query.keyword" placeholder="编号/客户" clearable size="small"
                           style="width: 150px;" @keyup.enter="loadList(1)" />
                 <el-button size="small" type="primary" style="margin-left: 6px;" @click="loadList(1)">查询</el-button>
+                <PageInfo class="page-info--inline" title="报价创建" description="由商机入口创建（引用商机编号）；三类协议取价「专属 > 阶梯 > 时间」，无协议 L1 阻断；MOQ 行级拒绝（样品单豁免）；试算出毛利后再提交审批（小额高毛利自动发布）。" />
               </div>
             </div>
           </template>

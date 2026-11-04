@@ -20,7 +20,6 @@
                    :on-change="onFileChange">
           <el-button type="primary" plain>上传 .csv 文件</el-button>
         </el-upload>
-        <span class="tip">列序：税码编号,税率值,生效日期,失效日期,适用范围,政策文号,计税方式,税率类型（后两列可缺省）</span>
       </div>
 
       <!-- ② 录入区 -->

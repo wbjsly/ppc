@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="报表模板管理（14.1）— 设计/测试/发布/版本四叶；口径 diff 硬阻断（C-4.10-01）、三方发布审批、快照回退"
-                    style="margin-bottom: 8px" />
 
     <!-- ========== 14.1.1 模板设计 ========== -->
     <div class="toolbar">
@@ -76,7 +74,7 @@
         </el-form-item>
         <el-form-item label="列定义 JSON">
           <el-input v-model="form.columnsJson" type="textarea" :rows="4"
-                    placeholder='存量：[{"field":"AMOUNT","title":"金额","entityCol":true}]；语义增强（14.6 自助查询）：{"field":"ORDER_DATE","label":"订单日期","role":"DIMENSION","timeFlag":true} / {"field":"AMOUNT","role":"MEASURE","agg":["SUM"],"roleFlag":false}——role=DIMENSION|MEASURE、agg 聚合白名单、timeFlag/roleFlag 供即席查询预检判定，均可选（缺省=维度不可聚合）' />
+                    placeholder='存量：[{"field":"AMOUNT","title":"金额","entityCol":true}]；语义增强：{"field":"ORDER_DATE","label":"订单日期","role":"DIMENSION","timeFlag":true} / {"field":"AMOUNT","role":"MEASURE","agg":["SUM"],"roleFlag":false}——role=DIMENSION|MEASURE、agg 聚合白名单、timeFlag/roleFlag 供即席查询预检判定，均可选（缺省=维度不可聚合）' />
         </el-form-item>
         <el-form-item label="指标引用" required>
           <el-input v-model="form.metricsJson" type="textarea" :rows="3"
@@ -97,7 +95,6 @@
           {{ statusLabel(previewStatus) }}
         </el-tag>
         <el-button size="small" type="primary" @click="loadRender">刷新数据</el-button>
-        <span class="tip">行级权限已注入、敏感列按列级规则掩码</span>
       </div>
       <el-table :data="renderRows" v-loading="renderLoading" border stripe size="small" max-height="520">
         <el-table-column v-for="c in renderCols" :key="c.field" :prop="c.field"

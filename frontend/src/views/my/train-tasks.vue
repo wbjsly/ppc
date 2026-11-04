@@ -4,10 +4,12 @@
       <template #header>
         <div class="card-header">
           <span>我的培训任务（自助端）</span>
-          <el-button size="small" @click="load">刷新</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button size="small" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="确认参加/已完成后，最终结果以 HR 登记的考试成绩为准（成绩≥合格线才计完成）" />
+          </div>
         </div>
       </template>
-      <PageInfo title="确认参加/已完成后，最终结果以 HR 登记的考试成绩为准（成绩≥合格线才计完成）" />
       <el-table :data="rows" size="small" border>
         <el-table-column label="课程" min-width="180">
           <template #default="{ row }">{{ row.plan?.courseName }}</template>

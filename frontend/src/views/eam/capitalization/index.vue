@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="mode === 'PURCHASE' ? '采购转资（7.1.1）：入库过账+质检合格的采购订单 → 转资建卡' : '在建转资（7.1.2）：完工验收的 CIP 项目 → 转资建卡'" description="BR-4.13-07 原值与发票/归集超差阻断审核；BR-4.13-09 低于资本化下限阻断建卡；一物一卡拆分；审核通过生成卡片+转资凭证（借 固定资产 / 贷 在建工程或应付暂估）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -14,6 +13,7 @@
         <el-button type="primary" @click="load">查询</el-button>
         <span class="spacer" />
         <el-button v-if="canEdit" type="success" @click="openPending">发起转资</el-button>
+        <PageInfo class="page-info--inline" title="mode === 'PURCHASE' ? '采购转资：入库过账+质检合格的采购订单 → 转资建卡' : '在建转资：完工验收的 CIP 项目 → 转资建卡'" description="BR-4.13-07 原值与发票/归集超差阻断审核；BR-4.13-09 低于资本化下限阻断建卡；一物一卡拆分；审核通过生成卡片+转资凭证（借固定资产 / 贷在建工程或应付暂估）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

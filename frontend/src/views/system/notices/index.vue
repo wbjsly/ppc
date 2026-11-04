@@ -1,6 +1,5 @@
 <template>
   <div>
-    <el-page-header content="通知中心 — 站内通知统一查看（按角色聚合，未读优先）" style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-radio-group v-model="view" size="small" @change="load">

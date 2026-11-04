@@ -3,7 +3,7 @@
     <!-- 今日打卡（自助入口） -->
     <el-card shadow="never" style="margin-bottom:12px">
       <div class="toolbar">
-        <span class="title">今日打卡（10.3.2）</span>
+        <span class="title">今日打卡</span>
         <div>
           <el-button type="primary" :disabled="todayIn" @click="punchIn">{{ todayIn ? '已上班打卡' : '上班打卡' }}</el-button>
           <el-button type="success" :disabled="todayOut" @click="punchOut">{{ todayOut ? '已下班打卡' : '下班打卡' }}</el-button>

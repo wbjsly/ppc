@@ -1,6 +1,5 @@
 <template>
   <div class="opp-fu-page">
-    <PageInfo title="商机跟进（3.1.3）" description="5 阶段推进每次须审批（销售经理节点，通过前停在原阶段）；阶段概率/下一步行动/日期必填；同阶段停留超 30 天标超期；跟进记录仅追加；丢失归档须原因分类+说明。" style="margin-bottom: 12px;" />
 
     <el-row :gutter="12">
       <!-- ============ 左：商机列表 ============ -->
@@ -9,8 +8,11 @@
           <template #header>
             <div class="card-header">
               <span style="font-weight: bold;">商机（在跟优先）</span>
-              <el-input v-model="keyword" placeholder="编号/名称/客户" clearable size="small"
+              <div style="display:flex;align-items:center;gap:6px">
+                <el-input v-model="keyword" placeholder="编号/名称/客户" clearable size="small"
                         :prefix-icon="Search" style="width: 180px;" @keyup.enter="loadList(1)" />
+                <PageInfo class="page-info--inline" title="商机跟进" description="5 阶段推进每次须审批（销售经理节点，通过前停在原阶段）；阶段概率/下一步行动/日期必填；同阶段停留超 30 天标超期；跟进记录仅追加；丢失归档须原因分类+说明。" />
+              </div>
             </div>
           </template>
           <el-table :data="rows" v-loading="loading" stripe height="560"

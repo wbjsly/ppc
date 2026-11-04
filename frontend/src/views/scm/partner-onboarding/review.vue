@@ -3,7 +3,7 @@
     <!-- 待办（可签节点） -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">资质审核工作台（12.1.2）</h4>
+        <h4 style="margin:0">资质审核工作台</h4>
         <div>
           <el-radio-group v-model="tab" size="small" @change="load">
             <el-radio-button value="todo">我的待办</el-radio-button>

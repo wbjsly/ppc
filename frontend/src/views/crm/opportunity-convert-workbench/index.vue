@@ -1,6 +1,5 @@
 <template>
   <div class="convert-bench">
-    <PageInfo title="商机转化（11.1.4）" description="CRM 全链路工作台：上区线索→商机转化（A/B 级未转化线索，FR-4.8-1-5 门槛与要素全由服务端校验）；下区可转化商机→报价闸口（BR-4.3-07，校验通过跳 3.2.1，不通过回写原因）。与 3.1.2 同功能不同入口。" style="margin-bottom: 12px;" />
 
     <!-- ============ 上区：线索 → 商机转化 ============ -->
     <el-card style="margin-bottom: 14px;">
@@ -13,6 +12,7 @@
               <el-option label="B 级线索" value="B" />
             </el-select>
             <el-button :icon="Refresh" @click="loadLeads">刷新</el-button>
+            <PageInfo class="page-info--inline" title="商机转化" description="CRM 全链路工作台：上区线索→商机转化（A/B 级未转化线索，FR-4.8-1-5 门槛与要素全由服务端校验）；下区可转化商机→报价闸口（BR-4.3-07，校验通过跳转，不通过回写原因）。同功能不同入口。" />
           </div>
         </div>
       </template>

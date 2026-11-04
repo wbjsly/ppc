@@ -21,7 +21,7 @@
         :description="stepsHint" />
 
       <el-steps :active="stepActive" finish-status="success" style="margin-bottom: 16px;">
-        <el-step title="拣货（4.7.2 执行）" description="WAVE 任务逐行扫码" />
+        <el-step title="拣货" description="WAVE 任务逐行扫码" />
         <el-step title="分播复核" description="按订单实点，不平落 WAVE_SORT 差异" />
         <el-step title="装车确认" description="扫描 vs 复核快照，不一致阻断该单" />
         <el-step title="发运过账" description="逐单独立过账，失败单独重试" />

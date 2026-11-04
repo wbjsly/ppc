@@ -1,10 +1,7 @@
 <template>
   <div>
-    <el-page-header content="数据抽取（14.2）— 抽取配置/脱敏规则/质量校验三叶；波动暂停（BR-4.10-12）、断点续抽（BR-4.10-13）、质量分级阻断（BR-4.10-14）、schema 变更检测（BR-4.10-15）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.2.2 脱敏规则 ==================== -->
-    <PageInfo title="类型化掩码（PHONE 前3后4 / ID_CARD 前3后4 / SALARY *** / BANK 尾4 / GENERIC 首尾）；变更须数据治理专员审批后生效（仅 ENABLED 参与查询层判定）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-select v-model="maskTypeFilter" placeholder="规则类型" size="small" clearable
                  style="width: 170px" @change="loadMaskRules">
@@ -12,6 +9,7 @@
         <el-option label="敏感登记 COL_SENSITIVE" value="COL_SENSITIVE" />
       </el-select>
       <el-button size="small" type="success" @click="openMaskEdit(null)">新建规则</el-button>
+      <PageInfo class="page-info--inline" title="类型化掩码（PHONE 前3后4 / ID_CARD 前3后4 / SALARY *** / BANK 尾4 / GENERIC 首尾）；变更须数据治理专员审批后生效（仅 ENABLED 参与查询层判定）" />
     </div>
     <el-table :data="maskRules" border stripe size="small" max-height="380">
       <el-table-column prop="targetKey" label="目标字段" width="160" />

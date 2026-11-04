@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="外协订单（5.10.1）— 外协派工单聚合工作台：按回联状态分组，维护外协交期/备注/供料方式（外协订单 = 外协派工单，D11）"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="filters.linkStatus" size="small" clearable placeholder="回联状态" style="width: 140px">
@@ -17,7 +15,6 @@
       <el-input v-model="filters.keyword" size="small" clearable placeholder="单号/工单号/PO 号"
                 style="width: 190px" @keyup.enter="load" />
       <el-button size="small" type="primary" @click="load">查询</el-button>
-      <span class="tip">回联状态由 PR/PO/收货自动推导；5.6.3 改派审批通过后在此维护交期与供料方式</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small" max-height="560">

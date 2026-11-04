@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="清单变更（5.1.2）— 从已发布版本发起变更，强制变更原因，生成新版本草稿"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="状态">

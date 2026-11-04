@@ -1,8 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo
-      title="3.10.1 退货申请"
-      description="按 SO 行发起退货：退货数量不得超过该行已发可退余量（已发 − 已退）；按开票状态自动分流——未开票走「未开票退货」、已开票走「已开票退货」（判定通过后要求红字发票）；客户拒收自动带入原发货单（FR-4.3-68 关联原 SO，BR-4.3-68）。" />
 
     <el-row :gutter="12" class="mb12">
       <!-- 发起申请 -->
@@ -11,11 +8,16 @@
           <template #header>
             <div class="card-head">
               <b>发起退货申请</b>
-              <el-select v-model="soId" filterable placeholder="选择销售订单" size="small"
+              <div style="display:flex;align-items:center;gap:6px">
+                <el-select v-model="soId" filterable placeholder="选择销售订单" size="small"
                          style="width:230px" @change="loadReturnables">
                 <el-option v-for="s in sos" :key="s.id"
                            :label="`${s.soNo} ${s.customerName || ''}`" :value="s.id" />
               </el-select>
+                <PageInfo class="page-info--inline"
+      title="3.10.1 退货申请"
+      description="按 SO 行发起退货：退货数量不得超过该行已发可退余量（已发 − 已退）；按开票状态自动分流——未开票走「未开票退货」、已开票走「已开票退货」（判定通过后要求红字发票）；客户拒收自动带入原发货单（FR-4.3-68 关联原 SO，BR-4.3-68）。" />
+              </div>
             </div>
           </template>
 

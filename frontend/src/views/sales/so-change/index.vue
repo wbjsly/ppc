@@ -1,12 +1,14 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.5.3 订单变更" description="支持数量调整、交期变更与行取消；变更重跑信用检查与 ATP 试算（超限重新冻结）；已发货/已开票行以 L1 阻断，变更仅作用于未执行部分（FR-4.3-4-7 / BR-4.3-30 / C-4.3-08）。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
         <div class="card-head">
           <span>可变更订单（已确认 CONFIRMED）</span>
-          <el-button size="small" @click="load">刷新</el-button>
+          <div style="display:flex;align-items:center;gap:6px">
+            <el-button size="small" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="3.5.3 订单变更" description="支持数量调整、交期变更与行取消；变更重跑信用检查与 ATP 试算（超限重新冻结）；已发货/已开票行以 L1 阻断，变更仅作用于未执行部分（FR-4.3-4-7 / BR-4.3-30 / C-4.3-08）。" />
+          </div>
         </div>
       </template>
       <el-table :data="rows" size="small" border highlight-current-row

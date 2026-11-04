@@ -7,16 +7,17 @@
           <div>
             <el-button size="small" @click="$router.push('/m/6.2.config')">配置</el-button>
             <el-button size="small" type="primary" :loading="loading" @click="load">刷新</el-button>
+            <PageInfo class="page-info--inline" title="检验前置于入库过账（C-4.12-06）；超时批次由调度器自动标记并改派（5min）；紧急批次优先展示。" description="无标准批次标红 BLOCKED（发布标准后一键激活）；免检批次 SKIPPED 可过账；OQC 完工批放行即联动入库并发合格证。" v-if="!samplingMode" />
           </div>
         </div>
       </template>
 
-      <PageInfo title="检验前置于入库过账（C-4.12-06）；超时批次由调度器自动标记并改派（5min）；紧急批次优先展示。" description="无标准批次标红 BLOCKED（发布标准后一键激活）；免检批次 SKIPPED 可过账；OQC 完工批放行即联动入库并发合格证。" style="margin-bottom: 10px;" v-if="!samplingMode" />
-      <el-alert v-else-if="releaseMode" type="warning" :closable="false" style="margin-bottom: 10px;"
-                title="合格放行（6.4.1）：判定合格待确认批次，逐条校验通过后放行。"
+      <!-- 原 v-if 链头（PageInfo）已并入上方 card-header，此处改为独立条件 -->
+      <el-alert v-if="samplingMode && releaseMode" type="warning" :closable="false" style="margin-bottom: 10px;"
+                title="合格放行：判定合格待确认批次，逐条校验通过后放行。"
                 description="放行不可撤回（撤销走召回）；校验失败将逐条展示未通过项，批次状态不变。放行后自动通知仓库/跟单。" />
-      <el-alert v-else type="success" :closable="false" style="margin-bottom: 10px;"
-                title="抽样执行（6.3.1）：默认展示未抽样在途批，按方案抽样后点「记录抽样」留痕。"
+      <el-alert v-else-if="samplingMode" type="success" :closable="false" style="margin-bottom: 10px;"
+                title="抽样执行：默认展示未抽样在途批，按方案抽样后点「记录抽样」留痕。"
                 description="抽样为可选留痕，不阻断后续检验录入与放行；A 类全检批逐件检验无需随机抽样。" />
 
       <div class="filters">

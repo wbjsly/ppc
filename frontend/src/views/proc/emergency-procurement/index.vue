@@ -13,7 +13,7 @@
 
       <!-- ① 紧急申请 -->
       <template v-if="tab === 'ea'">
-        <PageInfo title="紧急采购（S-4.2-04 / BR-4.2-11）：仅对 已批准/待询价 的 PR 发起，采购总监特批放行（L2）；放行后须在 EMERGENCY_FILL_DAYS（默认 5 个工作日）内补齐比价资料。" description="逾期未补齐（L1321）：申请转入逾期例外 + 申请人通道自动阻断，经总监复核恢复并关闭例外。附件上传为桩。" style="margin-bottom: 12px;" />
+        <PageInfo title="紧急采购（S-4.2-04 / BR-4.2-11）：仅对已批准/待询价的 PR 发起，采购总监特批放行（L2）；放行后须在 EMERGENCY_FILL_DAYS（默认 5 个工作日）内补齐比价资料。" description="逾期未补齐（L1321）：申请转入逾期例外 + 申请人通道自动阻断，经总监复核恢复并关闭例外。附件上传为桩。" style="margin-bottom: 12px;" />
         <div class="toolbar">
           <el-select v-model="listQuery.status" placeholder="状态" clearable style="width: 160px;" @change="loadList(1)">
             <el-option v-for="(n, v) in statusNames" :key="v" :label="n" :value="v" />

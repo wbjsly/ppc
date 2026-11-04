@@ -17,7 +17,6 @@
           <el-input v-model="logQuery.keyword" placeholder="日志号/源/目标编码" clearable
                     :prefix-icon="Search" style="width: 220px;" @keyup.enter="loadLogs(1)" />
           <el-button type="primary" @click="loadLogs(1)">查询</el-button>
-          <span class="tip">回退窗口 30 天（BR 行 659）；日志永久保留（BR-4.1-03 / C-4.1-11）</span>
         </div>
         <el-table :data="logs" v-loading="loading" stripe>
           <el-table-column label="日志号" width="100">

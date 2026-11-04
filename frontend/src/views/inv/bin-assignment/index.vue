@@ -8,7 +8,6 @@
                     style="width: 240px;" @keyup.enter="loadPending" @clear="loadPending" />
           <el-button type="primary" plain @click="loadPending">查询</el-button>
           <el-button type="success" :loading="bulkLoading" @click="recommendAll">一键推荐全部并确认</el-button>
-          <span class="tip">强前置：GR 行须有 CONFIRMED 分配方可过账（C-4.4-11）</span>
         </div>
         <el-table :data="pendingRows" v-loading="pendingLoading" border stripe
                   :row-class-name="rowClass" @row-dblclick="openCandidates">
@@ -69,7 +68,6 @@
           <el-input v-model="unassignedKeyword" placeholder="物料 / 批次" clearable
                     style="width: 240px;" @keyup.enter="loadUnassigned" @clear="loadUnassigned" />
           <el-button type="primary" plain @click="loadUnassigned">查询</el-button>
-          <span class="tip">BIN=空 的库存行（存量回填 / 未前置分配链路），推荐 → 确认上架</span>
         </div>
         <el-table :data="unassignedRows" v-loading="unassignedLoading" border stripe>
           <el-table-column prop="warehouseCode" label="仓库" width="100" />

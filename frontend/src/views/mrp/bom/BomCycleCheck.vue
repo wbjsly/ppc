@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="循环校验（5.1.4）— 按父项或全量扫描 BOM 组件图，检出环路径并高亮"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="父项">

@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">调休额度（10.4.2）</span>
+        <span class="title">调休额度</span>
         <div>
           <span style="margin-right:12px">可用合计：<b>{{ balance.totalHours || 0 }}</b> 小时（FEFO 序）</span>
           <el-button type="warning" @click="expiryScanNow">到期扫描（提醒+清零）</el-button>

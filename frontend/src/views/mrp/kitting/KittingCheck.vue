@@ -1,7 +1,5 @@
 <template>
   <div>
-    <el-page-header content="齐套校验（5.5.1）— 单工单校验/勾选批量校验（串行去重），逐行明细含替代候选提示（仅展示不参与判定）"
-                    style="margin-bottom: 8px" />
 
     <div class="toolbar">
       <el-select v-model="status" style="width: 170px" size="small" @change="load">
@@ -19,7 +17,6 @@
                  :disabled="selection.length === 0" @click="doBatch">
         批量校验（{{ selection.length }}）
       </el-button>
-      <span class="tip">口径：需求 = 剩余量×用量×(1+损耗)；可用 = 库存 + 计划开工日前在途（KITTING_TRANSIT_DATE_FILTER）</span>
     </div>
 
     <el-table :data="rows" v-loading="loading" border stripe size="small"

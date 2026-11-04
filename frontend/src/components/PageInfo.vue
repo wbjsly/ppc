@@ -88,14 +88,21 @@ function open() { visible.value = true }
 </script>
 
 <style scoped>
+/* 默认形态 = 兜底独占行（spec：无按钮排无标题行时靠右展示） */
 .page-info {
-  position: sticky;
-  top: 0;
-  z-index: 6;
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  height: 26px;
+}
+/* 并入行形态（design D2：迁移脚本给挂载点加 page-info--inline）。
+   特异性 (0,3,0) > .page-info[data-v] (0,2,0) → 覆盖块级 flex。
+   margin-left:auto：在 flex 行内把 icon 推到行最右；在块级/行内上下文中
+   auto 计算为 0，icon 紧随前一控件（其容器本身已靠行右端），无副作用。 */
+.page-info.page-info--inline {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  vertical-align: middle;
 }
 .page-info__icon {
   display: inline-flex;

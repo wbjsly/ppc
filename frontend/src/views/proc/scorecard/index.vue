@@ -1,6 +1,6 @@
 <template>
   <div class="sc-page">
-    <PageInfo title="绩效评估（2.9.2）— 供应商绩效记分卡（4.9 流程七）" description="质量/交付/成本/响应四维每月 1 日 02:00 自动采集（不可手工修改）；ABCD 分级；D 级冻结新单（BR-4.9-05）；审核→门户公示→7 个工作日申诉→修正版重公示。审核/公示/解冻/申诉复核为高危动作（仅管理员）。" style="margin-bottom: 12px;" />
+    <PageInfo title="绩效评估— 供应商绩效记分卡" description="质量/交付/成本/响应四维每月 1 日 02:00 自动采集（不可手工修改）；ABCD 分级；D 级冻结新单（BR-4.9-05）；审核→门户公示→7 个工作日申诉→修正版重公示。审核/公示/解冻/申诉复核为高危动作（仅管理员）。" style="margin-bottom: 12px;" />
     <el-tabs v-model="tab">
       <!-- ===== 记分卡列表 ===== -->
       <el-tab-pane label="记分卡" name="results">

@@ -4,14 +4,14 @@
     <el-card v-if="view === 'sampling'">
       <template #header>
         <div class="card-header">
-          <span class="ttl">抽样方案（6.1.4）</span>
+          <span class="ttl">抽样方案</span>
           <div>
             <el-button v-if="canEdit" type="success" size="small" @click="openPlan()">新建方案</el-button>
             <el-button size="small" :loading="loading" @click="loadPlans">刷新</el-button>
+            <PageInfo class="page-info--inline" title="引用锁（spec inspection-standard）：被审批中/已发布版本引用的方案禁止修改，请「复制为新方案」后调整规则。" />
           </div>
         </div>
       </template>
-      <PageInfo title="引用锁（spec inspection-standard）：被审批中/已发布版本引用的方案禁止修改，请「复制为新方案」后调整规则。" style="margin-bottom: 10px;" />
       <el-table :data="plans" v-loading="loading" stripe>
         <el-table-column prop="planCode" label="方案编码" width="150">
           <template #default="{ row }"><b>{{ row.planCode }}</b></template>

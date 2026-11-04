@@ -1,6 +1,5 @@
 <template>
   <div class="warehouse-page">
-    <PageInfo title="仓库档案（4.1.1）" description="编码系统生成且创建后不可改；停用仓不被新发货单与新预留选用（在途单据不受影响）。存量库存已按仓库维度回填主仓 WH-MAIN。" style="margin-bottom: 12px;" />
     <el-card>
       <template #header>
         <div class="card-header">
@@ -16,6 +15,7 @@
             </el-select>
             <el-button type="primary" @click="loadData">查询</el-button>
             <el-button type="primary" :icon="Plus" @click="openForm()">新建</el-button>
+            <PageInfo class="page-info--inline" title="仓库档案" description="编码系统生成且创建后不可改；停用仓不被新发货单与新预留选用（在途单据不受影响）。存量库存已按仓库维度回填主仓 WH-MAIN。" />
           </div>
         </div>
       </template>

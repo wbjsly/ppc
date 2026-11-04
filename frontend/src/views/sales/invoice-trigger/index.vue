@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.8.1 开票触发" description="发货确认后自动生成开票申请（金额 = 该次发货额，与发货单一一对应）并同步生成应收。链路：调整金额 → 提交（税务资质 C-4.3-06 L1 + 容差校验）→ 财务审核 → 开具（外部开票系统桩，回写应收与 SO）→ 客户确认 / 异议 → 红字发票。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -21,6 +20,7 @@
             <el-input v-model="keyword" size="small" style="width:180px;margin-left:8px"
                       placeholder="申请单/发货单/客户" clearable @keyup.enter="load" />
             <el-button size="small" style="margin-left:8px" @click="load">查询</el-button>
+            <PageInfo class="page-info--inline" title="3.8.1 开票触发" description="发货确认后自动生成开票申请（金额 = 该次发货额，与发货单一一对应）并同步生成应收。链路：调整金额 → 提交（税务资质 C-4.3-06 L1 + 容差校验）→ 财务审核 → 开具（外部开票系统桩，回写应收与 SO）→ 客户确认 / 异议 → 红字发票。" />
           </div>
         </div>
       </template>

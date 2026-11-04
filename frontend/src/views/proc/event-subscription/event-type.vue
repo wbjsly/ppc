@@ -3,7 +3,7 @@
     <!-- 事件定义注册表 -->
     <el-card shadow="never" class="mb12">
       <div class="card-head mb12">
-        <h4 style="margin:0">事件定义（12.2.1）—— 注册后发布走校验，无需改代码发版</h4>
+        <h4 style="margin:0">事件定义—— 注册后发布走校验，无需改代码发版</h4>
         <div>
           <el-input v-model="query.eventType" placeholder="类型码" clearable size="small"
                     style="width:180px" @keyup.enter="load" />

@@ -1,6 +1,6 @@
 <template>
   <div class="cf-page">
-    <PageInfo title="信用冻结看板（3.3.2）" description="冻结单展示缺口金额、占用预占量与冻结时长；解冻回前一稳定状态（D5：审批前→待审批，已确认→已确认），不重跑审批、不释放预留；支持信用特批（上限与理由校验 BR-4.3-18）。" style="margin-bottom: 12px;" />
+    <PageInfo title="信用冻结看板" description="冻结单展示缺口金额、占用预占量与冻结时长；解冻回前一稳定状态（D5：审批前→待审批，已确认→已确认），不重跑审批、不释放预留；支持信用特批（上限与理由校验 BR-4.3-18）。" style="margin-bottom: 12px;" />
 
     <!-- 概览 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

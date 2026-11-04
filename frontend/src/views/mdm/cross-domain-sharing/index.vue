@@ -203,7 +203,7 @@
     </el-drawer>
 
     <!-- 事件目录弹窗 -->
-    <el-dialog v-model="catalogVisible" title="事件目录（7.2 事件契约登记）" width="620px">
+    <el-dialog v-model="catalogVisible" title="事件目录" width="620px">
       <el-table :data="catalogRows" size="small" border>
         <el-table-column prop="type" label="event_type" width="250" />
         <el-table-column prop="desc" label="语义" />

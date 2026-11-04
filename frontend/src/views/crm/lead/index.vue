@@ -1,6 +1,6 @@
 <template>
   <div class="lead-page">
-    <PageInfo title="线索录入（11.1.1）" description="来源渠道为预设枚举；提交前按「公司名称 + 联系人」查重（重复仅提示可关联）；分配后 3 个工作日未跟进自动提醒，30 天未跟进自动回收线索池。" style="margin-bottom: 12px;" />
+    <PageInfo title="线索录入" description="来源渠道为预设枚举；提交前按「公司名称 + 联系人」查重（重复仅提示可关联）；分配后 3 个工作日未跟进自动提醒，30 天未跟进自动回收线索池。" style="margin-bottom: 12px;" />
 
     <el-tabs v-model="tab">
       <!-- ==================== 线索列表 ==================== -->

@@ -1,13 +1,11 @@
 <template>
   <div>
-    <el-page-header content="数据抽取（14.2）— 抽取配置/脱敏规则/质量校验三叶；波动暂停（BR-4.10-12）、断点续抽（BR-4.10-13）、质量分级阻断（BR-4.10-14）、schema 变更检测（BR-4.10-15）"
-                    style="margin-bottom: 8px" />
 
     <!-- ==================== 14.2.3 质量校验 ==================== -->
-    <PageInfo title="NOT_NULL 非空率（默认≥99.9%）/ RECONCILE 跨表勾稽+容差 / RANGE 数值范围；SEVERE 失败阻断批次就绪并告警，WARN 告警放行（BR-4.10-14）" style="margin-bottom: 8px" />
     <div class="toolbar">
       <el-button size="small" type="success" @click="openRuleEdit(null)">新建规则</el-button>
       <el-button size="small" @click="loadQualityRules">刷新</el-button>
+      <PageInfo class="page-info--inline" title="NOT_NULL 非空率（默认≥99.9%）/ RECONCILE 跨表勾稽+容差 / RANGE 数值范围；SEVERE 失败阻断批次就绪并告警，WARN 告警放行（BR-4.10-14）" />
     </div>
     <el-table :data="qRules" border stripe size="small" max-height="260">
       <el-table-column prop="name" label="规则名" min-width="150" show-overflow-tooltip />

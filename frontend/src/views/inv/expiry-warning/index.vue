@@ -1,6 +1,5 @@
 <template>
   <div class="page">
-    <PageInfo title="效期预警（4.10.1）：每日报告留痕 + 当日实时清单（与 4.6.2 同源双视角）" description="每日 00:30 扫描后自动生成报告并推送仓库（黄 ≤90 / 橙 ≤60 / 红 ≤30 天），含较前报新增/解除清单；出库作业视角的实时清单在 4.6.2 效期优先。" style="margin-bottom: 12px;" />
 
     <div class="toolbar">
       <el-select v-model="view" style="width: 140px" @change="switchView">
@@ -19,6 +18,7 @@
         阈值：黄 ≤{{ thresholds.yellow }} / 橙 ≤{{ thresholds.orange }} / 红 ≤{{ thresholds.red }} 天；
         锁定线 = 有效期总天数 × {{ lockRatio }}
       </span>
+      <PageInfo class="page-info--inline" title="效期预警：每日报告留痕 + 当日实时清单" description="每日 00:30 扫描后自动生成报告并推送仓库（黄 ≤90 / 橙 ≤60 / 红 ≤30 天），含较前报新增/解除清单；出库作业视角的实时清单在效期优先。" />
     </div>
 
     <!-- 当日实时清单 -->

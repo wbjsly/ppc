@@ -1,6 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header :content="title" style="margin-bottom: 8px" />
 
     <!-- 运行触发条 -->
     <div class="section">

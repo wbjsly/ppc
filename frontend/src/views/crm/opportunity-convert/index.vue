@@ -1,6 +1,5 @@
 <template>
   <div class="opp-cvt-page">
-    <PageInfo title="商机转化（3.1.2）" description="本页只提供可转化商机列表、卡控校验与跳转，不承载报价表单（BR-4.3-07）。点击「创建报价」时校验商机状态与客户状态：不通过 L1 阻断并把不可引用原因回写追踪记录；通过则带出商机与客户跳转 3.2.1。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -14,6 +13,7 @@
             </el-select>
             <el-button type="primary" @click="loadData(1)">查询</el-button>
             <el-button :icon="Refresh" @click="loadData(1)">刷新闸口状态</el-button>
+            <PageInfo class="page-info--inline" title="商机转化" description="本页只提供可转化商机列表、卡控校验与跳转，不承载报价表单（BR-4.3-07）。点击「创建报价」时校验商机状态与客户状态：不通过 L1 阻断并把不可引用原因回写追踪记录；通过则带出商机与客户跳转。" />
           </div>
         </div>
       </template>

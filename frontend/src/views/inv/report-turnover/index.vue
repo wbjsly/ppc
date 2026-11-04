@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <PageInfo title="周转分析（4.14.2）：M-WMS-001 周转率 = 销售成本 / 平均库存余额（日结快照均值）。分子可切换全部出库口径（非指标字典口径）。" style="margin-bottom: 8px" />
+    <PageInfo title="周转分析：M-WMS-001 周转率 = 销售成本 / 平均库存余额（日结快照均值）。分子可切换全部出库口径（非指标字典口径）。" style="margin-bottom: 8px" />
 
     <el-form inline @submit.prevent>
       <el-form-item label="期间">

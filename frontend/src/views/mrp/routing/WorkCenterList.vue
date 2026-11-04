@@ -1,7 +1,5 @@
 <template>
   <div class="page">
-    <el-page-header content="工作中心（5.2.2）— 资源台账：类型 / 外协供应商 / 产能三要素（负荷率分母）"
-                    style="margin-bottom: 8px" />
 
     <el-form :inline="true" class="filter-bar" @submit.prevent>
       <el-form-item label="关键字">

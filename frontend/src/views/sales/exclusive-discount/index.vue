@@ -1,6 +1,5 @@
 <template>
   <div class="ed-page">
-    <PageInfo title="专属折扣（3.6.3）" description="客户专属价（EXCLUSIVE 协议）列表视图，取价优先级最高（专属 > 阶梯 > 时间）。协议的创建与维护在客户管理 1.3.3，本页只读展示销售侧口径。" style="margin-bottom: 12px;" />
 
     <el-card>
       <template #header>
@@ -16,6 +15,7 @@
               <el-option label="已停用" value="3" />
             </el-select>
             <el-button type="primary" @click="load(1)">查询</el-button>
+            <PageInfo class="page-info--inline" title="专属折扣" description="客户专属价（EXCLUSIVE 协议）列表视图，取价优先级最高（专属 > 阶梯 > 时间）。协议的创建与维护在客户管理，本页只读展示销售侧口径。" />
           </div>
         </div>
       </template>

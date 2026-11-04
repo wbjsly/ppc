@@ -2,7 +2,7 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">主管确认（10.3.4）</span>
+        <span class="title">主管确认</span>
         <div>
           <el-button type="success" :disabled="!approveSel.length"
                      @click="confirmBatch">批量通过（{{ approveSel.length }}）</el-button>

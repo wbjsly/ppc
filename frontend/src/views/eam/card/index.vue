@@ -1,6 +1,5 @@
 <template>
   <div class="eam-page">
-    <PageInfo title="资产卡片台账（7.1.3）：转资审核通过后一物一卡生成；BR-4.13-10 凭证过账后折旧政策五字段锁定" description="卡片编号系统生成不可改；锁定后修改须走资产变更流程（本变更仅锁字段+阻断提示）。详情页可打印资产标签（含二维码）。" style="margin-bottom:12px;" />
 
     <el-card shadow="never">
       <div class="toolbar">
@@ -11,6 +10,7 @@
           <el-option label="已处置" value="DISPOSED" />
         </el-select>
         <el-button type="primary" @click="load">查询</el-button>
+        <PageInfo class="page-info--inline" title="资产卡片台账：转资审核通过后一物一卡生成；BR-4.13-10 凭证过账后折旧政策五字段锁定" description="卡片编号系统生成不可改；锁定后修改须走资产变更流程（本变更仅锁字段+阻断提示）。详情页可打印资产标签（含二维码）。" />
       </div>
 
       <el-table :data="rows" size="small" border v-loading="loading">

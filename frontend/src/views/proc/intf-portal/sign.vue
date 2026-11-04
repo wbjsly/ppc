@@ -1,6 +1,6 @@
 <template>
   <div class="intf-page">
-    <PageInfo title="认证鉴权（15.2）：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）" description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" style="margin-bottom:12px" />
+    <PageInfo title="认证鉴权：令牌认证、HMAC 签名校验、SSO 单点登录（本系统作 IdP）" description="签名不匹配 401（C-5.5-05）、时间戳 ±5 分钟防重放（BR-5.5-04）。SSO 断言为限定 audience 的短令牌。" style="margin-bottom:12px" />
 
     <!-- 15.2.2 签名校验（观测面 = 拒绝分析 + 错误类型筛选） -->
     <el-alert type="warning" :closable="false" style="margin-bottom:10px"

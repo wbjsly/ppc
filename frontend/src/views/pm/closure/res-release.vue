@@ -1,14 +1,5 @@
 <template>
   <div class="res-release">
-    <el-card style="margin-bottom: 12px;">
-      <div class="hint">
-        资源释放（FR-4.8-7-6）：归档审批通过时自动生成资源释放清单快照——按参与人汇总项目工时
-        （取自工时行数据）。产能日历（每人每日可用工时）为全局资源池、与项目无关联，归档不修改。
-        归档后工时/成本/变更/领料/基线五类写入口全域只读（422「项目已归档」）。
-        本页只读，无操作按钮（PMO/ADMIN 可见）。
-      </div>
-    </el-card>
-
     <el-card>
       <template #header>
         <div class="card-head">

@@ -1,6 +1,6 @@
 <template>
   <div class="ac-page">
-    <PageInfo title="应付暂估（2.7.1）：入库过账自动生成「借 存货 / 贷 应付暂估」（BR-4.2-30）" description="台账只读 + 手工冲回（仅 ADMIN，须填关联发票号与原因）；三方匹配通过时由 2.7.2 自动冲回并转正式应付。FREE 无单价收货不生成暂估；合并迁移批次须经财务确认后才参与匹配与冲减。" style="margin-bottom: 12px;" />
+    <PageInfo title="应付暂估：入库过账自动生成「借存货 / 贷应付暂估」（BR-4.2-30）" description="台账只读 + 手工冲回（仅 ADMIN，须填关联发票号与原因）；三方匹配通过时自动冲回并转正式应付。FREE 无单价收货不生成暂估；合并迁移批次须经财务确认后才参与匹配与冲减。" style="margin-bottom: 12px;" />
 
     <!-- 汇总卡 -->
     <el-row :gutter="12" style="margin-bottom: 12px;">

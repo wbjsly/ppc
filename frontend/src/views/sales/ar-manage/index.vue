@@ -244,7 +244,7 @@
         </el-table>
 
         <template v-if="arDetail.planProgress && arDetail.planProgress.length">
-          <h4>所属合同期次与收款进度（10.8）</h4>
+          <h4>所属合同期次与收款进度</h4>
           <el-table :data="arDetail.planProgress" size="small" border>
             <el-table-column prop="periodNo" label="期数" width="70" align="center" />
             <el-table-column prop="dueDate" label="计划到期" width="110" />

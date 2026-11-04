@@ -1,6 +1,5 @@
 <template>
   <div class="page-wrap">
-    <PageInfo title="3.5.1 订单创建" description="单价由价格协议自动带出（客户专属 > 量价阶梯 > 时间促销），无协议阻断建单；付款条件与客户协议不一致须销售主管确认；计划发货晚于客户期望交期自动标记「交期待确认」。" />
 
     <el-card shadow="never" class="mb12">
       <template #header>
@@ -10,6 +9,7 @@
             <el-button size="small" @click="resetForm">清空</el-button>
             <el-button size="small" type="primary" @click="saveDraft">保存草稿</el-button>
             <el-button size="small" type="success" @click="saveAndSubmit">保存并提交审批</el-button>
+            <PageInfo class="page-info--inline" title="3.5.1 订单创建" description="单价由价格协议自动带出（客户专属 > 量价阶梯 > 时间促销），无协议阻断建单；付款条件与客户协议不一致须销售主管确认；计划发货晚于客户期望交期自动标记「交期待确认」。" />
           </div>
         </div>
       </template>

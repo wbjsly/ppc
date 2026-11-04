@@ -5,10 +5,10 @@
       <div>
         <el-button type="primary" size="small" @click="openDirect">直接转出</el-button>
         <el-button type="success" size="small" @click="openApportion">分摊转出</el-button>
+        <PageInfo class="page-info--inline" title="仅已认证（CERTIFIED）发票可转出；单票累计转出不超过已抵扣税额；凭证为草稿态，审核过账见总账凭证页" />
       </div>
     </div>
 
-    <PageInfo title="仅已认证（CERTIFIED）发票可转出；单票累计转出不超过已抵扣税额；凭证为草稿态，审核过账见总账凭证页" />
 
     <el-table :data="rows" size="small" border>
       <el-table-column prop="invoiceNo" label="发票号" width="150" />

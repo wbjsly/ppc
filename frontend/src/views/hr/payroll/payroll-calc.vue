@@ -2,15 +2,15 @@
   <div class="page">
     <el-card shadow="never">
       <div class="toolbar">
-        <span class="title">薪资核算（10.5.3）</span>
+        <span class="title">薪资核算</span>
         <div>
           <el-input v-model="period" placeholder="核算期 如 202610" clearable style="width:140px;margin-right:8px" @change="load" />
           <el-button @click="doPreview">数据准备</el-button>
           <el-button type="primary" :loading="generating" @click="doGenerate">核算生成批次</el-button>
           <el-button @click="load">刷新</el-button>
+          <PageInfo class="page-info--inline" title="应发=基本工资+绩效+补贴+加班工资（取固化金额）；实发=应发-社保个人-公积金个人-个税-其他扣款；负数 L1 阻断，环比>20% L4 待确认；考勤挂起员工暂停核算（C-4.7-01）" />
         </div>
       </div>
-      <PageInfo title="应发=基本工资+绩效+补贴+加班工资（取固化金额）；实发=应发-社保个人-公积金个人-个税-其他扣款；负数 L1 阻断，环比>20% L4 待确认；考勤挂起员工暂停核算（C-4.7-01）" style="margin-bottom:12px" />
 
       <el-descriptions v-if="prep" :column="4" border style="margin-bottom:12px">
         <el-descriptions-item label="核算期">{{ prep.period }}</el-descriptions-item>

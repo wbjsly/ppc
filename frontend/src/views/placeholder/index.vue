@@ -11,12 +11,6 @@
           <el-button type="primary" @click="$router.push('/dashboard')">返回工作台</el-button>
         </template>
       </el-result>
-      <el-descriptions v-if="menu" :column="2" border>
-        <el-descriptions-item label="菜单编号">{{ menu.menuCode || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="菜单名称">{{ menu.title }}</el-descriptions-item>
-        <el-descriptions-item label="路由路径">{{ menu.path || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="可见角色">{{ menu.perm || '所有登录用户' }}</el-descriptions-item>
-      </el-descriptions>
     </el-card>
   </div>
 </template>

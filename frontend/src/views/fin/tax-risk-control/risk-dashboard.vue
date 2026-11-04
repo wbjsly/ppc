@@ -3,7 +3,7 @@
     <el-card shadow="never">
       <template #header>
         <div class="card-header">
-          <span>税务风险预警（9.6.1）</span>
+          <span>税务风险预警</span>
           <el-button type="primary" size="small" @click="loadAll">刷新</el-button>
         </div>
       </template>
